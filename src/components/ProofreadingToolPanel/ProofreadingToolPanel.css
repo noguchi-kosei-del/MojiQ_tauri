@@ -1,0 +1,215 @@
+/* 校正ツールパネル */
+.proofreading-tool-panel {
+  position: relative;
+}
+
+/* トグルボタン */
+.proofreading-toggle-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.proofreading-toggle-btn:hover {
+  background-color: var(--bg-hover);
+}
+
+.proofreading-toggle-btn.open,
+.proofreading-toggle-btn.active {
+  background-color: var(--accent-color);
+  color: #fff;
+}
+
+.proofreading-toggle-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 選択中のバッジ */
+.proofreading-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  font-size: 7px;
+  background: var(--accent-color);
+  color: #fff;
+  padding: 1px 3px;
+  border-radius: 3px;
+  white-space: nowrap;
+  max-width: 40px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.proofreading-toggle-btn.active .proofreading-badge {
+  background: #fff;
+  color: var(--accent-color);
+}
+
+/* ドロップダウン */
+.proofreading-dropdown {
+  position: absolute;
+  right: 100%;
+  top: 0;
+  margin-right: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  width: 240px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* セクション */
+.proofreading-section {
+  padding: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.proofreading-section:last-child {
+  border-bottom: none;
+}
+
+.proofreading-section-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+/* スタンプグリッド */
+.proofreading-stamp-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.proofreading-stamp-grid.shashoku {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* スタンプボタン */
+.proofreading-stamp-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 52px;
+  padding: 6px 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.proofreading-stamp-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-color);
+}
+
+.proofreading-stamp-btn.active {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: #fff;
+}
+
+/* 校正記号グリッド */
+.proofreading-symbol-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+/* 校正記号ボタン */
+.proofreading-symbol-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  min-height: 52px;
+  min-width: 52px;
+}
+
+.proofreading-symbol-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-color);
+}
+
+.proofreading-symbol-btn.active {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: #fff;
+}
+
+.proofreading-symbol-btn .symbol-icon {
+  font-size: 20px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.proofreading-symbol-btn .symbol-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.proofreading-symbol-btn .symbol-label {
+  font-size: 9px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* アクション */
+.proofreading-actions {
+  padding: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.proofreading-clear-btn {
+  width: 100%;
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.proofreading-clear-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}

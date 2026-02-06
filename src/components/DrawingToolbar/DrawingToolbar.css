@@ -1,0 +1,264 @@
+.drawing-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background-color: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  width: 42px;
+  min-width: 42px;
+  transition: width 0.3s ease, min-width 0.3s ease;
+}
+
+/* 折りたたみヘッダー */
+.drawing-toolbar-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  height: 24px;
+  min-height: 24px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  padding-left: 4px;
+  box-sizing: border-box;
+}
+
+/* 折りたたみボタン */
+.drawing-toolbar .sidebar-toggle-btn {
+  width: 18px;
+  height: 18px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  padding: 0;
+  line-height: 1;
+}
+
+.drawing-toolbar .sidebar-toggle-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.drawing-toolbar .sidebar-toggle-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* コンテンツ部分 */
+.drawing-toolbar-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+  gap: 4px;
+  flex: 1;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+/* 折りたたみ状態 */
+.drawing-toolbar.collapsed {
+  width: 24px !important;
+  min-width: 24px !important;
+}
+
+.drawing-toolbar.collapsed .drawing-toolbar-header {
+  justify-content: center;
+  padding: 0;
+}
+
+.drawing-toolbar button:not(.sidebar-toggle-btn) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.drawing-toolbar button:not(.sidebar-toggle-btn) svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+}
+
+.drawing-toolbar button:not(.sidebar-toggle-btn):hover:not(:disabled) {
+  background-color: var(--bg-hover);
+}
+
+.drawing-toolbar button:not(.sidebar-toggle-btn):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.drawing-toolbar button:not(.sidebar-toggle-btn).active {
+  background-color: var(--accent-color);
+  color: #fff;
+}
+
+.drawing-toolbar-separator {
+  width: 80%;
+  height: 1px;
+  background-color: var(--border-light);
+  margin: 4px 0;
+}
+
+/* Shape tool container with popup */
+.shape-tool-container {
+  position: relative;
+}
+
+.shape-tool-container > button {
+  position: relative;
+}
+
+/* +テキストモード時のインジケーター */
+.shape-tool-container > button.annotated-mode .tool-indicator {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  background-color: #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.3);
+}
+
+.shape-tool-container > button:not(.annotated-mode) .tool-indicator {
+  display: none;
+}
+
+/* 長押しインジケーター（▶マーク） */
+.shape-tool-container > button .popup-indicator {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+  color: currentColor;
+  pointer-events: none;
+}
+
+.shape-tool-container > button .popup-indicator svg {
+  width: 5px;
+  height: 6px;
+}
+
+/* Popup overlay */
+.popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+}
+
+/* Tool popup */
+.tool-popup {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  white-space: nowrap;
+  animation: popup-appear 0.15s ease-out;
+}
+
+@keyframes popup-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+.tool-popup::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 6px solid transparent;
+  border-right-color: var(--border-color);
+}
+
+.tool-popup::after {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 5px solid transparent;
+  border-right-color: var(--bg-secondary);
+}
+
+.tool-popup button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  width: auto;
+  height: auto;
+  background-color: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color 0.15s;
+}
+
+.tool-popup button:hover {
+  background-color: var(--bg-hover);
+}
+
+.tool-popup button.active {
+  background-color: var(--accent-color);
+  color: #fff;
+}
+
+.tool-popup button svg {
+  flex-shrink: 0;
+}
+
+.tool-popup button span {
+  white-space: nowrap;
+}
+
+/* Viewer mode - hide drawing toolbar */
+.app.viewer-mode .drawing-toolbar {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  overflow: hidden !important;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}

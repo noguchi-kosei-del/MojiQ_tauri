@@ -1,0 +1,106 @@
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 6px;
+  background-color: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  gap: 8px;
+  width: 52px;
+  min-width: 52px;
+}
+
+.toolbar-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar-separator {
+  width: 80%;
+  height: 1px;
+  background-color: var(--border-light);
+  margin: 4px 0;
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
+
+.toolbar button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 18px;
+  transition: background-color 0.2s;
+}
+
+.toolbar button svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+}
+
+.toolbar button:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+}
+
+.toolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toolbar button.active {
+  background-color: var(--accent-color);
+  color: #fff;
+}
+
+.toolbar label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-primary);
+  font-size: 10px;
+}
+
+.toolbar input[type="color"] {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.toolbar input[type="range"] {
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  writing-mode: vertical-lr;
+  direction: rtl;
+}
+
+.stroke-width-value {
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.toolbar button.delete-btn {
+  background-color: #c0392b;
+}
+
+.toolbar button.delete-btn:hover:not(:disabled) {
+  background-color: #e74c3c;
+}
+

@@ -1,0 +1,500 @@
+.preset-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+/* アイコンボタン（RightToolbarスタイルに合わせる） */
+.preset-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 18px;
+  transition: background-color 0.2s;
+}
+
+.preset-icon-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+}
+
+.preset-icon-btn:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+}
+
+.preset-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.preset-icon-btn.active {
+  background-color: var(--accent-color);
+  color: #fff;
+}
+
+.preset-icon-btn.open {
+  background-color: var(--bg-hover);
+}
+
+/* 作品仕様読み込みボタン（緑系） - ダークモード */
+.preset-icon-btn.folder-btn {
+  background-color: #1b5e20;
+  border: 1px solid #4caf50;
+  color: #a5d6a7;
+}
+
+.preset-icon-btn.folder-btn:hover {
+  background-color: #2e7d32;
+}
+
+.preset-icon-btn.folder-btn svg {
+  stroke: #a5d6a7;
+}
+
+/* 作品仕様読み込みボタン - ライトモード */
+:root[data-theme="light"] .preset-icon-btn.folder-btn {
+  background-color: #e8f5e9;
+  border: 1px solid #81c784;
+  color: #2e7d32;
+}
+
+:root[data-theme="light"] .preset-icon-btn.folder-btn:hover {
+  background-color: #c8e6c9;
+}
+
+:root[data-theme="light"] .preset-icon-btn.folder-btn svg {
+  stroke: #2e7d32;
+}
+
+/* バッジ（選択中のサイズ表示） */
+.preset-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  background: var(--accent-color);
+  color: white;
+  font-size: 8px;
+  font-weight: bold;
+  padding: 1px 3px;
+  border-radius: 3px;
+  min-width: 14px;
+  text-align: center;
+}
+
+/* 選択解除ボタン */
+.preset-clear-btn:hover {
+  background-color: rgba(244, 67, 54, 0.2) !important;
+  color: #f44336;
+}
+
+/* ドロップダウンコンテナ */
+.preset-dropdown-container {
+  position: relative;
+}
+
+/* ドロップダウン */
+.preset-dropdown {
+  position: absolute;
+  top: 0;
+  margin-left: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  overflow: hidden;
+  min-width: 220px;
+}
+
+.preset-dropdown.font-dropdown {
+  width: 280px;
+}
+
+.preset-dropdown.font-dropdown .preset-palette.font-palette {
+  padding: 8px;
+  width: calc(100% - 16px);
+  box-sizing: content-box;
+}
+
+.preset-dropdown.font-dropdown .preset-btn.font-btn {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.preset-dropdown-left {
+  right: 100%;
+  left: auto;
+  margin-right: 4px;
+  margin-left: 0;
+}
+
+/* ドロップダウンヘッダー */
+.preset-dropdown-header {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+/* パレット */
+.preset-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.preset-palette.font-palette {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+/* プリセットボタン */
+.preset-btn {
+  padding: 2px 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.preset-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-color);
+}
+
+.preset-btn.active {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: white;
+}
+
+.preset-btn.delete-mode {
+  border-color: #f44336;
+}
+
+.preset-btn.delete-mode:hover {
+  background: rgba(244, 67, 54, 0.2);
+}
+
+/* フォントボタン */
+.preset-btn.font-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  min-height: 28px;
+}
+
+.font-color-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+.font-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+/* 空状態 */
+.preset-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* アクションボタン */
+.preset-actions {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.preset-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.preset-action-btn:hover {
+  background: var(--bg-hover);
+}
+
+.preset-action-btn.active {
+  background: rgba(244, 67, 54, 0.2);
+  border-color: #f44336;
+  color: #f44336;
+}
+
+/* モーダル */
+.preset-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.preset-modal {
+  background: var(--bg-primary);
+  border-radius: 12px;
+  padding: 20px;
+  min-width: 280px;
+  max-width: 400px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.preset-modal-header {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--text-primary);
+}
+
+.preset-modal-row {
+  margin-bottom: 12px;
+}
+
+.preset-modal-row label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.preset-modal-row input[type="text"],
+.preset-modal-row input[type="number"] {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.preset-modal-row input[type="text"]:focus,
+.preset-modal-row input[type="number"]:focus {
+  border-color: var(--accent-color);
+}
+
+.preset-modal-row input[type="color"] {
+  width: 48px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.preset-modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+  justify-content: flex-end;
+}
+
+.preset-modal-actions button {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.preset-modal-actions button:not(.primary) {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.preset-modal-actions button:not(.primary):hover {
+  background: var(--bg-hover);
+}
+
+.preset-modal-actions button.primary {
+  background: var(--accent-color);
+  border: 1px solid var(--accent-color);
+  color: white;
+}
+
+.preset-modal-actions button.primary:hover {
+  background: #1976d2;
+}
+
+/* フォルダブラウザモーダル */
+.folder-browser-modal {
+  background: var(--bg-primary);
+  border-radius: 12px;
+  width: 700px;
+  min-width: 500px;
+  max-width: 90vw;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.folder-browser-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.folder-browser-back-btn,
+.folder-browser-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.folder-browser-back-btn:hover:not(:disabled),
+.folder-browser-close-btn:hover {
+  background: var(--bg-hover);
+}
+
+.folder-browser-back-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.folder-browser-close-btn:hover {
+  color: #f44336;
+}
+
+.folder-browser-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-browser-content {
+  flex: 1;
+  width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px;
+  min-height: 200px;
+  max-height: 450px;
+  gap: 6px;
+  box-sizing: border-box;
+}
+
+.folder-browser-loading,
+.folder-browser-error,
+.folder-browser-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.folder-browser-error {
+  color: #f44336;
+}
+
+.folder-browser-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  margin-bottom: 4px;
+  border: none;
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 14px !important;
+  text-align: left;
+  transition: background-color 0.15s ease;
+  box-sizing: border-box;
+  min-height: 40px;
+  flex-shrink: 0;
+}
+
+.folder-browser-entry:hover {
+  background: var(--bg-hover);
+}
+
+.folder-browser-entry svg {
+  flex-shrink: 0;
+  color: var(--accent-color);
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+}
+
+.folder-browser-entry-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px !important;
+}

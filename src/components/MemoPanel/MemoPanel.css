@@ -1,0 +1,159 @@
+.memo-panel {
+  position: relative;
+}
+
+/* メモボタン */
+.memo-btn.has-content {
+  background-color: #fff3cd;
+  border: 1px solid #ffc107;
+  color: #856404;
+}
+
+.memo-btn.has-content:hover {
+  background-color: #ffe69c;
+}
+
+.memo-btn.has-content svg {
+  stroke: #856404;
+}
+
+/* ダークモード用 */
+.memo-btn.has-content {
+  background-color: #5d4e37;
+  border: 1px solid #ffc107;
+  color: #ffc107;
+}
+
+.memo-btn.has-content:hover {
+  background-color: #6d5a40;
+}
+
+.memo-btn.has-content svg {
+  stroke: #ffc107;
+}
+
+/* ライトモード用 */
+:root[data-theme="light"] .memo-btn.has-content {
+  background-color: #fff3cd;
+  border: 1px solid #ffc107;
+  color: #856404;
+}
+
+:root[data-theme="light"] .memo-btn.has-content:hover {
+  background-color: #ffe69c;
+}
+
+:root[data-theme="light"] .memo-btn.has-content svg {
+  stroke: #856404;
+}
+
+/* バッジ */
+.memo-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  background: #ffc107;
+  color: #333;
+  font-size: 8px;
+  font-weight: bold;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ドロップダウン */
+.memo-dropdown {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  margin-right: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  overflow: hidden;
+  width: 250px;
+}
+
+.memo-dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.memo-clear-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.memo-clear-btn:hover:not(:disabled) {
+  background: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+}
+
+.memo-clear-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* テキストエリア */
+.memo-textarea {
+  width: 100%;
+  min-height: 200px;
+  max-height: 400px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: none;
+  resize: vertical;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.memo-textarea::placeholder {
+  color: var(--text-secondary);
+}
+
+.memo-textarea:focus {
+  background: var(--bg-secondary);
+}
+
+/* スクロールバー */
+.memo-textarea::-webkit-scrollbar {
+  width: 6px;
+}
+
+.memo-textarea::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+.memo-textarea::-webkit-scrollbar-thumb {
+  background: var(--bg-hover);
+  border-radius: 3px;
+}
+
+.memo-textarea::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}

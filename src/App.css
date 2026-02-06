@@ -1,0 +1,403 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ========================================
+   スクロールバー (Scrollbar) スタイル
+   ======================================== */
+
+/* Webkit系ブラウザ (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-hover);
+  border-radius: 5px;
+  border: 2px solid var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--bg-secondary);
+}
+
+/* 細いスクロールバー用 */
+.thin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  border: 1px solid var(--bg-secondary);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-hover) var(--bg-secondary);
+}
+
+/* Dark theme (default) */
+:root,
+:root[data-theme="dark"] {
+  --bg-primary: #1e1e1e;
+  --bg-secondary: #2c2c2c;
+  --bg-tertiary: #3c3c3c;
+  --bg-hover: #4c4c4c;
+  --text-primary: #f6f6f6;
+  --text-secondary: #aaa;
+  --border-color: #444;
+  --border-light: #555;
+  --accent-color: #0078d4;
+  --canvas-bg: #1e1e1e;
+
+  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Light theme */
+:root[data-theme="light"] {
+  --bg-primary: #f5f5f5;
+  --bg-secondary: #e8e8e8;
+  --bg-tertiary: #d0d0d0;
+  --bg-hover: #c0c0c0;
+  --text-primary: #1e1e1e;
+  --text-secondary: #666;
+  --border-color: #ccc;
+  --border-light: #ddd;
+  --accent-color: #0078d4;
+  --canvas-bg: #ffffff;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-primary);
+}
+
+.app-body {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+
+.canvas-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ========================================
+   閲覧モード (Viewer Mode) スタイル
+   ======================================== */
+
+/* 閲覧モード時のアプリ全体の背景を黒に */
+.app.viewer-mode {
+  background-color: #000 !important;
+}
+
+/* 閲覧モード時のUI非表示 */
+.app.viewer-mode .toolbar {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.app.viewer-mode .layer-panel {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  overflow: hidden !important;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.app.viewer-mode .page-nav,
+.app.viewer-mode .page-nav-bar,
+.app.viewer-mode .page-nav-hover-area {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+/* 閲覧モード時のapp-body */
+.app.viewer-mode .app-body {
+  flex: 1;
+}
+
+/* 閲覧モード時のキャンバス領域の拡張 */
+.app.viewer-mode .main-content {
+  width: 100vw !important;
+  height: 100vh !important;
+  background-color: #000 !important;
+}
+
+.app.viewer-mode .canvas-area {
+  width: 100% !important;
+  height: 100% !important;
+  background-color: #000 !important;
+}
+
+.app.viewer-mode .canvas-container {
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  padding: 0 !important;
+  background-color: #000 !important;
+}
+
+/* 閲覧モード時のキャンバススクロールエリア */
+.app.viewer-mode .canvas-scroll-area {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  background-color: #000 !important;
+}
+
+/* 閲覧モードのナビゲーションヒント */
+.viewer-nav-hint {
+  position: fixed;
+  top: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  border-radius: 12px;
+  padding: 16px 32px;
+  font-size: 18px;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+  z-index: 10002;
+  white-space: nowrap;
+}
+
+.viewer-nav-hint.show {
+  opacity: 1;
+}
+
+/* 閲覧モードの上部バー */
+.viewer-top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0) 100%);
+  z-index: 10001;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+  pointer-events: none;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  padding: 10px 15px;
+}
+
+.viewer-top-bar.show {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* 閲覧モードの閉じるボタン */
+.viewer-close-btn {
+  width: 40px;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  transition: background 0.2s ease;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.viewer-close-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.viewer-close-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+/* 閲覧モード全体のオーバーレイ背景 */
+.viewer-mode-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-primary);
+  z-index: -1;
+}
+
+/* ========================================
+   ワークスペース反転 (Workspace Flipped) スタイル
+   ======================================== */
+
+/* 反転時: app-bodyのflex-directionを逆に */
+.app.workspace-flipped .app-body {
+  flex-direction: row-reverse;
+}
+
+/* 反転時: Toolbarのborder調整 */
+.app.workspace-flipped .toolbar {
+  border-right: none;
+  border-left: 1px solid var(--border-color);
+}
+
+/* 反転時: DrawingToolbarのborder調整 */
+.app.workspace-flipped .drawing-toolbar {
+  border-right: none;
+  border-left: 1px solid var(--border-color);
+}
+
+/* 反転時: main-contentのflex-directionを逆に */
+.app.workspace-flipped .main-content {
+  flex-direction: row-reverse;
+}
+
+/* 反転時: LayerPanelのborder調整 */
+.app.workspace-flipped .layer-panel {
+  border-left: none;
+  border-right: 1px solid var(--border-color);
+}
+
+/* 反転時: DrawingToolbarのポップアップ位置調整 */
+.app.workspace-flipped .tool-popup {
+  left: auto;
+  right: 100%;
+  margin-left: 0;
+  margin-right: 8px;
+}
+
+.app.workspace-flipped .tool-popup::before {
+  left: auto;
+  right: -6px;
+  border-right-color: transparent;
+  border-left-color: var(--border-color);
+}
+
+.app.workspace-flipped .tool-popup::after {
+  left: auto;
+  right: -5px;
+  border-right-color: transparent;
+  border-left-color: var(--bg-secondary);
+}
+
+@keyframes popup-appear-flipped {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+.app.workspace-flipped .tool-popup {
+  animation: popup-appear-flipped 0.15s ease-out;
+}
+
+/* ========================================
+   ホーム画面 (Home Screen) スタイル
+   ======================================== */
+
+.home-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-primary);
+  overflow: hidden;
+}
+
+.home-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.home-logo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
+.home-title {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.home-content {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+}
+
+/* ホーム画面のcanvas-containerは背景を透明に */
+.home-content .canvas-container {
+  background-color: transparent;
+}

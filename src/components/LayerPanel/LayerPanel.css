@@ -1,0 +1,194 @@
+.layer-panel-container {
+  position: relative;
+}
+
+.layer-panel-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.layer-panel-toggle svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+}
+
+.layer-panel-toggle:hover {
+  background-color: var(--bg-hover);
+}
+
+.layer-panel-toggle.active {
+  background-color: var(--accent-color);
+  color: #fff;
+}
+
+/* 通常時（右側バー）: ポップアップはボタンの左側に展開 */
+.layer-panel-popup {
+  position: absolute;
+  top: 0;
+  right: calc(100% + 8px);
+  left: auto;
+  width: 220px;
+  max-height: 300px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 反転時: ポップアップはボタンの右側に展開 */
+.layer-panel-popup.flipped {
+  right: auto;
+  left: calc(100% + 8px);
+}
+
+.layer-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.layer-panel-header button {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.layer-panel-header button svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+}
+
+.layer-panel-header button:hover {
+  background-color: var(--bg-hover);
+}
+
+.layer-list {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-hover) var(--bg-secondary);
+}
+
+.layer-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.layer-list::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+.layer-list::-webkit-scrollbar-thumb {
+  background: var(--bg-hover);
+  border-radius: 4px;
+  border: 1px solid var(--bg-secondary);
+}
+
+.layer-list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+.layer-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  gap: 8px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-color);
+  transition: background-color 0.2s;
+}
+
+.layer-item:last-child {
+  border-bottom: none;
+}
+
+.layer-item:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.layer-item.active {
+  background-color: var(--accent-color);
+}
+
+.visibility-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.visibility-toggle svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+}
+
+.layer-name {
+  flex: 1;
+  color: var(--text-primary);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opacity-slider {
+  width: 40px;
+}
+
+.delete-layer {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px;
+  opacity: 0.7;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.delete-layer:hover {
+  opacity: 1;
+}
+
+.delete-layer svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+}

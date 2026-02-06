@@ -1,0 +1,140 @@
+.bg-opacity-panel {
+  position: relative;
+}
+
+/* 透過有効時のボタンスタイル */
+.bg-opacity-btn.active {
+  background-color: var(--accent-color);
+  color: #fff;
+}
+
+.bg-opacity-btn.active:hover {
+  background-color: var(--accent-hover);
+}
+
+.bg-opacity-btn.active svg {
+  stroke: #fff;
+}
+
+/* ドロップダウン */
+.bg-opacity-dropdown {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  margin-right: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  overflow: hidden;
+  width: 200px;
+}
+
+.bg-opacity-dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.bg-opacity-reset-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  font-size: 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bg-opacity-reset-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.bg-opacity-reset-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* スライダーコンテンツ */
+.bg-opacity-content {
+  padding: 12px;
+}
+
+.bg-opacity-slider-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* カスタムスライダー */
+.bg-opacity-custom-slider {
+  flex: 1;
+  position: relative;
+  height: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.bg-opacity-custom-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: #d0d0d0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.bg-opacity-custom-fill {
+  height: 100%;
+  background: #00bcd4;
+  border-radius: 2px;
+}
+
+.bg-opacity-custom-thumb {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  background: #00bcd4;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+
+.bg-opacity-hidden-input {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  margin: 0;
+}
+
+.bg-opacity-value {
+  min-width: 40px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.bg-opacity-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--text-secondary);
+}

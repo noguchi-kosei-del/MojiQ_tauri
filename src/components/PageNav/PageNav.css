@@ -1,0 +1,221 @@
+/* Invisible hover area to catch mouse when bar is faded out */
+.page-nav-hover-area {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 70%;
+  max-width: 600px;
+  height: 80px;
+  z-index: 9998;
+  pointer-events: auto;
+}
+
+/* Floating Page Navigation Bar */
+.page-nav-bar {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 70%;
+  max-width: 600px;
+  height: 36px;
+  background-color: rgba(40, 40, 40, 0.95);
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 9999;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 0.5s ease;
+}
+
+/* Light theme support */
+:root[data-theme="light"] .page-nav-bar {
+  background-color: rgba(230, 230, 230, 0.95);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Fade out state */
+.page-nav-bar.fade-out {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+}
+
+/* Hidden state (controlled by toolbar button) */
+.page-nav-bar.hidden {
+  visibility: hidden;
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* Slider Container */
+.slider-container {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+}
+
+/* Page Slider */
+.page-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: #666;
+  border-radius: 2px;
+  outline: none;
+  margin: 0;
+  border: none;
+  direction: rtl;
+  cursor: pointer;
+}
+
+:root[data-theme="light"] .page-slider {
+  background: #bbb;
+}
+
+/* Slider Track - WebKit */
+.page-slider::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  background: #666;
+  border-radius: 2px;
+}
+
+:root[data-theme="light"] .page-slider::-webkit-slider-runnable-track {
+  background: #bbb;
+}
+
+/* Slider Thumb - WebKit */
+.page-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ff4444;
+  cursor: pointer;
+  margin-top: -6px;
+}
+
+/* Slider Track - Firefox */
+.page-slider::-moz-range-track {
+  width: 100%;
+  height: 4px;
+  background: #666;
+  border-radius: 2px;
+}
+
+:root[data-theme="light"] .page-slider::-moz-range-track {
+  background: #bbb;
+}
+
+/* Slider Thumb - Firefox */
+.page-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ff4444;
+  cursor: pointer;
+  border: none;
+}
+
+/* Slider Bubble */
+.slider-bubble {
+  position: absolute;
+  bottom: 24px;
+  transform: translateX(-50%) scale(1);
+  transform-origin: center bottom;
+  background-color: #ff4444;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  pointer-events: none;
+  white-space: nowrap;
+  display: none;
+  z-index: 10000;
+  transition: transform 0.15s ease-out, padding 0.15s ease-out, font-size 0.15s ease-out;
+}
+
+.slider-bubble.visible {
+  display: block;
+}
+
+/* Dragging state - larger bubble */
+.slider-bubble.dragging {
+  transform: translateX(-50%) scale(1.2);
+  padding: 5px 10px;
+  font-size: 13px;
+}
+
+/* Bubble arrow */
+.slider-bubble::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -4px;
+  border-width: 4px;
+  border-style: solid;
+  border-color: #ff4444 transparent transparent transparent;
+  transition: border-width 0.15s ease-out, margin-left 0.15s ease-out;
+}
+
+.slider-bubble.dragging::after {
+  border-width: 5px;
+  margin-left: -5px;
+}
+
+/* Navigation Buttons */
+.nav-buttons {
+  display: flex;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.nav-buttons button {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+:root[data-theme="light"] .nav-buttons button {
+  background-color: rgba(0, 0, 0, 0.1);
+  color: #333;
+}
+
+.nav-buttons button:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+:root[data-theme="light"] .nav-buttons button:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.15);
+}
+
+.nav-buttons button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.nav-buttons button svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+}

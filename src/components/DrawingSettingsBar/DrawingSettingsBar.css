@@ -1,0 +1,305 @@
+/* 描画設定バー */
+.drawing-settings-bar {
+  display: flex;
+  flex-direction: column;
+  width: 180px;
+  min-width: 180px;
+  height: 100%;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  overflow-y: auto;
+  transition: width 0.3s ease, min-width 0.3s ease;
+}
+
+/* 折りたたみヘッダー */
+.drawing-settings-bar-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  height: 24px;
+  min-height: 24px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  padding-right: 4px;
+  box-sizing: border-box;
+}
+
+/* 折りたたみボタン */
+.drawing-settings-bar .sidebar-toggle-btn {
+  width: 18px;
+  height: 18px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  padding: 0;
+  line-height: 1;
+}
+
+.drawing-settings-bar .sidebar-toggle-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.drawing-settings-bar .sidebar-toggle-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* コンテンツ部分 */
+.drawing-settings-bar-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px;
+  flex: 1;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+/* 折りたたみ状態 */
+.drawing-settings-bar.collapsed {
+  width: 24px !important;
+  min-width: 24px !important;
+}
+
+.drawing-settings-bar.collapsed .drawing-settings-bar-header {
+  justify-content: center;
+  padding: 0;
+}
+
+/* スクロールバー (細いスタイル) */
+.drawing-settings-bar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.drawing-settings-bar::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+  border-radius: 3px;
+}
+
+.drawing-settings-bar::-webkit-scrollbar-thumb {
+  background: var(--bg-hover);
+  border-radius: 3px;
+  border: 1px solid var(--bg-secondary);
+}
+
+.drawing-settings-bar::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* セクション */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ラベル */
+.settings-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* 行レイアウト */
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-row .settings-label {
+  flex: 1;
+}
+
+/* 入力フィールド */
+.settings-input {
+  width: 56px;
+  padding: 4px 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* スピンボタン（アップダウンボタン）を非表示 */
+.settings-input::-webkit-outer-spin-button,
+.settings-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.settings-input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.settings-input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+.settings-input.large {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 16px;
+  text-align: left;
+}
+
+/* グレーアウト状態（フォーカス時以外） */
+.settings-input.grayed {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  opacity: 0.6;
+  transition: all 0.2s ease;
+}
+
+.settings-input.grayed:focus {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  opacity: 1;
+}
+
+/* 単位 */
+.settings-unit {
+  font-size: 11px;
+  color: var(--text-secondary);
+  min-width: 20px;
+}
+
+/* スライダー */
+.settings-slider {
+  width: 100%;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+.settings-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #00bcd4;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.settings-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+
+.settings-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: #00bcd4;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.settings-slider::-moz-range-track {
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+}
+
+/* 線の太さスライダー（オレンジ） */
+.settings-slider.stroke-width-slider::-webkit-slider-thumb {
+  background: #ff9800;
+}
+
+.settings-slider.stroke-width-slider::-moz-range-thumb {
+  background: #ff9800;
+}
+
+/* カラーパレット */
+.color-palette {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 3px;
+}
+
+.color-swatch {
+  width: 21px;
+  height: 21px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.color-swatch:hover {
+  transform: scale(1.15);
+}
+
+.color-swatch.active {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 1px var(--bg-secondary), 0 0 0 2px var(--accent-color);
+}
+
+.color-swatch.custom {
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-color);
+}
+
+.color-swatch.custom.active {
+  border-style: solid;
+}
+
+.hidden-color-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+  height: 0;
+}
+
+/* グラデーションバー */
+.color-gradient {
+  display: flex;
+  height: 12px;
+  border-radius: 3px;
+  overflow: visible;
+}
+
+.gradient-segment {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+  background: inherit;
+}
+
+.gradient-segment:hover {
+  transform: scaleY(1.3);
+  z-index: 1;
+}
+
+.gradient-segment:first-child {
+  border-radius: 3px 0 0 3px;
+}
+
+.gradient-segment:last-child {
+  border-radius: 0 3px 3px 0;
+}
