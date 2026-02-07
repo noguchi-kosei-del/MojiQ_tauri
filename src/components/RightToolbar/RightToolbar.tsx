@@ -70,7 +70,7 @@ const FileIcon = () => (
 const MEMO_STORAGE_KEY = 'mojiq_memo';
 
 export const RightToolbar: React.FC = () => {
-  const { history, historyIndex, undo, redo, clearHistory, tool, setTool, setColor, setCurrentStampType } = useDrawingStore();
+  const { history, historyIndex, undo, redo, clearHistory, tool, setTool, setColor, setCurrentStampType, pdfDocument } = useDrawingStore();
   const { isActive: isViewerMode } = useViewerModeStore();
   const { isRightCollapsed, toggleRightSidebar } = useSidebarStore();
   const { fontSizes, fonts, selectedFontSize, selectedFont, selectFontSize, selectFont, appendWorkSpec, clearFonts, addFont, removeFont, updateFont, fontColorIndex } = usePresetStore();

@@ -1,5 +1,6 @@
 /* 描画設定バー */
 .drawing-settings-bar {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 180px;
@@ -59,6 +60,7 @@
   flex-direction: column;
   gap: 16px;
   padding: 12px;
+  padding-bottom: 60px; /* 下部アクションボタン用の余白 */
   flex: 1;
   opacity: 1;
   transition: opacity 0.2s ease;
@@ -302,4 +304,62 @@
 
 .gradient-segment:last-child {
   border-radius: 0 3px 3px 0;
+}
+
+/* 下部アクションボタン (旧MojiQスタイル) */
+.sidebar-bottom-actions {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px;
+  display: flex;
+  justify-content: flex-start;
+  gap: 4px;
+  background: transparent;
+  border-top: 1px solid var(--border-color);
+}
+
+.sidebar-bottom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: color 0.2s, background-color 0.2s;
+}
+
+.sidebar-bottom-btn:hover:not(:disabled) {
+  color: #1976d2;
+  background: var(--bg-hover);
+}
+
+.sidebar-bottom-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.sidebar-bottom-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* アクティブ状態（非表示中） */
+.sidebar-bottom-btn.active {
+  color: #f44336;
+  background: rgba(244, 67, 54, 0.1);
+}
+
+.sidebar-bottom-btn.active:hover:not(:disabled) {
+  background: rgba(244, 67, 54, 0.15);
+}
+
+.sidebar-bottom-btn.active svg {
+  stroke: #f44336;
 }

@@ -1,11 +1,7 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React from 'react';
 import { useDrawingStore } from '../../stores/drawingStore';
 import { useSidebarStore } from '../../stores/sidebarStore';
-import { ToolType } from '../../types';
 import './DrawingToolbar.css';
-
-// 長押し時間（ミリ秒）
-const LONG_PRESS_DURATION = 400;
 
 // 折りたたみボタンアイコン
 const CollapseLeftIcon = () => (
@@ -153,131 +149,9 @@ const TextIcon = () => (
   </svg>
 );
 
-type ShapeToolType = 'rect' | 'ellipse' | 'line';
-type AnnotatedToolType = 'rectAnnotated' | 'ellipseAnnotated' | 'lineAnnotated';
-
-interface ShapeToolButtonProps {
-  baseTool: ShapeToolType;
-  annotatedTool: AnnotatedToolType;
-  currentTool: ToolType;
-  setTool: (tool: ToolType) => void;
-  icon: React.ReactNode;
-  annotatedIcon: React.ReactNode;
-  title: string;
-  shortcut: string;
-  isAnnotatedMode: boolean;
-  setAnnotatedMode: (isAnnotated: boolean) => void;
-}
-
-const ShapeToolButton: React.FC<ShapeToolButtonProps> = ({
-  baseTool,
-  annotatedTool,
-  currentTool,
-  setTool,
-  icon,
-  annotatedIcon,
-  title,
-  shortcut,
-  isAnnotatedMode,
-  setAnnotatedMode,
-}) => {
-  const [showPopup, setShowPopup] = useState(false);
-  const longPressTimerRef = useRef<number | null>(null);
-
-  const isActive = currentTool === baseTool || currentTool === annotatedTool;
-
-  const handlePointerDown = useCallback(() => {
-    longPressTimerRef.current = window.setTimeout(() => {
-      setShowPopup(true);
-      longPressTimerRef.current = null;
-    }, LONG_PRESS_DURATION);
-  }, []);
-
-  const handlePointerUp = useCallback(() => {
-    if (longPressTimerRef.current !== null) {
-      // 長押しがキャンセルされた場合は通常のクリック
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-      // 記憶されたモードに応じて切り替え
-      setTool(isAnnotatedMode ? annotatedTool : baseTool);
-    }
-  }, [baseTool, annotatedTool, isAnnotatedMode, setTool]);
-
-  const handlePointerLeave = useCallback(() => {
-    if (longPressTimerRef.current !== null) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  }, []);
-
-  const handleSelectBaseTool = useCallback(() => {
-    setAnnotatedMode(false);
-    setTool(baseTool);
-    setShowPopup(false);
-  }, [baseTool, setTool, setAnnotatedMode]);
-
-  const handleSelectAnnotatedTool = useCallback(() => {
-    setAnnotatedMode(true);
-    setTool(annotatedTool);
-    setShowPopup(false);
-  }, [annotatedTool, setTool, setAnnotatedMode]);
-
-  const handleClosePopup = useCallback(() => {
-    setShowPopup(false);
-  }, []);
-
-  return (
-    <div className="shape-tool-container">
-      <button
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerLeave}
-        onPointerCancel={handlePointerLeave}
-        className={`${isActive ? 'active' : ''} ${isAnnotatedMode ? 'annotated-mode' : ''}`}
-        title={isAnnotatedMode ? `${title}＋テキスト指示 (${shortcut})` : `${title} (${shortcut})`}
-      >
-        {isAnnotatedMode ? annotatedIcon : icon}
-        {!isAnnotatedMode && <span className="tool-indicator" />}
-        <span className="popup-indicator">
-          <svg width="5" height="6" viewBox="0 0 5 6" fill="currentColor">
-            <path d="M0 0L5 3L0 6Z"/>
-          </svg>
-        </span>
-      </button>
-
-      {showPopup && (
-        <>
-          <div className="popup-overlay" onClick={handleClosePopup} />
-          <div className="tool-popup">
-            <button
-              onClick={handleSelectBaseTool}
-              className={!isAnnotatedMode ? 'active' : ''}
-              title={title}
-            >
-              {icon}
-            </button>
-            <button
-              onClick={handleSelectAnnotatedTool}
-              className={isAnnotatedMode ? 'active' : ''}
-              title={`${title}+テキスト`}
-            >
-              {annotatedIcon}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
-
 export const DrawingToolbar: React.FC = () => {
   const { tool, setTool } = useDrawingStore();
   const { isToolbarCollapsed, toggleToolbar } = useSidebarStore();
-
-  // 各図形ツールの+テキストモードを記憶
-  const [rectAnnotatedMode, setRectAnnotatedMode] = useState(false);
-  const [ellipseAnnotatedMode, setEllipseAnnotatedMode] = useState(false);
-  const [lineAnnotatedMode, setLineAnnotatedMode] = useState(false);
 
   return (
     <div className={`drawing-toolbar ${isToolbarCollapsed ? 'collapsed' : ''}`}>
@@ -335,44 +209,59 @@ export const DrawingToolbar: React.FC = () => {
             <TextIcon />
           </button>
 
-          <ShapeToolButton
-            baseTool="rect"
-            annotatedTool="rectAnnotated"
-            currentTool={tool}
-            setTool={setTool}
-            icon={<RectIcon />}
-            annotatedIcon={<RectAnnotatedIcon />}
-            title="枠線"
-            shortcut="R"
-            isAnnotatedMode={rectAnnotatedMode}
-            setAnnotatedMode={setRectAnnotatedMode}
-          />
+          {/* 枠線グループ */}
+          <div className="tool-group">
+            <button
+              onClick={() => setTool('rect')}
+              className={tool === 'rect' ? 'active' : ''}
+              title="枠線 (R)"
+            >
+              <RectIcon />
+            </button>
+            <button
+              onClick={() => setTool('rectAnnotated')}
+              className={`annotated-btn ${tool === 'rectAnnotated' ? 'active' : ''}`}
+              title="枠線+テキスト"
+            >
+              <RectAnnotatedIcon />
+            </button>
+          </div>
 
-          <ShapeToolButton
-            baseTool="ellipse"
-            annotatedTool="ellipseAnnotated"
-            currentTool={tool}
-            setTool={setTool}
-            icon={<EllipseIcon />}
-            annotatedIcon={<EllipseAnnotatedIcon />}
-            title="楕円"
-            shortcut="O"
-            isAnnotatedMode={ellipseAnnotatedMode}
-            setAnnotatedMode={setEllipseAnnotatedMode}
-          />
+          {/* 楕円グループ */}
+          <div className="tool-group">
+            <button
+              onClick={() => setTool('ellipse')}
+              className={tool === 'ellipse' ? 'active' : ''}
+              title="楕円 (O)"
+            >
+              <EllipseIcon />
+            </button>
+            <button
+              onClick={() => setTool('ellipseAnnotated')}
+              className={`annotated-btn ${tool === 'ellipseAnnotated' ? 'active' : ''}`}
+              title="楕円+テキスト"
+            >
+              <EllipseAnnotatedIcon />
+            </button>
+          </div>
 
-          <ShapeToolButton
-            baseTool="line"
-            annotatedTool="lineAnnotated"
-            currentTool={tool}
-            setTool={setTool}
-            icon={<LineIcon />}
-            annotatedIcon={<LineAnnotatedIcon />}
-            title="直線"
-            shortcut="L"
-            isAnnotatedMode={lineAnnotatedMode}
-            setAnnotatedMode={setLineAnnotatedMode}
-          />
+          {/* 直線グループ */}
+          <div className="tool-group">
+            <button
+              onClick={() => setTool('line')}
+              className={tool === 'line' ? 'active' : ''}
+              title="直線 (L)"
+            >
+              <LineIcon />
+            </button>
+            <button
+              onClick={() => setTool('lineAnnotated')}
+              className={`annotated-btn ${tool === 'lineAnnotated' ? 'active' : ''}`}
+              title="直線+テキスト"
+            >
+              <LineAnnotatedIcon />
+            </button>
+          </div>
 
           <button
             onClick={() => setTool('arrow')}

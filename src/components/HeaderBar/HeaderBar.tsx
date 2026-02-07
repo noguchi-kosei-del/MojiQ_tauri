@@ -6,13 +6,13 @@ import { useSpreadViewStore, BindingDirection } from '../../stores/spreadViewSto
 import { useViewerModeStore } from '../../stores/viewerModeStore';
 import { useThemeStore } from '../../stores/themeStore';
 import { useZoomStore } from '../../stores/zoomStore';
-import { usePageNavStore } from '../../stores/pageNavStore';
 import { open, save, ask, message } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LoadedDocument, PageState, Layer } from '../../types';
 import { loadPdfDocument as loadPdfDocumentFromFile } from '../../utils/pdfRenderer';
 import { HamburgerMenu } from '../HamburgerMenu';
+import MojiQLogo from '../../../logo/MojiQ_icon.png';
 import './HeaderBar.css';
 
 // SVG Icons
@@ -108,22 +108,6 @@ const ViewerModeIcon = () => (
     <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
     <line x1="8" y1="21" x2="16" y2="21"/>
     <line x1="12" y1="17" x2="12" y2="21"/>
-  </svg>
-);
-
-// Page nav show icon
-const PageNavShowIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="10" width="18" height="4" rx="2"/>
-    <circle cx="8" cy="12" r="1" fill="currentColor"/>
-  </svg>
-);
-
-// Page nav hide icon
-const PageNavHideIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="10" width="18" height="4" rx="2" strokeDasharray="3 2"/>
-    <line x1="1" y1="1" x2="23" y2="23"/>
   </svg>
 );
 
@@ -224,7 +208,6 @@ export const HeaderBar: React.FC = () => {
   const { isActive: isViewerMode, enter: enterViewerMode, exit: exitViewerMode } = useViewerModeStore();
   const { theme, setTheme } = useThemeStore();
   const { zoom, setZoom, minZoom, maxZoom } = useZoomStore();
-  const { isPageNavHidden, togglePageNavHidden } = usePageNavStore();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSpreadMenuOpen, setIsSpreadMenuOpen] = useState(false);
@@ -820,6 +803,9 @@ export const HeaderBar: React.FC = () => {
   return (
     <>
       <div className="header-bar">
+        <div className="header-logo">
+          <img src={MojiQLogo} alt="MojiQ" className="header-logo-img" />
+        </div>
         <div className="header-hamburger">
           <button onClick={toggleMenu} title="メニュー" className="hamburger-btn">
             <HamburgerIcon />
@@ -953,16 +939,6 @@ export const HeaderBar: React.FC = () => {
           >
             <ViewerModeIcon />
           </button>
-
-          {/* ページバー表示/非表示ボタン */}
-          {pages.length > 1 && (
-            <button
-              onClick={togglePageNavHidden}
-              title={isPageNavHidden ? 'ページバーを表示' : 'ページバーを非表示'}
-            >
-              {isPageNavHidden ? <PageNavHideIcon /> : <PageNavShowIcon />}
-            </button>
-          )}
         </div>
 
         {/* ドラッグ領域（タイトルバー代わり） */}

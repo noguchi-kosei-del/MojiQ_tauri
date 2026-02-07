@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 import { Point, Stroke, Shape, ShapeType, SelectionBounds, Annotation, TextElement, ImageElement, StampType } from '../types';
 import { useDrawingStore } from '../stores/drawingStore';
 import { usePresetStore } from '../stores/presetStore';
+import { useCommentVisibilityStore } from '../stores/commentVisibilityStore';
 
 // アノテーションモード: 0=通常, 1=図形描画中, 2=引出線描画中
 type AnnotationState = 0 | 1 | 2;
@@ -114,6 +115,9 @@ export const useCanvas = () => {
     updateShape,
   } = useDrawingStore();
 
+  // コメントテキスト表示/非表示状態
+  const { isHidden: isCommentHidden } = useCommentVisibilityStore();
+
   const getCurrentPageState = useCallback(() => {
     return pages[currentPage];
   }, [pages, currentPage]);
@@ -137,10 +141,16 @@ export const useCanvas = () => {
   const getAllTexts = useCallback(() => {
     const pageState = pages[currentPage];
     if (!pageState) return [];
-    return pageState.layers
+    const allTexts = pageState.layers
       .filter((l) => l.visible)
       .flatMap((l) => l.texts);
-  }, [pages, currentPage]);
+
+    // コメントテキスト非表示モードの場合、PDF注釈由来のテキストをフィルタリング
+    if (isCommentHidden) {
+      return allTexts.filter((text) => !text.pdfAnnotationSource);
+    }
+    return allTexts;
+  }, [pages, currentPage, isCommentHidden]);
 
   const getLocalAllImages = useCallback(() => {
     const pageState = pages[currentPage];
@@ -2074,11 +2084,11 @@ export const useCanvas = () => {
     };
   }, [handlePointerDown, handlePointerMove, handlePointerUp]);
 
-  // Redraw when page changes or selection changes
+  // Redraw when page changes, selection changes, or comment visibility changes
   useEffect(() => {
     drawBackground();
     redrawCanvas();
-  }, [currentPage, pages, drawBackground, redrawCanvas, selectedStrokeIds, selectionBounds]);
+  }, [currentPage, pages, drawBackground, redrawCanvas, selectedStrokeIds, selectionBounds, isCommentHidden]);
 
   // アノテーションテキスト入力完了時のコールバック
   const handleAnnotationSubmit = useCallback(

@@ -1,5 +1,5 @@
 import * as pdfjsLib from 'pdfjs-dist';
-import type { PageData, PdfAnnotationText, PdfPageInfo } from '../types';
+import type { PageData, PdfAnnotationText, PdfPageInfo, PdfAnnotationSourceType } from '../types';
 
 // PDF.js worker setup
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -57,8 +57,8 @@ function convertPdfAnnotationToTextObject(
   }
 
   // サポートする注釈タイプをチェック（Popupは除外）
-  const supportedTypes = ['Text', 'FreeText', 'Highlight', 'Underline', 'StrikeOut'];
-  if (!annot.subtype || !supportedTypes.includes(annot.subtype)) {
+  const supportedTypes: PdfAnnotationSourceType[] = ['Text', 'FreeText', 'Highlight', 'Underline', 'StrikeOut'];
+  if (!annot.subtype || !supportedTypes.includes(annot.subtype as PdfAnnotationSourceType)) {
     return null;
   }
 
@@ -83,6 +83,8 @@ function convertPdfAnnotationToTextObject(
     color: color,
     fontSize: fontSize,
     isVertical: false,
+    // PDF注釈の種類を保持（表示/非表示フィルタリング用）
+    pdfAnnotationSource: annot.subtype as PdfAnnotationSourceType,
   };
 }
 

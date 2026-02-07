@@ -210,6 +210,8 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
           fontSize: annot.fontSize,
           isVertical: annot.isVertical,
           layerId: layerId,
+          // PDF注釈の種類を保持（表示/非表示フィルタリング用）
+          pdfAnnotationSource: annot.pdfAnnotationSource,
         }));
       }
 
@@ -251,6 +253,8 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
           fontSize: annot.fontSize,
           isVertical: annot.isVertical,
           layerId: layerId,
+          // PDF注釈の種類を保持（表示/非表示フィルタリング用）
+          pdfAnnotationSource: annot.pdfAnnotationSource,
         }));
       }
 

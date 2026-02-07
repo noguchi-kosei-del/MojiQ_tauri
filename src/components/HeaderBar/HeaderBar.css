@@ -8,6 +8,18 @@
   flex-shrink: 0;
 }
 
+.header-logo {
+  display: flex;
+  align-items: center;
+  margin-right: 8px;
+}
+
+.header-logo-img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
 .header-hamburger {
   display: flex;
   margin-right: 8px;

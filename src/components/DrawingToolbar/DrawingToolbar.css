@@ -116,141 +116,35 @@
   margin: 4px 0;
 }
 
-/* Shape tool container with popup */
-.shape-tool-container {
-  position: relative;
-}
-
-.shape-tool-container > button {
-  position: relative;
-}
-
-/* +テキストモード時のインジケーター */
-.shape-tool-container > button.annotated-mode .tool-indicator {
-  position: absolute;
-  bottom: 2px;
-  right: 2px;
-  width: 6px;
-  height: 6px;
-  background-color: #fff;
-  border-radius: 50%;
-  box-shadow: 0 0 2px rgba(0, 0, 0, 0.3);
-}
-
-.shape-tool-container > button:not(.annotated-mode) .tool-indicator {
-  display: none;
-}
-
-/* 長押しインジケーター（▶マーク） */
-.shape-tool-container > button .popup-indicator {
-  position: absolute;
-  bottom: 2px;
-  right: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.5;
-  color: currentColor;
-  pointer-events: none;
-}
-
-.shape-tool-container > button .popup-indicator svg {
-  width: 5px;
-  height: 6px;
-}
-
-/* Popup overlay */
-.popup-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 999;
-}
-
-/* Tool popup */
-.tool-popup {
-  position: absolute;
-  left: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  margin-left: 8px;
+/* ツールグループ（縦並び） */
+.tool-group {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 6px;
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
-  white-space: nowrap;
-  animation: popup-appear 0.15s ease-out;
 }
 
-@keyframes popup-appear {
-  from {
-    opacity: 0;
-    transform: translateY(-50%) translateX(-5px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(-50%) translateX(0);
-  }
-}
-
-.tool-popup::before {
-  content: '';
-  position: absolute;
-  left: -6px;
-  top: 50%;
-  transform: translateY(-50%);
-  border: 6px solid transparent;
-  border-right-color: var(--border-color);
-}
-
-.tool-popup::after {
-  content: '';
-  position: absolute;
-  left: -5px;
-  top: 50%;
-  transform: translateY(-50%);
-  border: 5px solid transparent;
-  border-right-color: var(--bg-secondary);
-}
-
-.tool-popup button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  width: auto;
-  height: auto;
-  background-color: transparent;
-  border: none;
-  border-radius: 4px;
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: 12px;
-  transition: background-color 0.15s;
-}
-
-.tool-popup button:hover {
+/* +テキスト付きボタン（小さめ） */
+.tool-group .annotated-btn {
+  width: 30px;
+  height: 22px;
   background-color: var(--bg-hover);
+  border: 1px dashed var(--border-color);
 }
 
-.tool-popup button.active {
+.tool-group .annotated-btn:hover:not(:disabled) {
+  background-color: var(--bg-tertiary);
+}
+
+.tool-group .annotated-btn.active {
   background-color: var(--accent-color);
+  border-color: var(--accent-color);
+  border-style: solid;
   color: #fff;
 }
 
-.tool-popup button svg {
-  flex-shrink: 0;
-}
-
-.tool-popup button span {
-  white-space: nowrap;
+.tool-group .annotated-btn svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* Viewer mode - hide drawing toolbar */

@@ -21,6 +21,7 @@ import { useThemeStore } from './stores/themeStore';
 import { useViewerModeStore } from './stores/viewerModeStore';
 import { useWorkspaceStore } from './stores/workspaceStore';
 import { useSpreadViewStore } from './stores/spreadViewStore';
+import { useCommentVisibilityStore } from './stores/commentVisibilityStore';
 import { LoadedDocument } from './types';
 import { renderPdfToImages } from './utils/pdfRenderer';
 import './App.css';
@@ -48,6 +49,7 @@ function App() {
   const { isActive: isViewerMode, enter: enterViewerMode, exit: exitViewerMode } = useViewerModeStore();
   const { isFlipped } = useWorkspaceStore();
   const { isSpreadView, nextSpread, prevSpread, bindingDirection, disableSpreadView } = useSpreadViewStore();
+  const { toggle: toggleCommentVisibility } = useCommentVisibilityStore();
 
   // ページナビゲーション用の状態
   const isNavigatingRef = useRef(false);
@@ -577,6 +579,11 @@ function App() {
           e.preventDefault();
           redo();
         }
+        // Ctrl+T: コメントテキスト表示/非表示
+        else if (e.key === 't') {
+          e.preventDefault();
+          toggleCommentVisibility();
+        }
         // Zoom In: Ctrl + + or Ctrl + =
         else if (e.key === '+' || e.key === '=' || e.key === ';') {
           e.preventDefault();
@@ -685,7 +692,7 @@ function App() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [undo, redo, resetZoom, tool, setTool, selectedStrokeIds, selectedTextIds, deleteSelectedStrokes, pages, currentPage, setCurrentPage, isViewerMode, handleEnterViewerMode, handleExitViewerMode, navigatePageInViewerMode, clearAllDrawings, activeDocumentId, getDocumentState, syncFromDrawingStore, closeDocument, getTabInfoList, switchDocument, getDocumentForDrawingStore, restoreDocumentState, isSpreadView, nextSpread, prevSpread, bindingDirection]);
+  }, [undo, redo, resetZoom, tool, setTool, selectedStrokeIds, selectedTextIds, deleteSelectedStrokes, pages, currentPage, setCurrentPage, isViewerMode, handleEnterViewerMode, handleExitViewerMode, navigatePageInViewerMode, clearAllDrawings, activeDocumentId, getDocumentState, syncFromDrawingStore, closeDocument, getTabInfoList, switchDocument, getDocumentForDrawingStore, restoreDocumentState, isSpreadView, nextSpread, prevSpread, bindingDirection, toggleCommentVisibility]);
 
   // ホイールスクロールでページ送り（閲覧モード時）
   useEffect(() => {

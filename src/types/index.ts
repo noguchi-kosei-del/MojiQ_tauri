@@ -18,6 +18,9 @@ export type StampType =
   | 'kaigyouStamp'    // 改行スタンプ
   | 'komojiStamp';    // 小文字スタンプ（○に小）
 
+// PDF注釈のソースタイプ
+export type PdfAnnotationSourceType = 'Text' | 'FreeText' | 'Highlight' | 'Underline' | 'StrikeOut';
+
 // テキスト要素
 export interface TextElement {
   id: string;
@@ -28,6 +31,8 @@ export interface TextElement {
   fontSize: number;
   isVertical: boolean;
   layerId: string;
+  // PDF注釈由来の場合、注釈タイプを保持
+  pdfAnnotationSource?: PdfAnnotationSourceType;
 }
 
 // アノテーション（引出線 + テキスト指示）
@@ -118,6 +123,8 @@ export interface PdfAnnotationText {
   color: string;
   fontSize: number;
   isVertical: boolean;
+  // PDF注釈の種類（表示/非表示フィルタリング用）
+  pdfAnnotationSource: PdfAnnotationSourceType;
 }
 
 export interface LoadedDocument {

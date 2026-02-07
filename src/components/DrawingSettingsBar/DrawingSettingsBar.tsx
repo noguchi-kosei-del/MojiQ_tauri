@@ -4,6 +4,8 @@ import { usePresetStore } from '../../stores/presetStore';
 import { useSidebarStore } from '../../stores/sidebarStore';
 import { useBgOpacityStore } from '../../stores/bgOpacityStore';
 import { useViewerModeStore } from '../../stores/viewerModeStore';
+import { usePageNavStore } from '../../stores/pageNavStore';
+import { useCommentVisibilityStore } from '../../stores/commentVisibilityStore';
 import './DrawingSettingsBar.css';
 
 // 折りたたみボタンアイコン
@@ -16,6 +18,41 @@ const CollapseLeftIcon = () => (
 const ExpandRightIcon = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="9 18 15 12 9 6" />
+  </svg>
+);
+
+// Page nav show icon
+const PageNavShowIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="10" width="18" height="4" rx="2"/>
+    <circle cx="8" cy="12" r="1" fill="currentColor"/>
+  </svg>
+);
+
+// Page nav hide icon
+const PageNavHideIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="10" width="18" height="4" rx="2" strokeDasharray="3 2"/>
+    <line x1="1" y1="1" x2="23" y2="23"/>
+  </svg>
+);
+
+// Comment text show icon
+const CommentShowIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="3" ry="3"/>
+    <path d="M8 8h8"/>
+    <path d="M12 8v9"/>
+  </svg>
+);
+
+// Comment text hide icon
+const CommentHideIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="3" ry="3" strokeDasharray="3 2"/>
+    <path d="M8 8h8" strokeDasharray="3 2"/>
+    <path d="M12 8v9" strokeDasharray="3 2"/>
+    <line x1="4" y1="4" x2="20" y2="20"/>
   </svg>
 );
 
@@ -32,11 +69,13 @@ const GRADIENT_COLORS = [
 ];
 
 export const DrawingSettingsBar: React.FC = () => {
-  const { color, setColor, strokeWidth, setStrokeWidth } = useDrawingStore();
+  const { color, setColor, strokeWidth, setStrokeWidth, pages, pdfDocument } = useDrawingStore();
   const { selectedFontSize, selectFontSize } = usePresetStore();
   const { isSettingsBarCollapsed, toggleSettingsBar } = useSidebarStore();
   const { bgOpacity, setBgOpacity } = useBgOpacityStore();
   const { isActive: isViewerMode } = useViewerModeStore();
+  const { isPageNavHidden, togglePageNavHidden } = usePageNavStore();
+  const { isHidden: isCommentHidden, toggle: toggleCommentVisibility } = useCommentVisibilityStore();
 
   // カラーピッカーref
   const colorInputRef = useRef<HTMLInputElement>(null);
@@ -218,6 +257,29 @@ export const DrawingSettingsBar: React.FC = () => {
           className="settings-input large grayed"
         />
       </div>
+
+        </div>
+      )}
+
+      {/* 下部アイコン - 折りたたみ時は非表示 */}
+      {!isSettingsBarCollapsed && (
+        <div className="sidebar-bottom-actions">
+          <button
+            className={`sidebar-bottom-btn ${isPageNavHidden ? 'active' : ''}`}
+            onClick={togglePageNavHidden}
+            disabled={pages.length <= 1}
+            title={isPageNavHidden ? 'ページバー表示' : 'ページバー非表示'}
+          >
+            {isPageNavHidden ? <PageNavHideIcon /> : <PageNavShowIcon />}
+          </button>
+          <button
+            className={`sidebar-bottom-btn ${isCommentHidden ? 'active' : ''}`}
+            onClick={toggleCommentVisibility}
+            disabled={!pdfDocument}
+            title={isCommentHidden ? 'コメントテキスト表示 (Ctrl+T)' : 'コメントテキスト非表示 (Ctrl+T)'}
+          >
+            {isCommentHidden ? <CommentHideIcon /> : <CommentShowIcon />}
+          </button>
         </div>
       )}
     </div>
