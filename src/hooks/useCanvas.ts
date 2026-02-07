@@ -3,6 +3,7 @@ import { Point, Stroke, Shape, ShapeType, SelectionBounds, Annotation, TextEleme
 import { useDrawingStore } from '../stores/drawingStore';
 import { usePresetStore } from '../stores/presetStore';
 import { useCommentVisibilityStore } from '../stores/commentVisibilityStore';
+import { backgroundImageCache } from '../utils/backgroundImageCache';
 
 // アノテーションモード: 0=通常, 1=図形描画中, 2=引出線描画中
 type AnnotationState = 0 | 1 | 2;
@@ -1319,13 +1320,48 @@ export const useCanvas = () => {
     }
   }, [getAllStrokes, getAllShapes, getAllTexts, getLocalAllImages, drawStroke, drawShape, drawText, drawImage, drawImagePreview, isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, labeledRectPhase, tool, color, strokeWidth, selectedStrokeIds, selectionBounds, drawSelectionBounds, clearSelectionCanvas, drawLeaderPreview, selectedAnnotationShapeId, drawAnnotationSelectionBox, drawTextSelectionBox, selectedFontLabelShapeId, drawFontLabelSelectionBox]);
 
-  const drawBackground = useCallback(() => {
+  const drawBackground = useCallback(async () => {
     const canvas = backgroundCanvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
 
     const pageState = getCurrentPageState();
-    if (!pageState?.backgroundImage) {
+
+    // キャッシュにある場合は即座に描画
+    if (backgroundImageCache.has(currentPage)) {
+      const cachedImg = backgroundImageCache.get(currentPage);
+      if (cachedImg) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(cachedImg, 0, 0, canvas.width, canvas.height);
+        return;
+      }
+    }
+
+    // 背景画像のソースを決定
+    let imageSource: string | null = null;
+
+    // 1. 既にbackgroundImageがある場合はそれを使用
+    if (pageState?.backgroundImage) {
+      imageSource = pageState.backgroundImage;
+    }
+    // 2. リンク方式の場合はキャッシュから取得
+    else if (pageState?.imageLink?.type === 'file') {
+      try {
+        const { getPageImageAsync } = useDrawingStore.getState();
+        imageSource = await getPageImageAsync(currentPage);
+      } catch (error) {
+        console.error('Failed to load linked image:', error);
+        // エラー時は白背景
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        return;
+      }
+    }
+
+    // 画像ソースがない場合は白背景
+    if (!imageSource) {
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       return;
@@ -1333,13 +1369,15 @@ export const useCanvas = () => {
 
     const img = new Image();
     img.onload = () => {
+      // キャッシュに保存
+      backgroundImageCache.set(currentPage, img);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     };
-    img.src = pageState.backgroundImage;
-  }, [getCurrentPageState]);
+    img.src = imageSource;
+  }, [getCurrentPageState, currentPage]);
 
   const handlePointerDown = useCallback(
     (e: PointerEvent) => {

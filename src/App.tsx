@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { setTheme as setTauriTheme } from '@tauri-apps/api/app';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { CloseConfirmDialog, CloseConfirmResult } from './components/CloseConfirmDialog';
+import { SettingsModal } from './components/SettingsModal/SettingsModal';
 import { DrawingCanvas, SpreadCanvas } from './components/Canvas';
 import { DrawingToolbar } from './components/DrawingToolbar';
 import { DrawingSettingsBar } from './components/DrawingSettingsBar';
@@ -22,8 +23,9 @@ import { useViewerModeStore } from './stores/viewerModeStore';
 import { useWorkspaceStore } from './stores/workspaceStore';
 import { useSpreadViewStore } from './stores/spreadViewStore';
 import { useCommentVisibilityStore } from './stores/commentVisibilityStore';
-import { LoadedDocument } from './types';
+import { LoadedDocument, FileMetadata } from './types';
 import { renderPdfToImages } from './utils/pdfRenderer';
+import { preloadAllBackgroundImages } from './utils/backgroundImageCache';
 import './App.css';
 
 // 定数
@@ -31,7 +33,7 @@ const ZOOM_ANIMATION_DURATION = 300;
 const NAVIGATE_COOLDOWN_MS = 150;
 
 function App() {
-  const { loadDocument, loadDocumentWithAnnotations, undo, redo, pages, currentPage, setCurrentPage, tool, setTool, selectedStrokeIds, selectedTextIds, deleteSelectedStrokes, clearAllDrawings, getDocumentState, restoreDocumentState, clearDocument } = useDrawingStore();
+  const { loadDocument, loadDocumentWithAnnotations, loadDocumentWithLinks, loadAllPageImages, undo, redo, pages, currentPage, setCurrentPage, tool, setTool, selectedStrokeIds, selectedTextIds, deleteSelectedStrokes, clearAllDrawings, getDocumentState, restoreDocumentState, clearDocument } = useDrawingStore();
   const {
     activeDocumentId,
     syncFromDrawingStore,
@@ -122,8 +124,20 @@ function App() {
             if (result.file_type === 'pdf' && result.pdf_data) {
               setLoading(true, 'PDFをレンダリング中...');
               const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
-                setProgress(progress);
+                setProgress(Math.floor(progress * 0.8)); // 80%までをPDFレンダリングに使用
               });
+
+              // 背景画像をHTMLImageElementとしてプリロード（ストア更新前に実行）
+              setLoading(true, '画像をキャッシュ中...');
+              await preloadAllBackgroundImages(
+                (pageNumber) => pdfResult.pages[pageNumber]?.image_data || null,
+                pdfResult.pages.length,
+                (current, total) => {
+                  setProgress(80 + Math.floor((current / total) * 20));
+                }
+              );
+
+              // プリロード完了後にストアを更新
               loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations);
 
               // アクティブなドキュメントのタイトルとファイル情報を更新
@@ -137,7 +151,7 @@ function App() {
               }
             }
           }
-          // 複数の画像ファイルがある場合
+          // 複数の画像ファイルがある場合（リンク方式で読み込み）
           else if (imagePaths.length > 1) {
             // ファイル名でソート（自然順）
             const sortedPaths = [...imagePaths].sort((a, b) => {
@@ -146,11 +160,13 @@ function App() {
               return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
             });
 
-            const result = await invoke<LoadedDocument>('load_files', {
+            // リンク方式: メタデータのみ取得（高速）
+            setLoading(true, 'ファイル情報を取得中...');
+            const metadata = await invoke<FileMetadata[]>('load_files_metadata', {
               paths: sortedPaths,
             });
-            setProgress(100);
-            loadDocument(result.pages);
+            setProgress(20);
+            loadDocumentWithLinks(metadata);
 
             // アクティブなドキュメントのタイトルとファイル情報を更新
             const folderPath = sortedPaths[0].split(/[/\\]/);
@@ -163,6 +179,23 @@ function App() {
                 fileType: 'images',
               });
             }
+
+            // 全ページの画像を読み込む
+            setLoading(true, '画像を読み込み中...');
+            await loadAllPageImages((current, total) => {
+              setProgress(20 + Math.floor((current / total) * 60));
+            });
+
+            // 背景画像をHTMLImageElementとしてプリロード
+            setLoading(true, '画像をキャッシュ中...');
+            const loadedPages = useDrawingStore.getState().pages;
+            await preloadAllBackgroundImages(
+              (pageNumber) => loadedPages[pageNumber]?.backgroundImage || null,
+              loadedPages.length,
+              (current, total) => {
+                setProgress(80 + Math.floor((current / total) * 20));
+              }
+            );
 
             setLoading(false);
             return;
@@ -178,8 +211,20 @@ function App() {
             if (result.file_type === 'pdf' && result.pdf_data) {
               setLoading(true, 'PDFをレンダリング中...');
               const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
-                setProgress(progress);
+                setProgress(Math.floor(progress * 0.8));
               });
+
+              // 背景画像をHTMLImageElementとしてプリロード（ストア更新前に実行）
+              setLoading(true, '画像をキャッシュ中...');
+              await preloadAllBackgroundImages(
+                (pageNumber) => pdfResult.pages[pageNumber]?.image_data || null,
+                pdfResult.pages.length,
+                (current, total) => {
+                  setProgress(80 + Math.floor((current / total) * 20));
+                }
+              );
+
+              // プリロード完了後にストアを更新
               loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations);
 
               // アクティブなドキュメントのタイトルとファイル情報を更新
@@ -192,8 +237,17 @@ function App() {
                 });
               }
             } else {
-              setProgress(100);
-              await new Promise(resolve => setTimeout(resolve, 200));
+              // 背景画像をHTMLImageElementとしてプリロード（ストア更新前に実行）
+              setLoading(true, '画像をキャッシュ中...');
+              await preloadAllBackgroundImages(
+                (pageNumber) => result.pages[pageNumber]?.image_data || null,
+                result.pages.length,
+                (current, total) => {
+                  setProgress(80 + Math.floor((current / total) * 20));
+                }
+              );
+
+              // プリロード完了後にストアを更新
               loadDocument(result.pages);
 
               // アクティブなドキュメントのタイトルとファイル情報を更新
@@ -214,7 +268,7 @@ function App() {
         }
       }
     },
-    [loadDocument, loadDocumentWithAnnotations, setLoading, setProgress, updateDocument, disableSpreadView]
+    [loadDocument, loadDocumentWithAnnotations, loadDocumentWithLinks, loadAllPageImages, setLoading, setProgress, updateDocument, disableSpreadView]
   );
 
   // ドキュメント切り替え時のハンドラー
@@ -774,6 +828,9 @@ function App() {
         message={`「${closeConfirmState.docTitle}」への変更を保存しますか？`}
         onResult={handleCloseConfirmResult}
       />
+
+      {/* 環境設定モーダル */}
+      <SettingsModal />
     </div>
   );
 }

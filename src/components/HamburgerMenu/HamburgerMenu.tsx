@@ -2,6 +2,7 @@ import React, { useCallback, useEffect } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useDrawingStore } from '../../stores/drawingStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { ask } from '@tauri-apps/plugin-dialog';
 import './HamburgerMenu.css';
 
@@ -64,6 +65,13 @@ const HomeIcon = () => (
   </svg>
 );
 
+const SettingsIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+  </svg>
+);
+
 // Notion links
 const MENU_LINKS = [
   {
@@ -89,6 +97,12 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ isOpen, onToggle }
   const { theme, toggleTheme } = useThemeStore();
   const { isFlipped, toggleFlipped } = useWorkspaceStore();
   const { pages, clearDocument } = useDrawingStore();
+  const { openModal: openSettingsModal } = useSettingsStore();
+
+  const handleOpenSettings = useCallback(() => {
+    onToggle(); // メニューを閉じる
+    openSettingsModal();
+  }, [onToggle, openSettingsModal]);
 
   // Close menu on Escape key
   useEffect(() => {
@@ -170,6 +184,13 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ isOpen, onToggle }
             title={theme === 'dark' ? 'ライトモードに切り替え' : 'ダークモードに切り替え'}
           >
             {theme === 'dark' ? <MoonIcon /> : <SunIcon />}
+          </button>
+          <button
+            className="menu-icon-btn"
+            onClick={handleOpenSettings}
+            title="環境設定"
+          >
+            <SettingsIcon />
           </button>
           <button
             className="menu-icon-btn"

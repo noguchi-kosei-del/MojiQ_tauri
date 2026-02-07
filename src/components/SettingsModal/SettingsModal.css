@@ -1,0 +1,555 @@
+/* SettingsModal.css - MojiQ 3.0 環境設定モーダルスタイル */
+
+/* モーダルオーバーレイ */
+.settings-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+/* モーダルコンテンツ */
+.settings-modal-content {
+  width: 624px;
+  height: 560px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #fff;
+  color: #333;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+/* ダークモード */
+.settings-modal-content.dark {
+  background: #2d2d2d;
+  color: #e0e0e0;
+}
+
+/* ヘッダー */
+.settings-modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.settings-modal-content.dark .settings-modal-header {
+  border-bottom-color: #444;
+}
+
+.settings-modal-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* タブナビゲーション */
+.settings-tabs {
+  display: flex;
+  border-bottom: 1px solid #e0e0e0;
+  padding: 0 20px;
+  flex-shrink: 0;
+}
+
+.settings-modal-content.dark .settings-tabs {
+  border-bottom-color: #444;
+}
+
+.settings-tab {
+  padding: 12px 24px;
+  border: none;
+  background: none;
+  font-size: 14px;
+  color: #666;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  margin-bottom: -1px;
+}
+
+.settings-tab:hover {
+  color: #333;
+  background: #f5f5f5;
+}
+
+.settings-tab.active {
+  color: #1976d2;
+  border-bottom-color: #1976d2;
+  font-weight: 500;
+}
+
+.settings-modal-content.dark .settings-tab {
+  color: #aaa;
+}
+
+.settings-modal-content.dark .settings-tab:hover {
+  color: #fff;
+  background: #3a3a3a;
+}
+
+.settings-modal-content.dark .settings-tab.active {
+  color: #64b5f6;
+  border-bottom-color: #64b5f6;
+}
+
+/* タブコンテンツ */
+.settings-tab-content {
+  display: none;
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  min-height: 0;
+}
+
+.settings-tab-content.active {
+  display: flex;
+  flex-direction: column;
+}
+
+/* セクション */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+  flex-shrink: 0;
+}
+
+.settings-section-header span {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.settings-modal-content.dark .settings-section-header {
+  border-bottom-color: #444;
+}
+
+.settings-section-description {
+  font-size: 12px;
+  color: #666;
+  margin: 0 0 12px 0;
+  line-height: 1.5;
+}
+
+.settings-modal-content.dark .settings-section-description {
+  color: #999;
+}
+
+/* リセットボタン */
+.settings-reset-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  color: #666;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.settings-reset-btn:hover {
+  background: #e8e8e8;
+  color: #333;
+}
+
+.settings-modal-content.dark .settings-reset-btn {
+  background: #3a3a3a;
+  border-color: #555;
+  color: #aaa;
+}
+
+.settings-modal-content.dark .settings-reset-btn:hover {
+  background: #444;
+  color: #fff;
+}
+
+/* ショートカットリスト */
+.settings-shortcut-list {
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  min-height: 200px;
+  max-height: 350px;
+}
+
+.settings-modal-content.dark .settings-shortcut-list {
+  border-color: #444;
+}
+
+/* スクロールバー */
+.settings-shortcut-list::-webkit-scrollbar,
+.settings-tab-content::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.settings-shortcut-list::-webkit-scrollbar-track,
+.settings-tab-content::-webkit-scrollbar-track {
+  background: #e0e0e0;
+  border-radius: 6px;
+}
+
+.settings-shortcut-list::-webkit-scrollbar-thumb,
+.settings-tab-content::-webkit-scrollbar-thumb {
+  background: #bdbdbd;
+  border-radius: 6px;
+  border: 2px solid #e0e0e0;
+}
+
+.settings-shortcut-list::-webkit-scrollbar-thumb:hover,
+.settings-tab-content::-webkit-scrollbar-thumb:hover {
+  background: #9e9e9e;
+}
+
+.settings-modal-content.dark .settings-shortcut-list::-webkit-scrollbar-track,
+.settings-modal-content.dark .settings-tab-content::-webkit-scrollbar-track {
+  background: #2a2a2a;
+}
+
+.settings-modal-content.dark .settings-shortcut-list::-webkit-scrollbar-thumb,
+.settings-modal-content.dark .settings-tab-content::-webkit-scrollbar-thumb {
+  background: #555;
+  border-color: #2a2a2a;
+}
+
+.settings-modal-content.dark .settings-shortcut-list::-webkit-scrollbar-thumb:hover,
+.settings-modal-content.dark .settings-tab-content::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
+/* ショートカットアイテム */
+.settings-shortcut-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.15s;
+}
+
+.settings-shortcut-item:last-child {
+  border-bottom: none;
+}
+
+.settings-shortcut-item:hover {
+  background: #f8f9fa;
+}
+
+.settings-shortcut-item:nth-child(even) {
+  background: #fafafa;
+}
+
+.settings-shortcut-item:nth-child(even):hover {
+  background: #f0f0f0;
+}
+
+.settings-modal-content.dark .settings-shortcut-item {
+  border-bottom-color: #3a3a3a;
+}
+
+.settings-modal-content.dark .settings-shortcut-item:hover {
+  background: #3a3a3a;
+}
+
+.settings-modal-content.dark .settings-shortcut-item:nth-child(even) {
+  background: #333;
+}
+
+.settings-modal-content.dark .settings-shortcut-item:nth-child(even):hover {
+  background: #3a3a3a;
+}
+
+.settings-shortcut-label {
+  font-size: 13px;
+  flex: 1;
+}
+
+.settings-shortcut-key-btn {
+  min-width: 130px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s;
+  color: #333;
+}
+
+.settings-shortcut-key-btn:hover {
+  background: #e3f2fd;
+  border-color: #2196f3;
+}
+
+.settings-shortcut-key-btn:focus {
+  outline: none;
+  border-color: #2196f3;
+  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
+}
+
+.settings-modal-content.dark .settings-shortcut-key-btn {
+  background: #3a3a3a;
+  border-color: #555;
+  color: #e0e0e0;
+}
+
+.settings-modal-content.dark .settings-shortcut-key-btn:hover {
+  background: #1e3a5f;
+  border-color: #64b5f6;
+}
+
+/* スクロール方向オプション */
+.settings-scroll-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-scroll-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: #fff;
+}
+
+.settings-scroll-option:hover {
+  background: #f8f9fa;
+  border-color: #bbb;
+}
+
+.settings-scroll-option.selected {
+  background: #e3f2fd;
+  border-color: #2196f3;
+}
+
+.settings-scroll-option input[type="radio"] {
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.settings-scroll-option-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.settings-scroll-option-title {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.settings-scroll-option-desc {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
+}
+
+.settings-modal-content.dark .settings-scroll-option {
+  background: #333;
+  border-color: #444;
+}
+
+.settings-modal-content.dark .settings-scroll-option:hover {
+  background: #3a3a3a;
+  border-color: #555;
+}
+
+.settings-modal-content.dark .settings-scroll-option.selected {
+  background: #1e3a5f;
+  border-color: #64b5f6;
+}
+
+.settings-modal-content.dark .settings-scroll-option-desc {
+  color: #999;
+}
+
+/* モーダルアクション */
+.settings-modal-actions {
+  padding: 16px 20px;
+  border-top: 1px solid #eee;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.settings-modal-content.dark .settings-modal-actions {
+  border-top-color: #444;
+}
+
+/* ボタン */
+.settings-btn-primary {
+  padding: 8px 24px;
+  font-size: 14px;
+  background: #1976d2;
+  border: none;
+  color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.settings-btn-primary:hover {
+  background: #1565c0;
+}
+
+.settings-btn-primary:disabled {
+  background: #bdbdbd;
+  cursor: not-allowed;
+}
+
+.settings-btn-secondary {
+  padding: 8px 24px;
+  font-size: 14px;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  color: #333;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.settings-btn-secondary:hover {
+  background: #e8e8e8;
+}
+
+.settings-modal-content.dark .settings-btn-secondary {
+  background: #3a3a3a;
+  border-color: #555;
+  color: #e0e0e0;
+}
+
+.settings-modal-content.dark .settings-btn-secondary:hover {
+  background: #444;
+}
+
+/* キーキャプチャモーダル */
+.settings-key-capture-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2100;
+}
+
+.settings-key-capture-modal {
+  width: 340px;
+  padding: 20px;
+  background: #fff;
+  color: #333;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  text-align: center;
+}
+
+.settings-key-capture-modal.dark {
+  background: #2d2d2d;
+  color: #e0e0e0;
+}
+
+.settings-key-capture-title {
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.settings-key-capture-display {
+  padding: 24px 16px;
+  margin: 16px 0;
+  background: #f5f5f5;
+  border: 2px dashed #ccc;
+  border-radius: 8px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 20px;
+  font-weight: bold;
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.settings-key-capture-display.has-key {
+  background: #e8f5e9;
+  border-color: #4caf50;
+  border-style: solid;
+}
+
+.settings-key-capture-display.waiting {
+  color: #999;
+  font-weight: normal;
+  font-size: 14px;
+}
+
+.settings-key-capture-modal.dark .settings-key-capture-display {
+  background: #333;
+  border-color: #555;
+}
+
+.settings-key-capture-modal.dark .settings-key-capture-display.has-key {
+  background: #1b5e20;
+  border-color: #4caf50;
+}
+
+.settings-key-capture-modal.dark .settings-key-capture-display.waiting {
+  color: #777;
+}
+
+.settings-key-capture-hint {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 12px;
+}
+
+.settings-key-capture-conflict {
+  padding: 10px 14px;
+  background: #fff3e0;
+  border: 1px solid #ffcc80;
+  border-radius: 6px;
+  color: #e65100;
+  font-size: 12px;
+  margin-bottom: 16px;
+  text-align: left;
+}
+
+.settings-key-capture-modal.dark .settings-key-capture-conflict {
+  background: #4a3000;
+  border-color: #ff9800;
+  color: #ffb74d;
+}
+
+.settings-key-capture-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}

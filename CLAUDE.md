@@ -182,6 +182,7 @@ interface Shape {
 | `loadingStore` | ローディング状態 |
 | `presetStore` | プリセット設定 |
 | `sidebarStore` | サイドバー状態 |
+| `settingsStore` | 環境設定（ショートカット、スクロール方向等） |
 
 ## 開発・ビルド
 
@@ -213,6 +214,7 @@ MojiQ_3.0/
 │   │   ├── PageNav/         # ページナビゲーション
 │   │   ├── LayerPanel/      # レイヤーパネル
 │   │   ├── PresetPanel/     # プリセットパネル
+│   │   ├── SettingsModal/   # 環境設定モーダル
 │   │   └── ...              # その他コンポーネント
 │   ├── stores/              # Zustand状態管理
 │   │   ├── drawingStore.ts  # メイン描画状態
@@ -223,7 +225,8 @@ MojiQ_3.0/
 │   ├── types/               # 型定義
 │   │   └── index.ts
 │   └── utils/               # ユーティリティ
-│       └── pdfRenderer.ts   # PDF処理
+│       ├── pdfRenderer.ts   # PDF処理
+│       └── backgroundImageCache.ts  # 背景画像キャッシュ
 ├── src-tauri/               # Tauriバックエンド
 │   ├── src/
 │   │   ├── main.rs          # エントリーポイント
@@ -298,3 +301,20 @@ MojiQ_3.0/
 - **描画設定バー**: ページバー非表示・コメントテキスト非表示ボタンをパネル下部に移動
   - 旧MojiQ ver_2.04のレイアウトを踏襲したアイコンボタン配置
   - 折りたたみ時はボタン非表示
+
+#### ページ切り替えの高速化
+- **背景画像キャッシュ**: HTMLImageElementをキャッシュして即座に描画
+  - `src/utils/backgroundImageCache.ts` を新規作成
+  - PDF/画像読み込み時に全ページをプリロード
+  - ページ切り替え時のちらつきを解消
+
+#### 環境設定機能（旧MojiQ ver_2.04より移植）
+- **SettingsModal**: 4タブ構成の環境設定モーダル
+  - ショートカット: キーボードショートカットのカスタマイズ
+  - スクロール: マウスホイールの方向設定（通常/反転）
+  - 方向キー: ページ送り方向の設定（通常/反転）
+  - パネル動作: ツール選択後のパネル動作設定
+- **settingsStore**: Zustandによる設定状態管理
+  - localStorageへの自動保存・復元
+  - ショートカット衝突検出
+- **ハンバーガーメニュー**: 歯車アイコンで環境設定を開く（ライトモードとホームボタンの間）
