@@ -144,9 +144,31 @@ export interface PdfPageInfo {
   imageData?: string;
 }
 
+// リンク方式の画像参照（InDesignライク）
+export interface ImageLink {
+  type: 'file' | 'embedded';  // 'file'=パス参照, 'embedded'=従来のBase64
+  filePath?: string;          // 画像ファイルの絶対パス
+  mimeType: 'image/jpeg' | 'image/png';
+  width: number;
+  height: number;
+  modifiedAt?: number;        // ファイル更新検知用
+}
+
+// ファイルメタデータ（Tauriから返却）
+export interface FileMetadata {
+  file_path: string;
+  mime_type: string;
+  width: number;
+  height: number;
+  modified_at: number;
+}
+
 export interface PageState {
   pageNumber: number;
   layers: Layer[];
+  // リンク参照（推奨、新規読み込み時に使用）
+  imageLink?: ImageLink;
+  // 従来のBase64データ（後方互換性、キャッシュ用）
   backgroundImage: string;
   width: number;
   height: number;

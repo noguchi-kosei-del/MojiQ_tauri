@@ -6,6 +6,7 @@ import { useBgOpacityStore } from '../../stores/bgOpacityStore';
 import { useViewerModeStore } from '../../stores/viewerModeStore';
 import { usePageNavStore } from '../../stores/pageNavStore';
 import { useCommentVisibilityStore } from '../../stores/commentVisibilityStore';
+import { GridSettingsPanel } from '../GridSettingsPanel';
 import './DrawingSettingsBar.css';
 
 // 折りたたみボタンアイコン
@@ -21,19 +22,21 @@ const ExpandRightIcon = () => (
   </svg>
 );
 
-// Page nav show icon
+// Page nav show icon (目のアイコン - 旧MojiQ準拠)
 const PageNavShowIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="10" width="18" height="4" rx="2"/>
-    <circle cx="8" cy="12" r="1" fill="currentColor"/>
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+    <circle cx="12" cy="12" r="3"/>
   </svg>
 );
 
-// Page nav hide icon
+// Page nav hide icon (目に斜線 - 旧MojiQ準拠)
 const PageNavHideIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="10" width="18" height="4" rx="2" strokeDasharray="3 2"/>
+    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
     <line x1="1" y1="1" x2="23" y2="23"/>
+    <path d="M10.59 10.59a3 3 0 1 0 4.24 4.24"/>
   </svg>
 );
 
@@ -257,6 +260,9 @@ export const DrawingSettingsBar: React.FC = () => {
           className="settings-input large grayed"
         />
       </div>
+
+      {/* 写植グリッド設定パネル */}
+      <GridSettingsPanel />
 
         </div>
       )}

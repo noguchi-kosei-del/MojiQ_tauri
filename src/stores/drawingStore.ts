@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { DrawingState, PageState, Layer, Stroke, Shape, Point, ToolType, SelectionBounds, Annotation, TextElement, PdfAnnotationText, ImageElement, PdfPageInfo, HistoryState, StampType } from '../types';
+import { DrawingState, PageState, Layer, Stroke, Shape, Point, ToolType, SelectionBounds, Annotation, TextElement, PdfAnnotationText, ImageElement, PdfPageInfo, HistoryState, StampType, ImageLink, FileMetadata } from '../types';
 import { renderPdfPage } from '../utils/pdfRenderer';
+import { imageCache } from '../utils/imageCache';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
 const createDefaultLayer = (): Layer => ({
@@ -14,9 +15,10 @@ const createDefaultLayer = (): Layer => ({
   images: [],
 });
 
-const createDefaultPage = (pageNumber: number, backgroundImage: string, width: number, height: number): PageState => ({
+const createDefaultPage = (pageNumber: number, backgroundImage: string, width: number, height: number, imageLink?: ImageLink): PageState => ({
   pageNumber,
   layers: [createDefaultLayer()],
+  imageLink,
   backgroundImage,
   width,
   height,
@@ -29,6 +31,12 @@ interface DrawingStore extends DrawingState {
     pages: { page_number: number; image_data: string; width: number; height: number }[],
     annotations: PdfAnnotationText[][]
   ) => void;
+  // Link-based loading (InDesign-like)
+  loadDocumentWithLinks: (metadata: FileMetadata[]) => void;
+  loadAllPageImages: (onProgress?: (current: number, total: number) => void) => Promise<void>;
+  getPageImageAsync: (pageNumber: number) => Promise<string>;
+  updatePageBackgroundImage: (pageNumber: number, imageData: string) => void;
+  getImageLinks: () => (ImageLink | undefined)[];
   // PDF operations (on-demand rendering)
   loadPdfDocument: (
     pdfDocument: PDFDocumentProxy,
@@ -191,6 +199,107 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       pdfPageInfos: [],
       pdfAnnotations: [],
     });
+  },
+
+  // リンク方式でドキュメントを読み込み（InDesignライク）
+  loadDocumentWithLinks: (metadata) => {
+    const pageStates = metadata.map((m, index) => {
+      const imageLink: ImageLink = {
+        type: 'file',
+        filePath: m.file_path,
+        mimeType: m.mime_type as 'image/jpeg' | 'image/png',
+        width: m.width,
+        height: m.height,
+        modifiedAt: m.modified_at,
+      };
+      return createDefaultPage(index, '', m.width, m.height, imageLink);
+    });
+    const firstLayerId = pageStates[0]?.layers[0]?.id || '';
+
+    set({
+      pages: pageStates,
+      currentPage: 0,
+      currentLayerId: firstLayerId,
+      history: [],
+      historyIndex: -1,
+      pdfDocument: null,
+      pdfPageInfos: [],
+      pdfAnnotations: [],
+    });
+
+    // 初期状態を履歴に保存
+    get().saveToHistory();
+  },
+
+  // 全ページの画像を読み込む（保存前などに使用）
+  loadAllPageImages: async (onProgress?: (current: number, total: number) => void) => {
+    const state = get();
+    const totalPages = state.pages.length;
+
+    for (let i = 0; i < totalPages; i++) {
+      const page = state.pages[i];
+
+      // 既に画像がある場合はスキップ
+      if (page.backgroundImage) {
+        onProgress?.(i + 1, totalPages);
+        continue;
+      }
+
+      // リンク方式の場合は読み込む
+      if (page.imageLink?.type === 'file') {
+        try {
+          const imageData = await imageCache.getImage(page.imageLink);
+          get().updatePageBackgroundImage(i, imageData);
+        } catch (error) {
+          console.error(`Failed to load image for page ${i}:`, error);
+        }
+      }
+
+      onProgress?.(i + 1, totalPages);
+    }
+  },
+
+  // キャッシュ経由で画像を取得
+  getPageImageAsync: async (pageNumber) => {
+    const state = get();
+    const page = state.pages[pageNumber];
+    if (!page) {
+      throw new Error(`Page ${pageNumber} not found`);
+    }
+
+    // 既にbackgroundImageがある場合はそれを返す
+    if (page.backgroundImage) {
+      return page.backgroundImage;
+    }
+
+    // リンク方式の場合はキャッシュから取得
+    if (page.imageLink?.type === 'file') {
+      const imageData = await imageCache.getImage(page.imageLink);
+      // 取得した画像をページに設定（キャッシュとして保持）
+      get().updatePageBackgroundImage(pageNumber, imageData);
+      return imageData;
+    }
+
+    throw new Error('No image source available');
+  },
+
+  // ページの背景画像を更新
+  updatePageBackgroundImage: (pageNumber, imageData) => {
+    const state = get();
+    const updatedPages = [...state.pages];
+    if (updatedPages[pageNumber]) {
+      updatedPages[pageNumber] = {
+        ...updatedPages[pageNumber],
+        backgroundImage: imageData,
+      };
+      set({ pages: updatedPages });
+    }
+  },
+
+  // すべてのImageLinkを取得
+  getImageLinks: () => {
+    const state = get();
+    return state.pages.map(p => p.imageLink);
   },
 
   loadDocumentWithAnnotations: (pages, annotations) => {
@@ -380,6 +489,11 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       // PDFの場合、ページをオンデマンドでレンダリング
       if (state.pdfDocument) {
         get().renderCurrentPdfPage();
+      }
+      // リンク方式の場合、周辺ページをプリロード
+      const imageLinks = state.pages.map(p => p.imageLink);
+      if (imageLinks.some(link => link?.type === 'file')) {
+        imageCache.preloadPages(page, state.pages.length, imageLinks);
       }
     }
   },

@@ -670,6 +670,13 @@ function App() {
             });
           }
         }
+        // Print: Ctrl + P
+        else if (e.key === 'p') {
+          e.preventDefault();
+          if (pages.length > 0) {
+            window.dispatchEvent(new CustomEvent('mojiq-print'));
+          }
+        }
         // Tab shortcuts
         // Ctrl+W: 現在のタブを閉じる
         else if (e.key === 'w') {

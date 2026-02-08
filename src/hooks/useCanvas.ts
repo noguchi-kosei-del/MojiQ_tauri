@@ -4,6 +4,8 @@ import { useDrawingStore } from '../stores/drawingStore';
 import { usePresetStore } from '../stores/presetStore';
 import { useCommentVisibilityStore } from '../stores/commentVisibilityStore';
 import { backgroundImageCache } from '../utils/backgroundImageCache';
+import { useCalibrationStore, MM_PER_PT } from '../stores/calibrationStore';
+import { useGridStore } from '../stores/gridStore';
 
 // アノテーションモード: 0=通常, 1=図形描画中, 2=引出線描画中
 type AnnotationState = 0 | 1 | 2;
@@ -75,6 +77,24 @@ export const useCanvas = () => {
   const lastClickPosRef = useRef<Point | null>(null);
   const DOUBLE_CLICK_THRESHOLD = 300; // ms
   const DOUBLE_CLICK_DISTANCE = 10; // px
+
+  // キャリブレーション用
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const calibrationPreviewEndRef = useRef<Point | null>(null);
+
+  // グリッドリサイズ用
+  const [isResizingGrid, setIsResizingGrid] = useState(false);
+  const [resizingCorner, setResizingCorner] = useState<'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight' | null>(null);
+  const gridResizeStartRef = useRef<{ startPos: Point; width: number; height: number; mousePos: Point } | null>(null);
+
+  // グリッドドラッグ作成用
+  const [isDrawingGrid, setIsDrawingGrid] = useState(false);
+  const gridDrawStartRef = useRef<Point | null>(null);
+  const gridDrawEndRef = useRef<Point | null>(null);
+
+  // グリッド移動用
+  const [isDraggingGrid, setIsDraggingGrid] = useState(false);
+  const gridDragStartRef = useRef<{ gridStartPos: Point; mousePos: Point } | null>(null);
 
   const {
     tool,
@@ -1084,6 +1104,291 @@ export const useCanvas = () => {
     );
   }, []);
 
+  // グリッド描画関数
+  const drawGrid = useCallback((
+    ctx: CanvasRenderingContext2D,
+    grid: {
+      startPos: { x: number; y: number };
+      lines: number;
+      chars: number;
+      ptSize: number;
+      writingMode: 'horizontal' | 'vertical';
+      textData?: string;
+    },
+    pixelsPerMm: number,
+    showHandles: boolean = false
+  ) => {
+    ctx.save();
+    ctx.strokeStyle = '#00c853'; // 緑色
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+
+    const cellSize = grid.ptSize * MM_PER_PT * pixelsPerMm;
+    const isHorizontal = grid.writingMode === 'horizontal';
+    const cols = isHorizontal ? grid.chars : grid.lines;
+    const rows = isHorizontal ? grid.lines : grid.chars;
+    const width = cols * cellSize;
+    const height = rows * cellSize;
+
+    // グリッド外枠を描画
+    ctx.strokeRect(grid.startPos.x, grid.startPos.y, width, height);
+
+    // 縦線を描画
+    for (let i = 1; i < cols; i++) {
+      const x = grid.startPos.x + i * cellSize;
+      ctx.beginPath();
+      ctx.moveTo(x, grid.startPos.y);
+      ctx.lineTo(x, grid.startPos.y + height);
+      ctx.stroke();
+    }
+
+    // 横線を描画
+    for (let i = 1; i < rows; i++) {
+      const y = grid.startPos.y + i * cellSize;
+      ctx.beginPath();
+      ctx.moveTo(grid.startPos.x, y);
+      ctx.lineTo(grid.startPos.x + width, y);
+      ctx.stroke();
+    }
+
+    // テキスト描画
+    if (grid.textData && grid.textData.trim().length > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.5; // 薄く表示
+      const textLines = grid.textData.split(/\r\n|\n/);
+      const fontSize = cellSize * 0.85;
+      ctx.font = `${fontSize}px sans-serif`;
+      ctx.fillStyle = '#000';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // 句読点（位置調整が必要な文字）
+      const punctuationChars = ['、', '。', '，', '．', '｡', '､'];
+      // 半角記号（組み合わせて1セルに収める）
+      const halfWidthSymbols = ['!', '?', '？', '！'];
+      // 縦書き時に回転が必要な文字
+      const needsRotation = ['ー', '−', '―', '…', '(', ')', '（', '）', '[', ']', '「', '」', '～', '〜', '＝', '='];
+
+      if (isHorizontal) {
+        // 横書き
+        for (let lineIdx = 0; lineIdx < textLines.length && lineIdx < grid.lines; lineIdx++) {
+          const lineText = textLines[lineIdx];
+
+          // トークン配列を作成（半角記号ペアを1トークンとして結合）
+          const tokens: string[] = [];
+          let i = 0;
+          while (i < lineText.length) {
+            const char = lineText[i];
+            const nextChar = lineText[i + 1];
+            if (halfWidthSymbols.includes(char) && nextChar && halfWidthSymbols.includes(nextChar)) {
+              tokens.push(char + nextChar);
+              i += 2;
+            } else {
+              tokens.push(char);
+              i++;
+            }
+          }
+
+          for (let tokenIdx = 0; tokenIdx < tokens.length && tokenIdx < grid.chars; tokenIdx++) {
+            const token = tokens[tokenIdx];
+            const cx = grid.startPos.x + tokenIdx * cellSize + cellSize / 2;
+            const cy = grid.startPos.y + lineIdx * cellSize + cellSize / 2;
+
+            if (token.length === 2) {
+              // 半角記号ペア: 横並びで1セルに描画
+              const halfWidth = fontSize * 0.3;
+              ctx.fillText(token[0], cx - halfWidth, cy);
+              ctx.fillText(token[1], cx + halfWidth, cy);
+            } else if (punctuationChars.includes(token)) {
+              // 横書き時：句読点は左下に移動
+              ctx.save();
+              ctx.textAlign = 'left';
+              ctx.textBaseline = 'bottom';
+              const punctX = grid.startPos.x + tokenIdx * cellSize + cellSize * 0.1;
+              const punctY = grid.startPos.y + (lineIdx + 1) * cellSize - cellSize * 0.1;
+              ctx.fillText(token, punctX, punctY);
+              ctx.restore();
+            } else {
+              ctx.fillText(token, cx, cy);
+            }
+          }
+        }
+      } else {
+        // 縦書き
+        for (let lineIdx = 0; lineIdx < textLines.length && lineIdx < grid.lines; lineIdx++) {
+          const lineText = textLines[lineIdx];
+          const colX = grid.startPos.x + (grid.lines - 1 - lineIdx) * cellSize;
+
+          // トークン配列を作成
+          const tokens: string[] = [];
+          let i = 0;
+          while (i < lineText.length) {
+            const char = lineText[i];
+            const nextChar = lineText[i + 1];
+            if (halfWidthSymbols.includes(char) && nextChar && halfWidthSymbols.includes(nextChar)) {
+              tokens.push(char + nextChar);
+              i += 2;
+            } else {
+              tokens.push(char);
+              i++;
+            }
+          }
+
+          for (let tokenIdx = 0; tokenIdx < tokens.length && tokenIdx < grid.chars; tokenIdx++) {
+            const token = tokens[tokenIdx];
+            const cx = colX + cellSize / 2;
+            const cy = grid.startPos.y + tokenIdx * cellSize + cellSize / 2;
+
+            if (token.length === 2) {
+              // 半角記号ペア: 横並びで1セルに描画
+              const halfWidth = fontSize * 0.3;
+              ctx.fillText(token[0], cx - halfWidth, cy);
+              ctx.fillText(token[1], cx + halfWidth, cy);
+            } else if (needsRotation.includes(token)) {
+              // 90度回転して描画
+              ctx.save();
+              ctx.translate(cx, cy);
+              ctx.rotate(Math.PI / 2);
+              ctx.fillText(token, 0, 0);
+              ctx.restore();
+            } else if (punctuationChars.includes(token)) {
+              // 句読点は右上に移動
+              ctx.save();
+              ctx.textAlign = 'left';
+              ctx.textBaseline = 'bottom';
+              const punctX = colX + cellSize - cellSize * 0.25;
+              const punctY = grid.startPos.y + tokenIdx * cellSize + cellSize * 0.25;
+              ctx.fillText(token, punctX, punctY);
+              ctx.restore();
+            } else {
+              ctx.fillText(token, cx, cy);
+            }
+          }
+        }
+      }
+      ctx.restore();
+    }
+
+    // リサイズハンドルを描画
+    if (showHandles) {
+      const handleSize = 8;
+      const halfHandle = handleSize / 2;
+      ctx.fillStyle = '#00c853';
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1;
+
+      // 四隅のハンドル位置
+      const corners = [
+        { x: grid.startPos.x, y: grid.startPos.y }, // topLeft
+        { x: grid.startPos.x + width, y: grid.startPos.y }, // topRight
+        { x: grid.startPos.x, y: grid.startPos.y + height }, // bottomLeft
+        { x: grid.startPos.x + width, y: grid.startPos.y + height }, // bottomRight
+      ];
+
+      corners.forEach((corner) => {
+        ctx.fillRect(corner.x - halfHandle, corner.y - halfHandle, handleSize, handleSize);
+        ctx.strokeRect(corner.x - halfHandle, corner.y - halfHandle, handleSize, handleSize);
+      });
+    }
+
+    ctx.restore();
+  }, []);
+
+  // キャリブレーションライン描画関数
+  const drawCalibrationLine = useCallback((
+    ctx: CanvasRenderingContext2D,
+    start: { x: number; y: number },
+    end: { x: number; y: number }
+  ) => {
+    ctx.save();
+    ctx.strokeStyle = '#2196f3'; // 青色
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+
+    // 端点に円を描画
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#2196f3';
+    ctx.beginPath();
+    ctx.arc(start.x, start.y, 4, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(end.x, end.y, 4, 0, 2 * Math.PI);
+    ctx.fill();
+
+    // 距離を表示
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const distancePx = Math.sqrt(dx * dx + dy * dy);
+    const midX = (start.x + end.x) / 2;
+    const midY = (start.y + end.y) / 2;
+
+    ctx.font = '14px sans-serif';
+    ctx.fillStyle = '#2196f3';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`${Math.round(distancePx)}px`, midX, midY - 5);
+
+    ctx.restore();
+  }, []);
+
+  // グリッドのコーナーハンドル検出
+  const detectGridCorner = useCallback((
+    point: Point,
+    grid: { startPos: { x: number; y: number }; lines: number; chars: number; ptSize: number; writingMode: 'horizontal' | 'vertical' },
+    pixelsPerMm: number
+  ): 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight' | null => {
+    const cellSize = grid.ptSize * MM_PER_PT * pixelsPerMm;
+    const isHorizontal = grid.writingMode === 'horizontal';
+    const cols = isHorizontal ? grid.chars : grid.lines;
+    const rows = isHorizontal ? grid.lines : grid.chars;
+    const width = cols * cellSize;
+    const height = rows * cellSize;
+
+    const handleSize = 12; // クリック判定用サイズ（描画より少し大きめ）
+    const halfHandle = handleSize / 2;
+
+    const corners: { corner: 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight'; x: number; y: number }[] = [
+      { corner: 'topLeft', x: grid.startPos.x, y: grid.startPos.y },
+      { corner: 'topRight', x: grid.startPos.x + width, y: grid.startPos.y },
+      { corner: 'bottomLeft', x: grid.startPos.x, y: grid.startPos.y + height },
+      { corner: 'bottomRight', x: grid.startPos.x + width, y: grid.startPos.y + height },
+    ];
+
+    for (const c of corners) {
+      if (point.x >= c.x - halfHandle && point.x <= c.x + halfHandle &&
+          point.y >= c.y - halfHandle && point.y <= c.y + halfHandle) {
+        return c.corner;
+      }
+    }
+    return null;
+  }, []);
+
+  // グリッド内部かどうかを判定
+  const isPointInsideGrid = useCallback((
+    point: Point,
+    grid: { startPos: { x: number; y: number }; lines: number; chars: number; ptSize: number; writingMode: 'horizontal' | 'vertical' },
+    pixelsPerMm: number
+  ): boolean => {
+    const cellSize = grid.ptSize * MM_PER_PT * pixelsPerMm;
+    const isHorizontal = grid.writingMode === 'horizontal';
+    const cols = isHorizontal ? grid.chars : grid.lines;
+    const rows = isHorizontal ? grid.lines : grid.chars;
+    const width = cols * cellSize;
+    const height = rows * cellSize;
+
+    return (
+      point.x >= grid.startPos.x &&
+      point.x <= grid.startPos.x + width &&
+      point.y >= grid.startPos.y &&
+      point.y <= grid.startPos.y + height
+    );
+  }, []);
+
   const redrawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
@@ -1119,6 +1424,48 @@ export const useCanvas = () => {
       const isSelected = state.selectedImageIds.includes(imageElement.id);
       drawImage(ctx, imageElement, isSelected);
     });
+
+    // Draw grids (写植グリッド)
+    const gridState = useGridStore.getState();
+    const calibrationState = useCalibrationStore.getState();
+    if (gridState.isGridMode) {
+      // ページごとのグリッドを描画（常にハンドルを表示）
+      const pageGrids = gridState.getPageGrids(currentPage);
+      pageGrids.forEach((grid) => {
+        drawGrid(ctx, grid, calibrationState.pixelsPerMm, true);
+      });
+
+      // 作成中のグリッド（pendingGrid）を描画（ハンドル付き）
+      if (gridState.pendingGrid) {
+        drawGrid(ctx, gridState.pendingGrid, calibrationState.pixelsPerMm, true);
+      }
+
+      // グリッドドラッグ作成中のプレビュー枠を描画
+      if (isDrawingGrid && gridDrawStartRef.current && gridDrawEndRef.current) {
+        const startPoint = gridDrawStartRef.current;
+        const endPoint = gridDrawEndRef.current;
+        const x = Math.min(startPoint.x, endPoint.x);
+        const y = Math.min(startPoint.y, endPoint.y);
+        const width = Math.abs(endPoint.x - startPoint.x);
+        const height = Math.abs(endPoint.y - startPoint.y);
+
+        ctx.save();
+        ctx.strokeStyle = '#4caf50';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(x, y, width, height);
+        ctx.restore();
+      }
+    }
+
+    // Draw calibration line (縮尺合わせ)
+    if (calibrationState.isCalibrationMode && calibrationState.calibrationStart) {
+      // ドラッグ中はプレビュー終点を使用、確定後はストアの終点を使用
+      const endPoint = isCalibrating ? calibrationPreviewEndRef.current : calibrationState.calibrationEnd;
+      if (endPoint) {
+        drawCalibrationLine(ctx, calibrationState.calibrationStart, endPoint);
+      }
+    }
 
     // Draw current stroke if drawing
     if (isDrawing && currentStrokeRef.current.length > 1) {
@@ -1318,7 +1665,7 @@ export const useCanvas = () => {
     } else {
       clearSelectionCanvas();
     }
-  }, [getAllStrokes, getAllShapes, getAllTexts, getLocalAllImages, drawStroke, drawShape, drawText, drawImage, drawImagePreview, isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, labeledRectPhase, tool, color, strokeWidth, selectedStrokeIds, selectionBounds, drawSelectionBounds, clearSelectionCanvas, drawLeaderPreview, selectedAnnotationShapeId, drawAnnotationSelectionBox, drawTextSelectionBox, selectedFontLabelShapeId, drawFontLabelSelectionBox]);
+  }, [getAllStrokes, getAllShapes, getAllTexts, getLocalAllImages, drawStroke, drawShape, drawText, drawImage, drawImagePreview, isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, labeledRectPhase, tool, color, strokeWidth, selectedStrokeIds, selectionBounds, drawSelectionBounds, clearSelectionCanvas, drawLeaderPreview, selectedAnnotationShapeId, drawAnnotationSelectionBox, drawTextSelectionBox, selectedFontLabelShapeId, drawFontLabelSelectionBox, drawGrid, drawCalibrationLine, currentPage, isCalibrating, isDrawingGrid]);
 
   const drawBackground = useCallback(async () => {
     const canvas = backgroundCanvasRef.current;
@@ -1391,6 +1738,143 @@ export const useCanvas = () => {
       // Pan tool is handled by DrawingCanvas component
       if (tool === 'pan') {
         return;
+      }
+
+      // キャリブレーションモードの処理
+      const calibState = useCalibrationStore.getState();
+      if (calibState.isCalibrationMode) {
+        if (!isCalibrating) {
+          // 最初のクリック: 開始点を設定してドラッグ開始
+          calibState.setCalibrationStart(point);
+          calibrationPreviewEndRef.current = point;
+          setIsCalibrating(true);
+        } else {
+          // 2回目のクリック（またはドラッグ終了）: 終点を確定
+          if (calibrationPreviewEndRef.current) {
+            calibState.setCalibrationEnd(calibrationPreviewEndRef.current);
+          }
+          setIsCalibrating(false);
+        }
+        redrawCanvas();
+        return;
+      }
+
+      // グリッドモードの処理
+      const gState = useGridStore.getState();
+      if (gState.isGridMode) {
+        const { pixelsPerMm } = useCalibrationStore.getState();
+
+        // まず既存のグリッドまたはpendingGridのコーナーハンドルをチェック
+        if (gState.pendingGrid) {
+          const corner = detectGridCorner(point, gState.pendingGrid, pixelsPerMm);
+          if (corner) {
+            // リサイズ開始
+            const cellSize = gState.pendingGrid.ptSize * MM_PER_PT * pixelsPerMm;
+            const isHorizontal = gState.pendingGrid.writingMode === 'horizontal';
+            const cols = isHorizontal ? gState.pendingGrid.chars : gState.pendingGrid.lines;
+            const rows = isHorizontal ? gState.pendingGrid.lines : gState.pendingGrid.chars;
+            gridResizeStartRef.current = {
+              startPos: { ...gState.pendingGrid.startPos },
+              width: cols * cellSize,
+              height: rows * cellSize,
+              mousePos: point,
+            };
+            // フォーカスを解除（セリフサンプル入力欄など）
+            (document.activeElement as HTMLElement)?.blur?.();
+            setResizingCorner(corner);
+            setIsResizingGrid(true);
+            redrawCanvas();
+            return;
+          }
+        }
+
+        // ページに配置済みのグリッドのコーナーハンドルをチェック
+        const pageGrids = gState.getPageGrids(currentPage);
+        for (let i = 0; i < pageGrids.length; i++) {
+          const grid = pageGrids[i];
+          const corner = detectGridCorner(point, grid, pixelsPerMm);
+          if (corner) {
+            // このグリッドをpendingGridに移動してリサイズ開始
+            const cellSize = grid.ptSize * MM_PER_PT * pixelsPerMm;
+            const isHorizontal = grid.writingMode === 'horizontal';
+            const cols = isHorizontal ? grid.chars : grid.lines;
+            const rows = isHorizontal ? grid.lines : grid.chars;
+            gridResizeStartRef.current = {
+              startPos: { ...grid.startPos },
+              width: cols * cellSize,
+              height: rows * cellSize,
+              mousePos: point,
+            };
+            // 既存グリッドを削除してpendingGridに設定
+            gState.removeGrid(currentPage, i);
+            gState.setPendingGrid(grid);
+            // フォーカスを解除（セリフサンプル入力欄など）
+            (document.activeElement as HTMLElement)?.blur?.();
+            setResizingCorner(corner);
+            setIsResizingGrid(true);
+            gState.setGridAdjusting(true);
+            redrawCanvas();
+            return;
+          }
+        }
+
+        // ページに配置済みのグリッド内部をクリックした場合、そのグリッドを選択して移動開始
+        for (let i = pageGrids.length - 1; i >= 0; i--) {
+          const grid = pageGrids[i];
+          if (isPointInsideGrid(point, grid, pixelsPerMm)) {
+            // このグリッドをpendingGridに移動して移動開始
+            gState.removeGrid(currentPage, i);
+            gState.setPendingGrid(grid);
+            gState.setGridAdjusting(true);
+            gridDragStartRef.current = {
+              gridStartPos: { ...grid.startPos },
+              mousePos: point,
+            };
+            // フォーカスを解除（セリフサンプル入力欄など）
+            (document.activeElement as HTMLElement)?.blur?.();
+            setIsDraggingGrid(true);
+            redrawCanvas();
+            return;
+          }
+        }
+
+        // グリッド調整モード中
+        if (gState.isGridAdjusting) {
+          if (gState.pendingGrid) {
+            // pendingGridが存在する場合
+            const isInsideGrid = isPointInsideGrid(point, gState.pendingGrid, pixelsPerMm);
+            if (isInsideGrid) {
+              // グリッド内クリック：グリッドを移動開始
+              gridDragStartRef.current = {
+                gridStartPos: { ...gState.pendingGrid.startPos },
+                mousePos: point,
+              };
+              // フォーカスを解除（セリフサンプル入力欄など）
+              (document.activeElement as HTMLElement)?.blur?.();
+              setIsDraggingGrid(true);
+              return;
+            } else {
+              // グリッド外クリック：グリッドを消して新規グリッド作成開始
+              gState.setPendingGrid(null);
+              // isGridAdjustingはtrueのまま維持して、すぐに新しいグリッドを引けるようにする
+              gridDrawStartRef.current = point;
+              gridDrawEndRef.current = point;
+              // フォーカスを解除（セリフサンプル入力欄など）
+              (document.activeElement as HTMLElement)?.blur?.();
+              setIsDrawingGrid(true);
+              redrawCanvas();
+              return;
+            }
+          } else {
+            // 新しいグリッドをドラッグで作成開始
+            gridDrawStartRef.current = point;
+            gridDrawEndRef.current = point;
+            // フォーカスを解除（セリフサンプル入力欄など）
+            (document.activeElement as HTMLElement)?.blur?.();
+            setIsDrawingGrid(true);
+            return;
+          }
+        }
       }
 
       // フェーズ2（引出線がマウスに追従中）の場合、クリックで引出線を確定してモーダル表示
@@ -1660,12 +2144,129 @@ export const useCanvas = () => {
         }
       }
     },
-    [getPointerPosition, tool, eraseAt, strokeWidth, selectionBounds, isPointInSelectionBounds, clearSelection, annotationState, isDrawingLeader, getLeaderStartPos, selectShapeAtPoint, selectedShapeIds, selectedTextIds, selectAnnotationAtPoint, selectTextAtPoint, selectImageAtPoint, getAllShapes, redrawCanvas, addShape, isDrawingPolyline, color, currentStampType, addStamp, selectFontLabelTextAtPoint, selectedFontLabelShapeId]
+    [getPointerPosition, tool, eraseAt, strokeWidth, selectionBounds, isPointInSelectionBounds, clearSelection, annotationState, isDrawingLeader, getLeaderStartPos, selectShapeAtPoint, selectedShapeIds, selectedTextIds, selectAnnotationAtPoint, selectTextAtPoint, selectImageAtPoint, getAllShapes, redrawCanvas, addShape, isDrawingPolyline, color, currentStampType, addStamp, selectFontLabelTextAtPoint, selectedFontLabelShapeId, detectGridCorner, isCalibrating, currentPage, isPointInsideGrid]
   );
 
   const handlePointerMove = useCallback(
     (e: PointerEvent) => {
       const point = getPointerPosition(e);
+
+      // キャリブレーションモードの処理
+      const calibState = useCalibrationStore.getState();
+      if (calibState.isCalibrationMode && isCalibrating && calibState.calibrationStart) {
+        // ドラッグ中はプレビュー終点を更新（ストアには保存しない）
+        // Shiftキーが押されている場合は45度スナップ
+        if (e.shiftKey) {
+          calibrationPreviewEndRef.current = snapLineEndpoint(calibState.calibrationStart, point);
+        } else {
+          calibrationPreviewEndRef.current = point;
+        }
+        redrawCanvas();
+        return;
+      }
+
+      // グリッドリサイズ中の処理
+      const gState = useGridStore.getState();
+      if (isResizingGrid && resizingCorner && gridResizeStartRef.current && gState.pendingGrid) {
+        const { pixelsPerMm } = useCalibrationStore.getState();
+        const start = gridResizeStartRef.current;
+        const dx = point.x - start.mousePos.x;
+        const dy = point.y - start.mousePos.y;
+
+        let newStartX = start.startPos.x;
+        let newStartY = start.startPos.y;
+        let newWidth = start.width;
+        let newHeight = start.height;
+
+        // コーナーに応じてサイズと位置を計算
+        switch (resizingCorner) {
+          case 'topLeft':
+            newStartX = start.startPos.x + dx;
+            newStartY = start.startPos.y + dy;
+            newWidth = start.width - dx;
+            newHeight = start.height - dy;
+            break;
+          case 'topRight':
+            newStartY = start.startPos.y + dy;
+            newWidth = start.width + dx;
+            newHeight = start.height - dy;
+            break;
+          case 'bottomLeft':
+            newStartX = start.startPos.x + dx;
+            newWidth = start.width - dx;
+            newHeight = start.height + dy;
+            break;
+          case 'bottomRight':
+            newWidth = start.width + dx;
+            newHeight = start.height + dy;
+            break;
+        }
+
+        // 最小サイズを確保（小さなグリッドも許可）
+        if (newWidth < 5) newWidth = 5;
+        if (newHeight < 5) newHeight = 5;
+
+        // 新しいptSizeを計算（セルサイズから逆算）
+        const grid = gState.pendingGrid;
+        const isHorizontal = grid.writingMode === 'horizontal';
+        const cols = isHorizontal ? grid.chars : grid.lines;
+        const rows = isHorizontal ? grid.lines : grid.chars;
+
+        // 縦横比を維持してセルサイズを計算
+        const newCellSize = Math.min(newWidth / cols, newHeight / rows);
+        const newPtSize = Math.round((newCellSize / pixelsPerMm / MM_PER_PT) * 10) / 10;
+
+        // 新しいサイズで再計算
+        const actualWidth = cols * newCellSize;
+        const actualHeight = rows * newCellSize;
+
+        // 位置を調整（リサイズ方向に応じて）
+        let finalStartX = newStartX;
+        let finalStartY = newStartY;
+        if (resizingCorner === 'topLeft') {
+          finalStartX = start.startPos.x + start.width - actualWidth;
+          finalStartY = start.startPos.y + start.height - actualHeight;
+        } else if (resizingCorner === 'topRight') {
+          finalStartY = start.startPos.y + start.height - actualHeight;
+        } else if (resizingCorner === 'bottomLeft') {
+          finalStartX = start.startPos.x + start.width - actualWidth;
+        }
+
+        gState.updatePendingGrid({
+          startPos: { x: finalStartX, y: finalStartY },
+          centerPos: { x: finalStartX + actualWidth / 2, y: finalStartY + actualHeight / 2 },
+          ptSize: Math.max(1, newPtSize),
+        });
+        redrawCanvas();
+        return;
+      }
+
+      // グリッド作成中（ドラッグで枠を描画）
+      if (isDrawingGrid && gridDrawStartRef.current) {
+        gridDrawEndRef.current = point;
+        redrawCanvas();
+        return;
+      }
+
+      // グリッド移動中
+      if (isDraggingGrid && gridDragStartRef.current && gState.pendingGrid) {
+        const dx = point.x - gridDragStartRef.current.mousePos.x;
+        const dy = point.y - gridDragStartRef.current.mousePos.y;
+        const newStartX = gridDragStartRef.current.gridStartPos.x + dx;
+        const newStartY = gridDragStartRef.current.gridStartPos.y + dy;
+        const { pixelsPerMm } = useCalibrationStore.getState();
+        const grid = gState.pendingGrid;
+        const cellSize = grid.ptSize * MM_PER_PT * pixelsPerMm;
+        const isHorizontal = grid.writingMode === 'horizontal';
+        const w = (isHorizontal ? grid.chars : grid.lines) * cellSize;
+        const h = (isHorizontal ? grid.lines : grid.chars) * cellSize;
+        gState.updatePendingGrid({
+          startPos: { x: newStartX, y: newStartY },
+          centerPos: { x: newStartX + w / 2, y: newStartY + h / 2 },
+        });
+        redrawCanvas();
+        return;
+      }
 
       if (tool === 'select') {
         // ホバー時のカーソル変更用
@@ -1803,7 +2404,7 @@ export const useCanvas = () => {
         }
       }
     },
-    [isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, selectedFontLabelShapeId, isSelecting, annotationState, labeledRectPhase, getPointerPosition, tool, eraseAt, strokeWidth, redrawCanvas, drawSelectionRect, moveSelectedStrokes, moveSelectedShapes, moveSelectedImages, moveSelectedTexts, moveAnnotationOnly, moveLeaderEnd, snapLineEndpoint, getLeaderStartPos, selectAnnotationAtPoint, getAllShapes, updateShape]
+    [isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, selectedFontLabelShapeId, isSelecting, annotationState, labeledRectPhase, getPointerPosition, tool, eraseAt, strokeWidth, redrawCanvas, drawSelectionRect, moveSelectedStrokes, moveSelectedShapes, moveSelectedImages, moveSelectedTexts, moveAnnotationOnly, moveLeaderEnd, snapLineEndpoint, getLeaderStartPos, selectAnnotationAtPoint, getAllShapes, updateShape, isCalibrating, isResizingGrid, resizingCorner, isDraggingGrid, isDrawingGrid]
   );
 
   const handlePointerUp = useCallback(
@@ -1811,6 +2412,98 @@ export const useCanvas = () => {
       const canvas = canvasRef.current;
       if (canvas) {
         canvas.releasePointerCapture(e.pointerId);
+      }
+
+      // キャリブレーションモードの処理（ドラッグ終了で確定）
+      const calibState = useCalibrationStore.getState();
+      if (calibState.isCalibrationMode && isCalibrating && calibrationPreviewEndRef.current) {
+        // 開始点からの距離をチェック（短すぎる場合はキャンセル）
+        const start = calibState.calibrationStart;
+        const end = calibrationPreviewEndRef.current;
+        if (start) {
+          const distance = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
+          if (distance > 10) {
+            // 十分な距離がある場合のみ確定
+            calibState.setCalibrationEnd(end);
+          } else {
+            // 短すぎる場合はリセット
+            calibState.setCalibrationStart(null);
+            calibState.setCalibrationEnd(null);
+          }
+        }
+        setIsCalibrating(false);
+        calibrationPreviewEndRef.current = null;
+        redrawCanvas();
+        return;
+      }
+
+      // グリッドリサイズ終了
+      if (isResizingGrid) {
+        setIsResizingGrid(false);
+        setResizingCorner(null);
+        gridResizeStartRef.current = null;
+        redrawCanvas();
+        return;
+      }
+
+      // グリッドドラッグ作成終了
+      if (isDrawingGrid && gridDrawStartRef.current) {
+        const gState = useGridStore.getState();
+        const endPoint = getPointerPosition(e);
+        const startPoint = gridDrawStartRef.current;
+
+        // ドラッグ範囲を計算
+        const x = Math.min(startPoint.x, endPoint.x);
+        const y = Math.min(startPoint.y, endPoint.y);
+        const width = Math.abs(endPoint.x - startPoint.x);
+        const height = Math.abs(endPoint.y - startPoint.y);
+
+        // 最小サイズ以上の場合のみグリッドを作成（5px以上でグリッド作成）
+        if (width > 5 && height > 5) {
+          const { pixelsPerMm } = useCalibrationStore.getState();
+          const { lines, chars } = gState.calculateGridFromText(gState.sampleText);
+          const numLines = Math.max(1, lines);
+          const numChars = Math.max(1, chars);
+          const isHorizontal = gState.writingMode === 'horizontal';
+
+          // ドラッグ範囲に収まるセルサイズを計算
+          const cols = isHorizontal ? numChars : numLines;
+          const rows = isHorizontal ? numLines : numChars;
+          const cellSize = Math.min(width / cols, height / rows);
+          const ptSize = Math.round((cellSize / pixelsPerMm / MM_PER_PT) * 10) / 10;
+
+          // 実際のグリッドサイズ
+          const actualWidth = cols * cellSize;
+          const actualHeight = rows * cellSize;
+
+          const grid = {
+            id: `grid-${Date.now()}`,
+            startPos: { x, y },
+            centerPos: { x: x + actualWidth / 2, y: y + actualHeight / 2 },
+            lines: numLines,
+            chars: numChars,
+            ptSize: Math.max(1, ptSize),
+            textData: gState.sampleText,
+            writingMode: gState.writingMode,
+            isLocked: false,
+          };
+          gState.setPendingGrid(grid);
+          gState.setGridAdjusting(true); // グリッド調整モードを維持して移動・リサイズを可能に
+        }
+
+        setIsDrawingGrid(false);
+        gridDrawStartRef.current = null;
+        gridDrawEndRef.current = null;
+        redrawCanvas();
+        return;
+      }
+
+      // グリッド移動終了
+      if (isDraggingGrid) {
+        setIsDraggingGrid(false);
+        gridDragStartRef.current = null;
+        redrawCanvas();
+        return;
       }
 
       if (tool === 'select') {
@@ -2102,7 +2795,7 @@ export const useCanvas = () => {
 
       redrawCanvas();
     },
-    [tool, isDrawing, isDrawingShape, isDrawingImage, annotationState, labeledRectPhase, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, isSelecting, addStroke, addShape, addImage, color, strokeWidth, redrawCanvas, getPointerPosition, selectStrokesInRect, selectStrokeAtPoint, selectShapeAtPoint, selectShapesInRect, clearSelectionCanvas, snapLineEndpoint, getLeaderStartPos]
+    [tool, isDrawing, isDrawingShape, isDrawingImage, annotationState, labeledRectPhase, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, isSelecting, addStroke, addShape, addImage, color, strokeWidth, redrawCanvas, getPointerPosition, selectStrokesInRect, selectStrokeAtPoint, selectShapeAtPoint, selectShapesInRect, clearSelectionCanvas, snapLineEndpoint, getLeaderStartPos, isCalibrating, isResizingGrid, isDrawingGrid, isDraggingGrid]
   );
 
   useEffect(() => {
@@ -2127,6 +2820,21 @@ export const useCanvas = () => {
     drawBackground();
     redrawCanvas();
   }, [currentPage, pages, drawBackground, redrawCanvas, selectedStrokeIds, selectionBounds, isCommentHidden]);
+
+  // キャリブレーションモードの終了を監視してキャンバスを再描画
+  useEffect(() => {
+    const unsubscribe = useCalibrationStore.subscribe((state, prevState) => {
+      // キャリブレーションモードが終了した場合
+      if (prevState.isCalibrationMode && !state.isCalibrationMode) {
+        // ローカル状態をクリア
+        setIsCalibrating(false);
+        calibrationPreviewEndRef.current = null;
+        // キャンバスを再描画
+        redrawCanvas();
+      }
+    });
+    return () => unsubscribe();
+  }, [redrawCanvas]);
 
   // アノテーションテキスト入力完了時のコールバック
   const handleAnnotationSubmit = useCallback(
