@@ -157,7 +157,7 @@ interface DrawingStore extends DrawingState {
 
   // Stamp operations
   setCurrentStampType: (stampType: StampType | null) => void;
-  addStamp: (point: Point) => void;
+  addStamp: (point: Point, leaderLine?: { start: Point; end: Point }) => void;
 }
 
 export const useDrawingStore = create<DrawingStore>((set, get) => ({
@@ -450,7 +450,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       currentLayerId: docState.currentLayerId,
       history: docState.history,
       historyIndex: docState.historyIndex,
-      pdfDocument: docState.pdfDocument as unknown,
+      pdfDocument: docState.pdfDocument,
       pdfPageInfos: docState.pdfPageInfos,
       pdfAnnotations: docState.pdfAnnotations,
       // 選択状態はクリア
@@ -472,7 +472,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       currentLayerId: state.currentLayerId,
       history: state.history,
       historyIndex: state.historyIndex,
-      pdfDocument: state.pdfDocument as PDFDocumentProxy | null,
+      pdfDocument: state.pdfDocument,
       pdfPageInfos: state.pdfPageInfos,
       pdfAnnotations: state.pdfAnnotations,
     };
@@ -2250,7 +2250,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
   // Stamp operations
   setCurrentStampType: (stampType) => set({ currentStampType: stampType }),
 
-  addStamp: (point) => {
+  addStamp: (point, leaderLine) => {
     const state = get();
     const currentPageState = state.pages[state.currentPage];
     if (!currentPageState || !state.currentStampType) return;
@@ -2265,6 +2265,8 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       zenkakuakiStamp: 14,
       hankakuakiStamp: 14,
       kaigyouStamp: 14,
+      tojiruStamp: 14,
+      hirakuStamp: 14,
       komojiStamp: 20,
     };
 
@@ -2281,6 +2283,8 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       layerId: state.currentLayerId,
       stampType: state.currentStampType,
       size,
+      // 引出線がある場合は追加
+      ...(leaderLine && { leaderLine }),
     };
 
     const updatedLayers = currentPageState.layers.map((layer) =>

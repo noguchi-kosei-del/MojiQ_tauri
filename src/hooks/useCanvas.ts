@@ -78,6 +78,11 @@ export const useCanvas = () => {
   const DOUBLE_CLICK_THRESHOLD = 300; // ms
   const DOUBLE_CLICK_DISTANCE = 10; // px
 
+  // スタンプ引出線用
+  const [isDrawingStampLeader, setIsDrawingStampLeader] = useState(false);
+  const stampStartRef = useRef<Point | null>(null);
+  const currentStampEndRef = useRef<Point | null>(null);
+
   // キャリブレーション用
   const [isCalibrating, setIsCalibrating] = useState(false);
   const calibrationPreviewEndRef = useRef<Point | null>(null);
@@ -392,6 +397,8 @@ export const useCanvas = () => {
           zenkakuakiStamp: '全角アキ',
           hankakuakiStamp: '半角アキ',
           kaigyouStamp: '改行',
+          tojiruStamp: 'とじる',
+          hirakuStamp: 'ひらく',
           doneStamp: '済',
           rubyStamp: 'ルビ',
           komojiStamp: '小',
@@ -426,7 +433,26 @@ export const useCanvas = () => {
       // スタンプの場合
       if (type === 'stamp' && 'stampType' in shape && shape.stampType) {
         const stampSize = 'size' in shape && shape.size ? shape.size : 20;
-        drawStamp(ctx, startPos.x, startPos.y, shape.stampType, stampSize, isSelected ? '#0078d4' : shape.color);
+        const stampColor = isSelected ? '#0078d4' : shape.color;
+
+        // 引出線がある場合は描画
+        if ('leaderLine' in shape && shape.leaderLine) {
+          ctx.beginPath();
+          ctx.strokeStyle = stampColor;
+          ctx.lineWidth = 2;
+          ctx.moveTo(shape.leaderLine.start.x, shape.leaderLine.start.y);
+          ctx.lineTo(shape.leaderLine.end.x, shape.leaderLine.end.y);
+          ctx.stroke();
+
+          // 引出線の先端（開始点）に●を描画
+          const dotRadius = Math.max(2, 3);
+          ctx.beginPath();
+          ctx.arc(shape.leaderLine.start.x, shape.leaderLine.start.y, dotRadius, 0, 2 * Math.PI);
+          ctx.fillStyle = stampColor;
+          ctx.fill();
+        }
+
+        drawStamp(ctx, startPos.x, startPos.y, shape.stampType, stampSize, stampColor);
         ctx.restore();
         return;
       }
@@ -1635,6 +1661,52 @@ export const useCanvas = () => {
       drawImagePreview(ctx, pendingImageRef.current, imageStartRef.current, currentImageEndRef.current);
     }
 
+    // Draw stamp leader line preview
+    if (isDrawingStampLeader && stampStartRef.current && currentStampEndRef.current && currentStampType) {
+      const start = stampStartRef.current;
+      const end = currentStampEndRef.current;
+      const distance = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
+
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+
+      // 引出線を描画
+      ctx.beginPath();
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(end.x, end.y);
+      ctx.stroke();
+
+      // 先端に●を描画
+      const dotRadius = 3;
+      ctx.beginPath();
+      ctx.arc(start.x, start.y, dotRadius, 0, 2 * Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
+
+      // 終点にスタンプのプレビューを表示（引出線が十分長い場合）
+      if (distance > 10) {
+        // スタンプのデフォルトサイズ
+        const defaultSizes: Record<StampType, number> = {
+          doneStamp: 28,
+          rubyStamp: 14,
+          toruStamp: 20,
+          torutsumeStamp: 14,
+          torumamaStamp: 14,
+          zenkakuakiStamp: 14,
+          hankakuakiStamp: 14,
+          kaigyouStamp: 14,
+          tojiruStamp: 14,
+          hirakuStamp: 14,
+          komojiStamp: 20,
+        };
+        const stampSize = defaultSizes[currentStampType] || 20;
+        drawStamp(ctx, end.x, end.y, currentStampType, stampSize, color);
+      }
+
+      ctx.restore();
+    }
+
     // Draw selection bounds
     if (selectionBounds && (selectedStrokeIds.length > 0 || state.selectedShapeIds.length > 0 || state.selectedTextIds.length > 0 || state.selectedImageIds.length > 0)) {
       drawSelectionBounds(selectionBounds);
@@ -1665,7 +1737,7 @@ export const useCanvas = () => {
     } else {
       clearSelectionCanvas();
     }
-  }, [getAllStrokes, getAllShapes, getAllTexts, getLocalAllImages, drawStroke, drawShape, drawText, drawImage, drawImagePreview, isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, labeledRectPhase, tool, color, strokeWidth, selectedStrokeIds, selectionBounds, drawSelectionBounds, clearSelectionCanvas, drawLeaderPreview, selectedAnnotationShapeId, drawAnnotationSelectionBox, drawTextSelectionBox, selectedFontLabelShapeId, drawFontLabelSelectionBox, drawGrid, drawCalibrationLine, currentPage, isCalibrating, isDrawingGrid]);
+  }, [getAllStrokes, getAllShapes, getAllTexts, getLocalAllImages, drawStroke, drawShape, drawText, drawImage, drawImagePreview, drawStamp, isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, isDrawingStampLeader, currentStampType, labeledRectPhase, tool, color, strokeWidth, selectedStrokeIds, selectionBounds, drawSelectionBounds, clearSelectionCanvas, drawLeaderPreview, selectedAnnotationShapeId, drawAnnotationSelectionBox, drawTextSelectionBox, selectedFontLabelShapeId, drawFontLabelSelectionBox, drawGrid, drawCalibrationLine, currentPage, isCalibrating, isDrawingGrid]);
 
   const drawBackground = useCallback(async () => {
     const canvas = backgroundCanvasRef.current;
@@ -2123,10 +2195,24 @@ export const useCanvas = () => {
         }
         return;
       } else if (tool === 'stamp') {
-        // スタンプツール - クリックした位置にスタンプを配置
+        // スタンプツール - ドラッグで引出線を作成可能
         if (currentStampType) {
-          addStamp(point);
-          redrawCanvas();
+          // 引出線対応スタンプかチェック
+          const leaderLineStamps: StampType[] = [
+            'toruStamp', 'torutsumeStamp', 'torumamaStamp',
+            'zenkakuakiStamp', 'hankakuakiStamp', 'kaigyouStamp',
+            'tojiruStamp', 'hirakuStamp'
+          ];
+          if (leaderLineStamps.includes(currentStampType)) {
+            // 引出線描画モードを開始
+            setIsDrawingStampLeader(true);
+            stampStartRef.current = point;
+            currentStampEndRef.current = point;
+          } else {
+            // 引出線非対応スタンプはクリックで配置
+            addStamp(point);
+            redrawCanvas();
+          }
         }
         return;
       } else if (tool === 'rectAnnotated' || tool === 'ellipseAnnotated' || tool === 'lineAnnotated') {
@@ -2341,6 +2427,10 @@ export const useCanvas = () => {
           lastDragPointRef.current = point;
           redrawCanvas();
         }
+      } else if (isDrawingStampLeader && stampStartRef.current) {
+        // スタンプの引出線プレビュー更新
+        currentStampEndRef.current = point;
+        redrawCanvas();
       } else if (labeledRectPhase === 1 && labeledRectLeaderStartRef.current) {
         // labeledRect: 引出線フェーズ
         const leaderStart = labeledRectLeaderStartRef.current;
@@ -2404,7 +2494,7 @@ export const useCanvas = () => {
         }
       }
     },
-    [isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, selectedFontLabelShapeId, isSelecting, annotationState, labeledRectPhase, getPointerPosition, tool, eraseAt, strokeWidth, redrawCanvas, drawSelectionRect, moveSelectedStrokes, moveSelectedShapes, moveSelectedImages, moveSelectedTexts, moveAnnotationOnly, moveLeaderEnd, snapLineEndpoint, getLeaderStartPos, selectAnnotationAtPoint, getAllShapes, updateShape, isCalibrating, isResizingGrid, resizingCorner, isDraggingGrid, isDrawingGrid]
+    [isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, isDrawingStampLeader, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, selectedFontLabelShapeId, isSelecting, annotationState, labeledRectPhase, getPointerPosition, tool, eraseAt, strokeWidth, redrawCanvas, drawSelectionRect, moveSelectedStrokes, moveSelectedShapes, moveSelectedImages, moveSelectedTexts, moveAnnotationOnly, moveLeaderEnd, snapLineEndpoint, getLeaderStartPos, selectAnnotationAtPoint, getAllShapes, updateShape, isCalibrating, isResizingGrid, resizingCorner, isDraggingGrid, isDrawingGrid]
   );
 
   const handlePointerUp = useCallback(
@@ -2502,6 +2592,30 @@ export const useCanvas = () => {
       if (isDraggingGrid) {
         setIsDraggingGrid(false);
         gridDragStartRef.current = null;
+        redrawCanvas();
+        return;
+      }
+
+      // スタンプ引出線の完了
+      if (isDrawingStampLeader && stampStartRef.current && currentStampEndRef.current) {
+        const start = stampStartRef.current;
+        const end = currentStampEndRef.current;
+        const distance = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
+
+        // 引出線の最小距離（これより短い場合は引出線なしで配置）
+        const MIN_LEADER_DISTANCE = 10;
+
+        if (distance > MIN_LEADER_DISTANCE) {
+          // 引出線付きでスタンプを配置（終点がスタンプ位置、始点が引出線先端）
+          addStamp(end, { start, end });
+        } else {
+          // 引出線なしでスタンプを配置（クリックと同じ）
+          addStamp(start);
+        }
+
+        setIsDrawingStampLeader(false);
+        stampStartRef.current = null;
+        currentStampEndRef.current = null;
         redrawCanvas();
         return;
       }
@@ -2795,7 +2909,7 @@ export const useCanvas = () => {
 
       redrawCanvas();
     },
-    [tool, isDrawing, isDrawingShape, isDrawingImage, annotationState, labeledRectPhase, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, isSelecting, addStroke, addShape, addImage, color, strokeWidth, redrawCanvas, getPointerPosition, selectStrokesInRect, selectStrokeAtPoint, selectShapeAtPoint, selectShapesInRect, clearSelectionCanvas, snapLineEndpoint, getLeaderStartPos, isCalibrating, isResizingGrid, isDrawingGrid, isDraggingGrid]
+    [tool, isDrawing, isDrawingShape, isDrawingImage, isDrawingStampLeader, annotationState, labeledRectPhase, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, isSelecting, addStroke, addShape, addImage, addStamp, color, strokeWidth, redrawCanvas, getPointerPosition, selectStrokesInRect, selectStrokeAtPoint, selectShapeAtPoint, selectShapesInRect, clearSelectionCanvas, snapLineEndpoint, getLeaderStartPos, isCalibrating, isResizingGrid, isDrawingGrid, isDraggingGrid]
   );
 
   useEffect(() => {

@@ -121,6 +121,13 @@
   color: var(--text-secondary);
 }
 
+/* Menu divider */
+.menu-divider {
+  height: 1px;
+  background-color: var(--border-color);
+  margin: 8px 20px;
+}
+
 /* Menu footer (icon buttons) */
 .hamburger-menu-footer {
   padding: 16px;

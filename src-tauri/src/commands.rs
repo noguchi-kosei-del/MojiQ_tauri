@@ -1,9 +1,20 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::fs;
+use std::time::UNIX_EPOCH;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 use crate::pdf::create_pdf_with_drawings;
+
+// ファイルメタデータ（リンク方式用）
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileMetadata {
+    pub file_path: String,
+    pub mime_type: String,
+    pub width: u32,
+    pub height: u32,
+    pub modified_at: u64,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PageData {
@@ -301,4 +312,349 @@ pub async fn list_folder_entries(path: String, extension_filter: Option<String>)
     });
 
     Ok(result)
+}
+
+// リンク方式: 単一ファイルのメタデータ取得（Base64なし、高速）
+#[tauri::command]
+pub async fn load_file_metadata(path: String) -> Result<FileMetadata, String> {
+    let path_buf = PathBuf::from(&path);
+
+    let extension = path_buf
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+
+    // サポートするファイル形式のチェック
+    let mime_type = match extension.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        _ => return Err(format!("Unsupported file type: {}", extension)),
+    };
+
+    // 画像サイズ取得
+    let (width, height) = ::image::image_dimensions(&path).map_err(|e| e.to_string())?;
+
+    // ファイル更新日時取得
+    let metadata = fs::metadata(&path).map_err(|e| e.to_string())?;
+    let modified_at = metadata
+        .modified()
+        .map_err(|e| e.to_string())?
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs();
+
+    Ok(FileMetadata {
+        file_path: path,
+        mime_type: mime_type.to_string(),
+        width,
+        height,
+        modified_at,
+    })
+}
+
+// リンク方式: 複数ファイルのメタデータ取得（並列処理、高速）
+#[tauri::command]
+pub async fn load_files_metadata(paths: Vec<String>) -> Result<Vec<FileMetadata>, String> {
+    if paths.is_empty() {
+        return Err("No files provided".to_string());
+    }
+
+    // 並列処理でメタデータを取得
+    let handles: Vec<_> = paths
+        .into_iter()
+        .map(|path| {
+            tokio::task::spawn_blocking(move || {
+                let path_buf = PathBuf::from(&path);
+                let extension = path_buf
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|s| s.to_lowercase())
+                    .unwrap_or_default();
+
+                let mime_type = match extension.as_str() {
+                    "jpg" | "jpeg" => "image/jpeg",
+                    "png" => "image/png",
+                    _ => return None,
+                };
+
+                // 画像サイズ取得
+                let (width, height) = match ::image::image_dimensions(&path) {
+                    Ok(dims) => dims,
+                    Err(_) => return None,
+                };
+
+                // ファイル更新日時取得
+                let modified_at = fs::metadata(&path)
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+
+                Some(FileMetadata {
+                    file_path: path,
+                    mime_type: mime_type.to_string(),
+                    width,
+                    height,
+                    modified_at,
+                })
+            })
+        })
+        .collect();
+
+    // 全ての処理を待機
+    let mut all_metadata: Vec<FileMetadata> = Vec::new();
+    for handle in handles {
+        if let Ok(Some(metadata)) = handle.await {
+            all_metadata.push(metadata);
+        }
+    }
+
+    if all_metadata.is_empty() {
+        return Err("No supported image files found".to_string());
+    }
+
+    Ok(all_metadata)
+}
+
+// リンク方式: 単一画像のBase64読み込み（オンデマンド）
+#[tauri::command]
+pub async fn load_page_image(path: String) -> Result<String, String> {
+    let path_buf = PathBuf::from(&path);
+
+    let extension = path_buf
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+
+    let mime_type = match extension.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        _ => return Err(format!("Unsupported file type: {}", extension)),
+    };
+
+    // ファイルを読み込んでBase64エンコード
+    let file_bytes = fs::read(&path).map_err(|e| format!("Failed to read file: {}", e))?;
+    let image_data = BASE64.encode(&file_bytes);
+
+    Ok(format!("data:{};base64,{}", mime_type, image_data))
+}
+
+// ===== 校正チェック機能 =====
+
+// 校正チェック項目
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProofreadingCheckItem {
+    pub picked: Option<bool>,
+    pub category: Option<String>,
+    pub page: Option<String>,
+    pub excerpt: Option<String>,
+    pub content: Option<String>,
+    #[serde(rename = "checkKind")]
+    pub check_kind: Option<String>,  // "correctness" | "proposal"
+}
+
+// 校正チェックカテゴリ
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProofreadingCheckCategory {
+    pub items: Vec<ProofreadingCheckItem>,
+}
+
+// 校正チェック全体
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProofreadingChecks {
+    pub variation: Option<ProofreadingCheckCategory>,
+    pub simple: Option<ProofreadingCheckCategory>,
+}
+
+// 校正チェックファイルのルート構造
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProofreadingCheckData {
+    pub title: Option<String>,
+    pub work: Option<String>,
+    pub checks: Option<ProofreadingChecks>,
+}
+
+// デフォルトのベースパス
+const DEFAULT_PROOFREADING_CHECK_BASE_PATH: &str =
+    r"G:\共有ドライブ\CLLENN\編集部フォルダ\編集企画部\写植・校正用テキストログ";
+
+// 校正チェック: ベースパス取得
+#[tauri::command]
+pub async fn get_proofreading_check_base_path() -> Result<String, String> {
+    // 環境変数から取得、なければデフォルト
+    let path = std::env::var("MOJIQ_PROOFREADING_CHECK_PATH")
+        .unwrap_or_else(|_| DEFAULT_PROOFREADING_CHECK_BASE_PATH.to_string());
+    Ok(path)
+}
+
+// 校正チェック: ディレクトリ一覧取得（JSONフィルター付き）
+#[tauri::command]
+pub async fn list_proofreading_check_directory(
+    path: String,
+    base_path: String,
+) -> Result<Vec<FolderEntry>, String> {
+    // セキュリティチェック: パスがベースパス配下であることを確認
+    let normalized_path = PathBuf::from(&path);
+    let normalized_base = PathBuf::from(&base_path);
+
+    // canonicalizeはWindows上でパスが存在しないとエラーになるため、
+    // starts_withで簡易チェック（大文字小文字を区別しない）
+    let path_lower = path.to_lowercase().replace('/', "\\");
+    let base_lower = base_path.to_lowercase().replace('/', "\\");
+
+    if !path_lower.starts_with(&base_lower) {
+        return Err("アクセスが許可されていないパスです".to_string());
+    }
+
+    // パスが存在するかチェック
+    if !normalized_path.exists() {
+        return Err(format!("パスが存在しません: {}", path));
+    }
+
+    // 既存のlist_folder_entriesロジックを使用（JSONフィルター付き）
+    list_folder_entries(path, Some("json".to_string())).await
+}
+
+// 校正チェック: JSONファイル読み込み
+#[tauri::command]
+pub async fn read_proofreading_check_file(
+    path: String,
+    base_path: String,
+) -> Result<ProofreadingCheckData, String> {
+    // セキュリティチェック
+    let path_lower = path.to_lowercase().replace('/', "\\");
+    let base_lower = base_path.to_lowercase().replace('/', "\\");
+
+    if !path_lower.starts_with(&base_lower) {
+        return Err("アクセスが許可されていないパスです".to_string());
+    }
+
+    // ファイルを読み込んでJSONパース
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("ファイルの読み込みに失敗: {}", e))?;
+
+    let data: ProofreadingCheckData = serde_json::from_str(&content)
+        .map_err(|e| format!("JSONのパースに失敗: {}", e))?;
+
+    Ok(data)
+}
+
+// 校正チェック: ビューアーウィンドウを開く
+#[tauri::command]
+pub async fn open_proofreading_viewer(
+    app: tauri::AppHandle,
+    file_path: String,
+    base_path: String,
+    file_name: String,
+    dark_mode: bool,
+) -> Result<(), String> {
+    use tauri::WebviewWindowBuilder;
+    use tauri::WebviewUrl;
+
+    // URLパラメータを構築
+    let params = format!(
+        "file={}&basePath={}&darkMode={}",
+        urlencoding::encode(&file_path),
+        urlencoding::encode(&base_path),
+        if dark_mode { "true" } else { "false" }
+    );
+
+    let url = format!("/proofreading-viewer.html?{}", params);
+    let label = format!("proofreading-viewer-{}", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0));
+
+    // ウィンドウを作成
+    WebviewWindowBuilder::new(
+        &app,
+        &label,
+        WebviewUrl::App(url.into()),
+    )
+    .title(format!("校正チェック - {}", file_name))
+    .inner_size(840.0, 1080.0)
+    .resizable(true)
+    .center()
+    .build()
+    .map_err(|e| format!("ウィンドウの作成に失敗: {}", e))?;
+
+    Ok(())
+}
+
+// 印刷用PDFを生成してシステム印刷ダイアログを開く
+#[tauri::command]
+pub async fn print_pdf(request: SaveRequest) -> Result<(), String> {
+    use std::env;
+    use std::process::Command;
+
+    // 一時ファイルパスを生成
+    let temp_dir = env::temp_dir();
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let temp_path = temp_dir.join(format!("mojiq-print-{}.pdf", timestamp));
+    let temp_path_str = temp_path.to_string_lossy().to_string();
+
+    // PDFを生成
+    create_pdf_with_drawings(&temp_path_str, &request).map_err(|e| e.to_string())?;
+
+    // Windows: SumatraPDFを探して印刷ダイアログを開く、なければデフォルトビューアで開く
+    #[cfg(target_os = "windows")]
+    {
+        // SumatraPDFの可能なパス
+        let local_app_data = env::var("LOCALAPPDATA").unwrap_or_default();
+        let sumatra_local = format!("{}\\SumatraPDF\\SumatraPDF.exe", local_app_data);
+        let sumatra_paths = [
+            sumatra_local.as_str(),
+            "C:\\Program Files\\SumatraPDF\\SumatraPDF.exe",
+            "C:\\Program Files (x86)\\SumatraPDF\\SumatraPDF.exe",
+        ];
+
+        let mut sumatra_found = false;
+        for sumatra_path in &sumatra_paths {
+            if std::path::Path::new(sumatra_path).exists() {
+                // SumatraPDFで印刷ダイアログを開く
+                let result = Command::new(sumatra_path)
+                    .args(["-print-dialog", &temp_path_str])
+                    .spawn();
+
+                if result.is_ok() {
+                    sumatra_found = true;
+                    break;
+                }
+            }
+        }
+
+        // SumatraPDFが見つからない場合はデフォルトビューアで開く
+        if !sumatra_found {
+            Command::new("cmd")
+                .args(["/C", "start", "", &temp_path_str])
+                .spawn()
+                .map_err(|e| format!("Failed to open PDF: {}", e))?;
+        }
+    }
+
+    // macOS
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&temp_path_str)
+            .spawn()
+            .map_err(|e| format!("Failed to open PDF: {}", e))?;
+    }
+
+    // Linux
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(&temp_path_str)
+            .spawn()
+            .map_err(|e| format!("Failed to open PDF: {}", e))?;
+    }
+
+    Ok(())
 }

@@ -162,13 +162,15 @@ export const DrawingCanvas: React.FC = () => {
     updateBaseScale();
     window.addEventListener('resize', updateBaseScale);
     return () => window.removeEventListener('resize', updateBaseScale);
-  }, [originalWidth, originalHeight, pageState, isViewerMode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [originalWidth, originalHeight, isViewerMode, pages.length, currentPage]);
 
   // Redraw when page changes
   useEffect(() => {
     drawBackground();
     redrawCanvas();
-  }, [currentPage, pages, drawBackground, redrawCanvas]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, pages.length, drawBackground, redrawCanvas, originalWidth, originalHeight]);
 
   // Open file dialog when showImageInput becomes true
   useEffect(() => {

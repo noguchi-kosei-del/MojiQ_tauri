@@ -1,17 +1,22 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
+  "description": "Capability for the main window and viewer windows",
+  "windows": ["main", "proofreading-viewer-*"],
   "permissions": [
     "core:default",
     "opener:default",
     "dialog:default",
     "core:app:allow-set-app-theme",
+    "core:window:default",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
     "core:window:allow-is-maximized",
-    "core:event:allow-listen"
+    "core:window:allow-create",
+    "core:window:allow-start-dragging",
+    "core:webview:default",
+    "core:webview:allow-create-webview-window",
+    "core:event:default"
   ]
 }

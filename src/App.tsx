@@ -5,6 +5,7 @@ import { setTheme as setTauriTheme } from '@tauri-apps/api/app';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { CloseConfirmDialog, CloseConfirmResult } from './components/CloseConfirmDialog';
 import { SettingsModal } from './components/SettingsModal/SettingsModal';
+import { ProofreadingCheckModal } from './components/ProofreadingCheckModal';
 import { DrawingCanvas, SpreadCanvas } from './components/Canvas';
 import { DrawingToolbar } from './components/DrawingToolbar';
 import { DrawingSettingsBar } from './components/DrawingSettingsBar';
@@ -25,7 +26,7 @@ import { useSpreadViewStore } from './stores/spreadViewStore';
 import { useCommentVisibilityStore } from './stores/commentVisibilityStore';
 import { LoadedDocument, FileMetadata } from './types';
 import { renderPdfToImages } from './utils/pdfRenderer';
-import { preloadAllBackgroundImages } from './utils/backgroundImageCache';
+import { preloadAllBackgroundImages, backgroundImageCache } from './utils/backgroundImageCache';
 import './App.css';
 
 // 定数
@@ -102,6 +103,12 @@ function App() {
         // ファイル読み込み時は単ページモードに戻す
         disableSpreadView();
 
+        // アクティブなドキュメントがない場合は新規作成
+        let currentActiveId = useDocumentStore.getState().activeDocumentId;
+        if (!currentActiveId) {
+          currentActiveId = createNewDocument({ title: '新規ドキュメント' });
+        }
+
         try {
           setLoading(true, 'ファイルを読み込み中...');
           setProgress(5);
@@ -147,6 +154,18 @@ function App() {
                   title: fileName,
                   filePath: filePath,
                   fileType: 'pdf',
+                });
+                // ページサイズを含むドキュメント状態を同期
+                const currentState = useDrawingStore.getState();
+                syncFromDrawingStore({
+                  pages: currentState.pages,
+                  currentPage: currentState.currentPage,
+                  currentLayerId: currentState.currentLayerId,
+                  history: currentState.history,
+                  historyIndex: currentState.historyIndex,
+                  pdfDocument: currentState.pdfDocument,
+                  pdfPageInfos: currentState.pdfPageInfos,
+                  pdfAnnotations: currentState.pdfAnnotations,
                 });
               }
             }
@@ -197,6 +216,21 @@ function App() {
               }
             );
 
+            // ページサイズを含むドキュメント状態を同期
+            if (currentActiveId) {
+              const currentState = useDrawingStore.getState();
+              syncFromDrawingStore({
+                pages: currentState.pages,
+                currentPage: currentState.currentPage,
+                currentLayerId: currentState.currentLayerId,
+                history: currentState.history,
+                historyIndex: currentState.historyIndex,
+                pdfDocument: currentState.pdfDocument,
+                pdfPageInfos: currentState.pdfPageInfos,
+                pdfAnnotations: currentState.pdfAnnotations,
+              });
+            }
+
             setLoading(false);
             return;
           }
@@ -235,6 +269,18 @@ function App() {
                   filePath: filePath,
                   fileType: 'pdf',
                 });
+                // ページサイズを含むドキュメント状態を同期
+                const currentState = useDrawingStore.getState();
+                syncFromDrawingStore({
+                  pages: currentState.pages,
+                  currentPage: currentState.currentPage,
+                  currentLayerId: currentState.currentLayerId,
+                  history: currentState.history,
+                  historyIndex: currentState.historyIndex,
+                  pdfDocument: currentState.pdfDocument,
+                  pdfPageInfos: currentState.pdfPageInfos,
+                  pdfAnnotations: currentState.pdfAnnotations,
+                });
               }
             } else {
               // 背景画像をHTMLImageElementとしてプリロード（ストア更新前に実行）
@@ -258,6 +304,18 @@ function App() {
                   filePath: filePath,
                   fileType: 'images',
                 });
+                // ページサイズを含むドキュメント状態を同期
+                const currentState = useDrawingStore.getState();
+                syncFromDrawingStore({
+                  pages: currentState.pages,
+                  currentPage: currentState.currentPage,
+                  currentLayerId: currentState.currentLayerId,
+                  history: currentState.history,
+                  historyIndex: currentState.historyIndex,
+                  pdfDocument: currentState.pdfDocument,
+                  pdfPageInfos: currentState.pdfPageInfos,
+                  pdfAnnotations: currentState.pdfAnnotations,
+                });
               }
             }
           }
@@ -272,7 +330,7 @@ function App() {
   );
 
   // ドキュメント切り替え時のハンドラー
-  const handleSwitchDocument = useCallback((id: string) => {
+  const handleSwitchDocument = useCallback(async (id: string) => {
     // 現在のドキュメント状態を保存（ドキュメントがまだ存在する場合のみ）
     const currentActiveId = useDocumentStore.getState().activeDocumentId;
     if (currentActiveId && useDocumentStore.getState().documents.has(currentActiveId)) {
@@ -286,7 +344,19 @@ function App() {
     // 新しいドキュメントの状態を復元
     const docState = getDocumentForDrawingStore(id);
     if (docState) {
+      // 背景画像キャッシュをクリア（restoreDocumentStateの前に実行することで、
+      // 古いキャッシュ画像が表示されるのを防ぐ）
+      backgroundImageCache.clear();
+
       restoreDocumentState(docState);
+
+      // 背景画像キャッシュを再構築（ドキュメントごとに異なる画像を使用するため）
+      if (docState.pages.length > 0) {
+        await preloadAllBackgroundImages(
+          (pageNumber) => docState.pages[pageNumber]?.backgroundImage || null,
+          docState.pages.length
+        );
+      }
     }
   }, [getDocumentState, syncFromDrawingStore, switchDocument, getDocumentForDrawingStore, restoreDocumentState]);
 
@@ -301,6 +371,9 @@ function App() {
 
     // 新規ドキュメントを作成
     const newDocId = createNewDocument({ title: '新規タブ' });
+
+    // 背景画像キャッシュをクリア（新規タブには背景画像がないため）
+    backgroundImageCache.clear();
 
     // drawingStoreをクリアして新規状態にする
     clearDocument();
@@ -318,14 +391,12 @@ function App() {
     // 新しいアクティブドキュメントの状態を復元
     const newActiveId = useDocumentStore.getState().activeDocumentId;
     if (newActiveId) {
-      const docState = getDocumentForDrawingStore(newActiveId);
-      if (docState) {
-        restoreDocumentState(docState);
-      }
+      // handleSwitchDocumentを使用（背景画像キャッシュの再構築も含む）
+      handleSwitchDocument(newActiveId);
     } else {
       useDrawingStore.getState().clearDocument();
     }
-  }, [closeDocument, getDocumentForDrawingStore, restoreDocumentState]);
+  }, [closeDocument, handleSwitchDocument]);
 
   // 保存してから閉じる（カスタムイベントを発火してHeaderBarに通知）
   const handleSaveAndClose = useCallback(async (docId: string): Promise<void> => {
@@ -695,10 +766,8 @@ function App() {
               // 新しいアクティブドキュメントの状態を復元
               const newActiveId = useDocumentStore.getState().activeDocumentId;
               if (newActiveId) {
-                const docState = getDocumentForDrawingStore(newActiveId);
-                if (docState) {
-                  restoreDocumentState(docState);
-                }
+                // handleSwitchDocumentを使用（背景画像キャッシュの再構築も含む）
+                handleSwitchDocument(newActiveId);
               } else {
                 useDrawingStore.getState().clearDocument();
               }
@@ -721,16 +790,8 @@ function App() {
             }
             const nextId = tabs[nextIndex].id;
 
-            // 現在のドキュメント状態を保存
-            const currentState = getDocumentState();
-            syncFromDrawingStore(currentState);
-
-            // 新しいドキュメントの状態を復元
-            switchDocument(nextId);
-            const docState = getDocumentForDrawingStore(nextId);
-            if (docState) {
-              restoreDocumentState(docState);
-            }
+            // handleSwitchDocumentを使用（背景画像キャッシュの再構築も含む）
+            handleSwitchDocument(nextId);
           }
         }
       }
@@ -753,7 +814,7 @@ function App() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [undo, redo, resetZoom, tool, setTool, selectedStrokeIds, selectedTextIds, deleteSelectedStrokes, pages, currentPage, setCurrentPage, isViewerMode, handleEnterViewerMode, handleExitViewerMode, navigatePageInViewerMode, clearAllDrawings, activeDocumentId, getDocumentState, syncFromDrawingStore, closeDocument, getTabInfoList, switchDocument, getDocumentForDrawingStore, restoreDocumentState, isSpreadView, nextSpread, prevSpread, bindingDirection, toggleCommentVisibility]);
+  }, [undo, redo, resetZoom, tool, setTool, selectedStrokeIds, selectedTextIds, deleteSelectedStrokes, pages, currentPage, setCurrentPage, isViewerMode, handleEnterViewerMode, handleExitViewerMode, navigatePageInViewerMode, clearAllDrawings, activeDocumentId, getDocumentState, syncFromDrawingStore, closeDocument, getTabInfoList, switchDocument, getDocumentForDrawingStore, restoreDocumentState, isSpreadView, nextSpread, prevSpread, bindingDirection, toggleCommentVisibility, handleSwitchDocument]);
 
   // ホイールスクロールでページ送り（閲覧モード時）
   useEffect(() => {
@@ -838,6 +899,9 @@ function App() {
 
       {/* 環境設定モーダル */}
       <SettingsModal />
+
+      {/* 校正チェックモーダル */}
+      <ProofreadingCheckModal />
     </div>
   );
 }

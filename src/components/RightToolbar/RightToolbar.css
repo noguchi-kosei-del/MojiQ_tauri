@@ -109,7 +109,7 @@
 .right-toolbar-load-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px;
   width: 100%;
   padding: 10px 12px;
@@ -131,6 +131,36 @@
   width: 14px;
   height: 14px;
   stroke: #4caf50;
+}
+
+/* 校正チェックボタン */
+.right-toolbar-load-btn.proofreading-check-btn {
+  background: #e3f2fd;
+  border-color: #90caf9;
+  color: #1565c0;
+}
+
+.right-toolbar-load-btn.proofreading-check-btn:hover {
+  background: #bbdefb;
+}
+
+.right-toolbar-load-btn.proofreading-check-btn svg {
+  stroke: #1565c0;
+}
+
+/* ダークモード */
+[data-theme="dark"] .right-toolbar-load-btn.proofreading-check-btn {
+  background: #1a2a3d;
+  border-color: #4a7ab0;
+  color: #90caf9;
+}
+
+[data-theme="dark"] .right-toolbar-load-btn.proofreading-check-btn:hover {
+  background: #2a3a50;
+}
+
+[data-theme="dark"] .right-toolbar-load-btn.proofreading-check-btn svg {
+  stroke: #90caf9;
 }
 
 /* セクション区切り */

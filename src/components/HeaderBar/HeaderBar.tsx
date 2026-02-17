@@ -10,7 +10,7 @@ import { open, save, ask, message } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LoadedDocument, PageState, Layer } from '../../types';
-import { loadPdfDocument as loadPdfDocumentFromFile } from '../../utils/pdfRenderer';
+import { loadPdfDocument as loadPdfDocumentFromFile, renderPdfPage } from '../../utils/pdfRenderer';
 import { HamburgerMenu } from '../HamburgerMenu';
 import MojiQLogo from '../../../logo/MojiQ_icon.png';
 import './HeaderBar.css';
@@ -108,6 +108,20 @@ const ViewerModeIcon = () => (
     <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
     <line x1="8" y1="21" x2="16" y2="21"/>
     <line x1="12" y1="17" x2="12" y2="21"/>
+  </svg>
+);
+
+// Print icon (printer)
+const PrintIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    {/* プリンター本体 */}
+    <path d="M4 15V10a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v5"/>
+    {/* 上部の用紙トレイ */}
+    <path d="M6 9V4h12v5"/>
+    {/* 下部の出力用紙 */}
+    <rect x="6" y="15" width="12" height="6" rx="0.5"/>
+    {/* 本体右側のボタン */}
+    <circle cx="17" cy="12" r="0.5" fill="currentColor"/>
   </svg>
 );
 
@@ -550,44 +564,73 @@ export const HeaderBar: React.FC = () => {
 
   // PDF保存の共通処理
   const savePdfToPath = async (savePath: string) => {
-    setLoading(true, 'PDFを保存中...');
-    setProgress(50);
+    try {
+      setLoading(true, 'PDFを保存中...');
+      setProgress(10);
 
-    const state = useDrawingStore.getState();
-    const pageDrawings = state.pages.map((page) => ({
-      page_number: page.pageNumber,
-      strokes: page.layers.flatMap((layer) =>
-        layer.visible
-          ? layer.strokes.map((stroke) => ({
-              points: stroke.points.map((p) => [p.x, p.y] as [number, number]),
-              color: stroke.color,
-              width: stroke.width,
-              pressure: stroke.points.map((p) => p.pressure || 0.5),
-            }))
-          : []
-      ),
-      width: page.width,
-      height: page.height,
-    }));
+      const { pages, getPageImageAsync } = useDrawingStore.getState();
+      const pageDrawings = pages.map((page) => ({
+        page_number: page.pageNumber,
+        strokes: page.layers.flatMap((layer) =>
+          layer.visible
+            ? layer.strokes.map((stroke) => ({
+                points: stroke.points.map((p) => [p.x, p.y] as [number, number]),
+                color: stroke.color,
+                width: stroke.width,
+                pressure: stroke.points.map((p) => p.pressure || 0.5),
+              }))
+            : []
+        ),
+        width: page.width,
+        height: page.height,
+      }));
 
-    const backgroundImages = state.pages.map((page) => page.backgroundImage);
+      // リンク方式の場合、保存前に画像を読み込む
+      const backgroundImages: string[] = [];
+      const totalPages = pages.length;
+      for (let i = 0; i < totalPages; i++) {
+        const page = pages[i];
+        let imageData = page.backgroundImage;
 
-    await invoke('save_pdf', {
-      savePath,
-      request: {
-        original_path: null,
-        pages: pageDrawings,
-        background_images: backgroundImages,
-      },
-    });
+        // backgroundImageが空でリンク方式の場合は読み込む
+        if (!imageData && page.imageLink?.type === 'file') {
+          try {
+            setLoading(true, `画像を読み込み中... (${i + 1}/${totalPages})`);
+            imageData = await getPageImageAsync(i);
+          } catch (error) {
+            console.error(`Failed to load image for page ${i}:`, error);
+            imageData = '';
+          }
+        }
+        backgroundImages.push(imageData);
 
-    // ドキュメントを保存済みとしてマーク
-    if (activeDocumentId) {
-      markAsSaved(activeDocumentId, savePath);
+        // 進捗更新
+        setProgress(10 + Math.floor((i / totalPages) * 40));
+      }
+
+      setLoading(true, 'PDFを生成中...');
+      setProgress(50);
+
+      await invoke('save_pdf', {
+        savePath,
+        request: {
+          original_path: null,
+          pages: pageDrawings,
+          background_images: backgroundImages,
+        },
+      });
+
+      // ドキュメントを保存済みとしてマーク
+      if (activeDocumentId) {
+        markAsSaved(activeDocumentId, savePath);
+      }
+
+      setProgress(100);
+    } catch (error) {
+      console.error('Failed to save PDF:', error);
+    } finally {
+      setLoading(false);
     }
-
-    setProgress(100);
-    setLoading(false);
   };
 
   // 上書き保存
@@ -681,6 +724,18 @@ export const HeaderBar: React.FC = () => {
     };
   }, [getActiveDocument, savePdfToPath]);
 
+  // 印刷リクエストをリッスン（Ctrl+P）
+  useEffect(() => {
+    const handlePrintRequest = () => {
+      handlePrint();
+    };
+
+    window.addEventListener('mojiq-print', handlePrintRequest);
+    return () => {
+      window.removeEventListener('mojiq-print', handlePrintRequest);
+    };
+  }, []);
+
   const handleClearAllDrawings = async () => {
     if (pages.length > 0) {
       const confirmed = await ask('すべての描画を消去しますか？', {
@@ -749,6 +804,87 @@ export const HeaderBar: React.FC = () => {
     if (confirmed) {
       deleteCurrentPage();
       setIsSpreadMenuOpen(false);
+    }
+  };
+
+  // 印刷処理
+  const handlePrint = async () => {
+    if (pages.length === 0 || isLoading) return;
+
+    try {
+      setLoading(true, '印刷用PDFを準備中...');
+      setProgress(10);
+
+      const { pages, getPageImageAsync, pdfDocument } = useDrawingStore.getState();
+      const pageDrawings = pages.map((page) => ({
+        page_number: page.pageNumber,
+        strokes: page.layers.flatMap((layer) =>
+          layer.visible
+            ? layer.strokes.map((stroke) => ({
+                points: stroke.points.map((p) => [p.x, p.y] as [number, number]),
+                color: stroke.color,
+                width: stroke.width,
+                pressure: stroke.points.map((p) => p.pressure || 0.5),
+              }))
+            : []
+        ),
+        width: page.width,
+        height: page.height,
+      }));
+
+      // 背景画像を取得
+      const backgroundImages: string[] = [];
+      const totalPages = pages.length;
+      for (let i = 0; i < totalPages; i++) {
+        const page = pages[i];
+        let imageData = page.backgroundImage;
+
+        // backgroundImageが空の場合
+        if (!imageData) {
+          // リンク方式の場合
+          if (page.imageLink?.type === 'file') {
+            try {
+              setLoading(true, `画像を読み込み中... (${i + 1}/${totalPages})`);
+              imageData = await getPageImageAsync(i);
+            } catch (error) {
+              console.error(`Failed to load image for page ${i}:`, error);
+              imageData = '';
+            }
+          }
+          // PDFドキュメントの場合
+          else if (pdfDocument) {
+            try {
+              setLoading(true, `PDFページをレンダリング中... (${i + 1}/${totalPages})`);
+              imageData = await renderPdfPage(pdfDocument, i);
+            } catch (error) {
+              console.error(`Failed to render PDF page ${i}:`, error);
+              imageData = '';
+            }
+          }
+        }
+        backgroundImages.push(imageData);
+
+        // 進捗更新
+        setProgress(10 + Math.floor((i / totalPages) * 40));
+      }
+
+      setLoading(true, '印刷ダイアログを開いています...');
+      setProgress(60);
+
+      await invoke('print_pdf', {
+        request: {
+          original_path: null,
+          pages: pageDrawings,
+          background_images: backgroundImages,
+        },
+      });
+
+      setProgress(100);
+    } catch (error) {
+      console.error('Failed to print:', error);
+      await message('印刷に失敗しました: ' + error, { title: 'エラー', kind: 'error' });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -938,6 +1074,15 @@ export const HeaderBar: React.FC = () => {
             className={isViewerMode ? 'active' : ''}
           >
             <ViewerModeIcon />
+          </button>
+
+          {/* 印刷ボタン */}
+          <button
+            onClick={handlePrint}
+            title="印刷 (Ctrl+P)"
+            disabled={pages.length === 0 || isLoading}
+          >
+            <PrintIcon />
           </button>
         </div>
 

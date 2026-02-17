@@ -1,3 +1,5 @@
+import type { PDFDocumentProxy } from 'pdfjs-dist';
+
 export interface Point {
   x: number;
   y: number;
@@ -16,7 +18,9 @@ export type StampType =
   | 'zenkakuakiStamp' // 全角アキスタンプ
   | 'hankakuakiStamp' // 半角アキスタンプ
   | 'kaigyouStamp'    // 改行スタンプ
-  | 'komojiStamp';    // 小文字スタンプ（○に小）
+  | 'komojiStamp'     // 小文字スタンプ（○に小）
+  | 'tojiruStamp'     // とじるスタンプ
+  | 'hirakuStamp';    // ひらくスタンプ
 
 // PDF注釈のソースタイプ
 export type PdfAnnotationSourceType = 'Text' | 'FreeText' | 'Highlight' | 'Underline' | 'StrikeOut';
@@ -197,7 +201,7 @@ export interface DrawingState {
   selectedAnnotationShapeId: string | null;
   selectionBounds: SelectionBounds | null;
   // PDF関連
-  pdfDocument: unknown | null;  // PDF.jsのPDFDocumentProxy
+  pdfDocument: PDFDocumentProxy | null;
   pdfPageInfos: PdfPageInfo[];
   pdfAnnotations: PdfAnnotationText[][];
   // スタンプ関連
@@ -210,3 +214,40 @@ export interface HistoryState {
 }
 
 export type ToolType = 'pen' | 'eraser' | 'select' | 'rect' | 'ellipse' | 'line' | 'rectAnnotated' | 'ellipseAnnotated' | 'lineAnnotated' | 'marker' | 'pan' | 'text' | 'arrow' | 'doubleArrow' | 'polyline' | 'image' | 'stamp' | 'labeledRect';
+
+// ===== 校正チェック機能 =====
+
+// 校正チェック項目
+export interface ProofreadingCheckItem {
+  picked?: boolean;
+  category?: string;
+  page?: string;
+  excerpt?: string;
+  content?: string;
+  checkKind?: 'correctness' | 'proposal';
+}
+
+// 校正チェックカテゴリ
+export interface ProofreadingCheckCategory {
+  items: ProofreadingCheckItem[];
+}
+
+// 校正チェック全体
+export interface ProofreadingChecks {
+  variation?: ProofreadingCheckCategory;
+  simple?: ProofreadingCheckCategory;
+}
+
+// 校正チェックデータ
+export interface ProofreadingCheckData {
+  title?: string;
+  work?: string;
+  checks?: ProofreadingChecks;
+}
+
+// フォルダエントリ（Tauriから返却）
+export interface FolderEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+}
