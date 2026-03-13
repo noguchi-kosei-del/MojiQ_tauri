@@ -3,7 +3,6 @@ import { useDrawingStore } from '../../stores/drawingStore';
 import { useViewerModeStore } from '../../stores/viewerModeStore';
 import { useSidebarStore } from '../../stores/sidebarStore';
 import { usePresetStore, FontPreset, WorkSpec } from '../../stores/presetStore';
-import { useProofreadingCheckStore } from '../../stores/proofreadingCheckStore';
 import { invoke } from '@tauri-apps/api/core';
 import './RightToolbar.css';
 
@@ -67,17 +66,6 @@ const FileIcon = () => (
   </svg>
 );
 
-const CheckListIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="10" y1="6" x2="21" y2="6"/>
-    <line x1="10" y1="12" x2="21" y2="12"/>
-    <line x1="10" y1="18" x2="21" y2="18"/>
-    <polyline points="3,6 4,7 6,5"/>
-    <polyline points="3,12 4,13 6,11"/>
-    <polyline points="3,18 4,19 6,17"/>
-  </svg>
-);
-
 // メモストレージキー
 const MEMO_STORAGE_KEY = 'mojiq_memo';
 
@@ -86,7 +74,6 @@ export const RightToolbar: React.FC = () => {
   const { isActive: isViewerMode } = useViewerModeStore();
   const { isRightCollapsed, toggleRightSidebar } = useSidebarStore();
   const { fontSizes, fonts, selectedFontSize, selectedFont, selectFontSize, selectFont, appendWorkSpec, clearFonts, addFont, removeFont, updateFont, fontColorIndex } = usePresetStore();
-  const { openModal: openProofreadingCheckModal } = useProofreadingCheckStore();
 
   // パネル開閉状態
   const [isProofreadingOpen, setIsProofreadingOpen] = useState(false);
@@ -570,15 +557,6 @@ export const RightToolbar: React.FC = () => {
           >
             <FolderIcon />
             作品仕様を読み込み
-          </button>
-
-          {/* 校正チェックボタン */}
-          <button
-            className="right-toolbar-load-btn proofreading-check-btn"
-            onClick={openProofreadingCheckModal}
-          >
-            <CheckListIcon />
-            校正チェック
           </button>
 
           <div className="right-toolbar-divider" />

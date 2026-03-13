@@ -16,6 +16,8 @@ import { TabBar } from './components/TabBar';
 import { PageNav } from './components/PageNav';
 import { LoadingOverlay } from './components/LoadingOverlay';
 import { ViewerModeOverlay } from './components/ViewerMode';
+import { ProofreadingPanel } from './components/ProofreadingPanel';
+import { ProofreadingToolbar } from './components/ProofreadingToolbar';
 import { useDrawingStore } from './stores/drawingStore';
 import { useDocumentStore } from './stores/documentStore';
 import { useLoadingStore } from './stores/loadingStore';
@@ -25,6 +27,7 @@ import { useViewerModeStore } from './stores/viewerModeStore';
 import { useWorkspaceStore } from './stores/workspaceStore';
 import { useSpreadViewStore } from './stores/spreadViewStore';
 import { useCommentVisibilityStore } from './stores/commentVisibilityStore';
+import { useModeStore } from './stores/modeStore';
 import { LoadedDocument, FileMetadata } from './types';
 import { renderPdfToImages } from './utils/pdfRenderer';
 import { preloadAllBackgroundImages, backgroundImageCache } from './utils/backgroundImageCache';
@@ -56,6 +59,7 @@ function App() {
   const { isFlipped } = useWorkspaceStore();
   const { isSpreadView, nextSpread, prevSpread, bindingDirection, disableSpreadView } = useSpreadViewStore();
   const { toggle: toggleCommentVisibility } = useCommentVisibilityStore();
+  const { mode } = useModeStore();
 
   // ページナビゲーション用の状態
   const isNavigatingRef = useRef(false);
@@ -965,7 +969,7 @@ function App() {
   }, [handleFileDrop]);
 
   return (
-    <div className={`app ${isViewerMode ? 'viewer-mode' : ''} ${isFlipped ? 'workspace-flipped' : ''}`}>
+    <div className={`app ${isViewerMode ? 'viewer-mode' : ''} ${isFlipped ? 'workspace-flipped' : ''} ${mode === 'proofreading' ? 'proofreading-mode' : ''}`}>
       <LoadingOverlay />
       <ViewerModeOverlay onExit={handleExitViewerMode} />
       <HeaderBar />
@@ -977,10 +981,6 @@ function App() {
       {pages.length === 0 ? (
         // ホーム画面
         <div className="home-screen">
-          <div className="home-header">
-            <img src="/logo/MojiQ_icon.png" alt="MojiQ" className="home-logo" />
-            <h1 className="home-title">MojiQへようこそ</h1>
-          </div>
           <div className="home-content">
             <DrawingCanvas />
           </div>
@@ -989,14 +989,16 @@ function App() {
         // 編集画面
         <>
           <div className="app-body">
-            {!isSpreadView && <DrawingSettingsBar />}
-            {!isSpreadView && <DrawingToolbar />}
+            {!isSpreadView && mode === 'instruction' && <DrawingSettingsBar />}
+            {!isSpreadView && mode === 'instruction' && <DrawingToolbar />}
             <div className="main-content">
               <div className="canvas-area">
                 {isSpreadView ? <SpreadCanvas /> : <DrawingCanvas />}
               </div>
             </div>
-            {!isSpreadView && <RightToolbar />}
+            {!isSpreadView && mode === 'instruction' && <RightToolbar />}
+            {!isSpreadView && mode === 'proofreading' && <ProofreadingToolbar />}
+            {!isSpreadView && mode === 'proofreading' && <ProofreadingPanel />}
           </div>
           {!isSpreadView && pages.length > 1 && <PageNav />}
         </>

@@ -1,0 +1,191 @@
+/**
+ * ProofreadingToolbar.css - 校正チェックモード用ツールバー
+ */
+
+/* ========================================= */
+/* ツールバー全体                            */
+/* ========================================= */
+
+.proofreading-toolbar {
+  width: 42px;
+  min-width: 42px;
+  height: 100%;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  font-size: 12px;
+  transition: width 0.2s ease, min-width 0.2s ease;
+}
+
+/* 折りたたみ状態 */
+.proofreading-toolbar.collapsed {
+  width: 24px !important;
+  min-width: 24px !important;
+}
+
+/* ========================================= */
+/* 折りたたみヘッダー                        */
+/* ========================================= */
+
+.proofreading-toolbar .toolbar-collapse-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  height: 24px;
+  min-height: 24px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  padding-left: 4px;
+  box-sizing: border-box;
+}
+
+.proofreading-toolbar.collapsed .toolbar-collapse-header {
+  justify-content: center;
+  padding-left: 0;
+}
+
+.proofreading-toolbar .toolbar-toggle-btn {
+  width: 18px;
+  height: 18px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  padding: 0;
+  line-height: 1;
+}
+
+.proofreading-toolbar .toolbar-toggle-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.proofreading-toolbar .toolbar-toggle-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ========================================= */
+/* ツールバーコンテンツ                      */
+/* ========================================= */
+
+.proofreading-toolbar .toolbar-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+  overflow: visible;
+}
+
+/* ========================================= */
+/* 描画ツールセクション                      */
+/* ========================================= */
+
+.proofreading-toolbar .drawing-tools-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.proofreading-toolbar .drawing-tools-section > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.proofreading-toolbar .drawing-tools-section > button svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+}
+
+.proofreading-toolbar .drawing-tools-section > button:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+}
+
+.proofreading-toolbar .drawing-tools-section > button.active {
+  background-color: var(--accent-color);
+  color: #fff;
+}
+
+/* ツールグループ（縦並び） */
+.proofreading-toolbar .tool-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.proofreading-toolbar .tool-group button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.proofreading-toolbar .tool-group button svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+}
+
+.proofreading-toolbar .tool-group button:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+}
+
+.proofreading-toolbar .tool-group button.active {
+  background-color: var(--accent-color);
+  color: #fff;
+}
+
+/* +テキスト付きボタン（小さめ） */
+.proofreading-toolbar .tool-group .annotated-btn {
+  width: 30px;
+  height: 22px;
+  background-color: var(--bg-hover);
+  border: 1px dashed var(--border-color);
+}
+
+.proofreading-toolbar .tool-group .annotated-btn:hover:not(:disabled) {
+  background-color: var(--bg-tertiary);
+}
+
+.proofreading-toolbar .tool-group .annotated-btn.active {
+  background-color: var(--accent-color);
+  border-color: var(--accent-color);
+  border-style: solid;
+  color: #fff;
+}
+
+.proofreading-toolbar .tool-group .annotated-btn svg {
+  width: 14px;
+  height: 14px;
+}

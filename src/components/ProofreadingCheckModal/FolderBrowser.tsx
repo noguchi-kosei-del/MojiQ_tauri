@@ -1,8 +1,7 @@
 import React, { useEffect, useCallback, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useProofreadingCheckStore } from '../../stores/proofreadingCheckStore';
-import { useThemeStore } from '../../stores/themeStore';
-import { FolderEntry } from '../../types';
+import { FolderEntry, ProofreadingCheckData } from '../../types';
 
 // SVG Icons
 const FolderIcon: React.FC = () => (
@@ -35,10 +34,9 @@ export const FolderBrowser: React.FC = () => {
     closeModal,
     setLoading,
     setError,
+    setCurrentData,
     isLoading,
   } = useProofreadingCheckStore();
-
-  const { theme } = useThemeStore();
   const [entries, setEntries] = useState<FolderEntry[]>([]);
 
   // Load folder contents when path changes
@@ -78,25 +76,31 @@ export const FolderBrowser: React.FC = () => {
         return;
       }
 
-      console.log('[ProofreadingCheck] ビューアーを開く:', { path: entry.path, basePath, fileName: entry.name });
+      setLoading(true);
 
-      // Rustコマンドでウィンドウを開く
-      await invoke('open_proofreading_viewer', {
-        filePath: entry.path,
+      // JSONファイルを読み込んでストアにセット
+      const data = await invoke<ProofreadingCheckData>('read_proofreading_check_file', {
+        path: entry.path,
         basePath: basePath,
-        fileName: entry.name,
-        darkMode: theme === 'dark',
       });
 
-      console.log('[ProofreadingCheck] ビューアーウィンドウが作成されました');
+      // ファイル名から拡張子を除去してタイトルを生成
+      const fileNameWithoutExt = entry.name.replace(/\.json$/i, '');
+      const workName = data.work || '';
+      const title = workName ? `${workName} ${fileNameWithoutExt}` : fileNameWithoutExt;
+
+      // ストアにデータをセット（タイトルを含む）
+      setCurrentData({ ...data, title }, entry.name);
 
       // モーダルを閉じる
       closeModal();
     } catch (e) {
-      console.error('[ProofreadingCheck] ビューアーの表示エラー:', e);
-      setError(`ビューアーの表示に失敗: ${e}`);
+      console.error('[ProofreadingCheck] JSONファイルの読み込みエラー:', e);
+      setError(`ファイルの読み込みに失敗: ${e}`);
+    } finally {
+      setLoading(false);
     }
-  }, [basePath, theme, closeModal, setError]);
+  }, [basePath, closeModal, setError, setLoading, setCurrentData]);
 
   // Render breadcrumb
   const renderBreadcrumb = () => {

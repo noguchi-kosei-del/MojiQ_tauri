@@ -198,6 +198,7 @@ interface Shape {
 | `calibrationStore` | 縮尺設定（pixelsPerMm、キャリブレーションモード） |
 | `gridStore` | 写植グリッド（ページごとのグリッド、書き方向、サンプルテキスト） |
 | `proofreadingCheckStore` | 校正チェック（モーダル状態、ナビゲーション、データ表示） |
+| `modeStore` | モード管理（指示入れモード/校正チェックモード） |
 
 ## 開発・ビルド
 
@@ -233,6 +234,8 @@ MojiQ_3.0/
 │   │   ├── GridSettingsPanel/ # 写植グリッド設定パネル
 │   │   ├── ProofreadingViewer/ # 校正チェックビューア
 │   │   ├── ProofreadingCheckModal/ # 校正チェックモーダル
+│   │   ├── ProofreadingPanel/ # 校正チェックパネル（右サイドバー）
+│   │   ├── ProofreadingToolbar/ # 校正チェックツールバー（描画ツール）
 │   │   ├── PageJumpDialog/  # ページジャンプダイアログ
 │   │   └── ...              # その他コンポーネント
 │   ├── stores/              # Zustand状態管理
@@ -455,3 +458,19 @@ MojiQ_3.0/
   - `src/components/PageJumpDialog/` - ダイアログコンポーネント
   - ノンブル入力でページ移動
   - 横長原稿の場合はノンブル計算を適用
+
+### 2026-03-13（続き）
+#### 校正チェックモードUI改善
+- **モード切り替え**: 指示入れモード/校正チェックモードの切り替え機能
+  - `src/stores/modeStore.ts` - モード状態管理
+  - ヘッダーバーにモード切り替えボタンを追加
+- **ProofreadingPanel**: 校正チェック用右サイドバー
+  - `src/components/ProofreadingPanel/` - パネルコンポーネント
+  - 校正チェックデータの読み込みボタン（青色スタイル）
+  - 折りたたみ機能（指示入れモードのサイドバーと同様）
+- **ProofreadingToolbar**: 校正チェック用描画ツールバー
+  - `src/components/ProofreadingToolbar/` - ツールバーコンポーネント
+  - サイドバーの左側に配置（42px幅）
+  - 描画ツール: 選択、ペン、マーカー、消しゴム、移動、テキスト
+  - 図形ツール: 枠線、楕円、直線（各+テキスト版付き）
+  - 折りたたみ機能（左端に矢印ボタン）

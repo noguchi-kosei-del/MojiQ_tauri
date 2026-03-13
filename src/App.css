@@ -288,6 +288,27 @@ html, body, #root {
 }
 
 /* ========================================
+   校正チェックモード (Proofreading Mode) スタイル
+   ======================================== */
+
+/* 校正チェックモード時: app-body のトランジション */
+.app .app-body {
+  transition: all 0.2s ease;
+}
+
+/* 校正チェックモード時: ツールバー類の非表示 */
+.app.proofreading-mode .drawing-toolbar,
+.app.proofreading-mode .drawing-settings-bar,
+.app.proofreading-mode .right-toolbar {
+  display: none;
+}
+
+/* 校正チェックモード時: main-contentのレイアウト調整 */
+.app.proofreading-mode .main-content {
+  flex: 1;
+}
+
+/* ========================================
    ワークスペース反転 (Workspace Flipped) スタイル
    ======================================== */
 

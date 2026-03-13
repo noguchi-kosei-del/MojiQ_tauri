@@ -98,6 +98,13 @@
   border-radius: 8px;
   background-color: var(--bg-secondary);
   color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.canvas-placeholder:hover {
+  border-color: var(--accent);
+  background-color: var(--bg-hover);
 }
 
 .canvas-placeholder p {
@@ -113,6 +120,31 @@
   margin-bottom: 16px;
   color: var(--text-secondary);
   opacity: 0.7;
+}
+
+/* 現在のモード表示ラベル */
+.current-mode-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 24px;
+  padding: 6px 16px;
+  background: rgba(76, 175, 80, 0.15);
+  border-radius: 20px;
+  border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.current-mode-label svg {
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.current-mode-label.proofreading {
+  background: rgba(100, 149, 237, 0.15);
+  border-color: rgba(100, 149, 237, 0.3);
 }
 
 /* アノテーションモードのヒント */

@@ -1,12 +1,33 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useCanvas } from '../../hooks/useCanvas';
 import { useDrawingStore } from '../../stores/drawingStore';
+import { useDocumentStore } from '../../stores/documentStore';
+import { useLoadingStore } from '../../stores/loadingStore';
 import { useZoomStore } from '../../stores/zoomStore';
 import { useViewerModeStore } from '../../stores/viewerModeStore';
 import { useBgOpacityStore } from '../../stores/bgOpacityStore';
+import { useModeStore } from '../../stores/modeStore';
 import { AnnotationModal } from '../AnnotationModal';
-import { message } from '@tauri-apps/plugin-dialog';
+import { open, message } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
+import { LoadedDocument } from '../../types';
+import { loadPdfDocument as loadPdfDocumentFromFile } from '../../utils/pdfRenderer';
 import './DrawingCanvas.css';
+
+// モードアイコン（指示入れモード）- HeaderBarと同じ
+const InstructionModeIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+  </svg>
+);
+
+// モードアイコン（校正チェックモード）- HeaderBarと同じ
+const ProofreadingModeIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 11l3 3L22 4"/>
+    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+  </svg>
+);
 
 // ファイルを開くアイコン
 const FileOpenIcon = () => (
@@ -54,10 +75,13 @@ export const DrawingCanvas: React.FC = () => {
 
   // 画像ファイル入力用のref
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const { getCurrentPageState, tool, pages, currentPage, setCurrentPage, addShape, color, strokeWidth } = useDrawingStore();
+  const { getCurrentPageState, tool, pages, currentPage, setCurrentPage, addShape, color, strokeWidth, loadPdfDocument } = useDrawingStore();
+  const { registerLoadedDocument } = useDocumentStore();
+  const { setLoading, setProgress } = useLoadingStore();
   const { zoom, setZoom, minZoom, maxZoom, zoomStep } = useZoomStore();
   const { isActive: isViewerMode } = useViewerModeStore();
   const { bgOpacity } = useBgOpacityStore();
+  const { mode } = useModeStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const [baseScale, setBaseScale] = useState(1);
@@ -126,6 +150,86 @@ export const DrawingCanvas: React.FC = () => {
     setPendingLabeledRect(null);
     setLabelInput('');
   }, [setShowLabelInputModal, setPendingLabeledRect]);
+
+  // プレースホルダークリックでファイルを開く
+  const handlePlaceholderClick = useCallback(async () => {
+    try {
+      const selected = await open({
+        multiple: true,
+        filters: [
+          {
+            name: 'Documents',
+            extensions: ['pdf', 'jpg', 'jpeg', 'png'],
+          },
+        ],
+      });
+
+      if (!selected) return;
+
+      setLoading(true, 'ファイルを読み込み中...');
+      setProgress(5);
+
+      const paths = Array.isArray(selected) ? selected : [selected];
+
+      // 画像ファイルとPDFを分離
+      const imageExtensions = ['.jpg', '.jpeg', '.png'];
+      const imagePaths = paths.filter(path =>
+        imageExtensions.some(ext => path.toLowerCase().endsWith(ext))
+      );
+      const pdfPaths = paths.filter(path => path.toLowerCase().endsWith('.pdf'));
+
+      // PDFが含まれている場合は最初のPDFを読み込む
+      if (pdfPaths.length > 0) {
+        setProgress(20);
+        const filePath = pdfPaths[0];
+        const fileName = filePath.split(/[/\\]/).pop() || 'PDF';
+        const result = await invoke<LoadedDocument>('load_file', { path: filePath });
+
+        if (result.file_type === 'pdf' && result.pdf_data) {
+          setLoading(true, 'PDFを読み込み中...');
+          setProgress(40);
+          const pdfResult = await loadPdfDocumentFromFile(result.pdf_data, (progress) => {
+            setProgress(40 + (progress / 100) * 50);
+          });
+          setProgress(90);
+
+          loadPdfDocument(pdfResult.pdfDocument, pdfResult.pageInfos, pdfResult.annotations);
+          registerLoadedDocument(
+            fileName,
+            filePath,
+            'pdf',
+            [],
+            pdfResult.pdfDocument,
+            pdfResult.pageInfos,
+            pdfResult.annotations
+          );
+        }
+      } else if (imagePaths.length > 0) {
+        // 画像ファイルのみの場合
+        setProgress(30);
+        const result = await invoke<LoadedDocument>('load_files', { paths: imagePaths });
+        setProgress(80);
+
+        if (result.pages && result.pages.length > 0) {
+          const { loadDocumentWithAnnotations } = useDrawingStore.getState();
+          loadDocumentWithAnnotations(result.pages, []);
+          const fileName = imagePaths.length === 1
+            ? imagePaths[0].split(/[/\\]/).pop() || '画像'
+            : `${imagePaths.length}枚の画像`;
+          // PageDataをPageStateとして扱うため、loadDocumentWithAnnotationsで変換済みのpagesを使用
+          const loadedPages = useDrawingStore.getState().pages;
+          registerLoadedDocument(fileName, imagePaths[0], 'images', loadedPages, null, [], []);
+        }
+      }
+
+      setProgress(100);
+      setLoading(false);
+    } catch (e) {
+      console.error('Failed to open file:', e);
+      setLoading(false);
+      message(`ファイルを開けませんでした: ${e}`, { title: 'エラー', kind: 'error' });
+    }
+  }, [setLoading, setProgress, loadPdfDocument, registerLoadedDocument]);
 
   const pageState = getCurrentPageState();
   const originalWidth = pageState?.width || 800;
@@ -486,12 +590,16 @@ export const DrawingCanvas: React.FC = () => {
           </div>
         </div>
       ) : (
-        <div className="canvas-placeholder">
+        <div className="canvas-placeholder" onClick={handlePlaceholderClick} style={{ cursor: 'pointer' }}>
+          <div className={`current-mode-label ${mode === 'proofreading' ? 'proofreading' : ''}`}>
+            {mode === 'proofreading' ? <ProofreadingModeIcon /> : <InstructionModeIcon />}
+            <span>{mode === 'proofreading' ? '校正チェックモード' : '指示入れモード'}</span>
+          </div>
           <div className="placeholder-icon">
             <FileOpenIcon />
           </div>
           <p>ファイルを開いてください</p>
-          <p className="hint">PDF または JPEG ファイルをドラッグ&ドロップ</p>
+          <p className="hint">クリックまたはドラッグ&ドロップ</p>
         </div>
       )}
 

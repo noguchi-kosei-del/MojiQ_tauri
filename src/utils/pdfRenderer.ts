@@ -18,6 +18,14 @@ function pdfColorToHex(pdfColor: number[] | null | undefined): string {
   const r = Math.round(pdfColor[0] * 255);
   const g = Math.round(pdfColor[1] * 255);
   const b = Math.round(pdfColor[2] * 255);
+
+  // 白または非常に薄い色（輝度が高い）の場合は赤に変換して視認性を確保
+  // 輝度計算: (0.299*R + 0.587*G + 0.114*B)
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+  if (luminance > 240) {
+    return '#ff0000'; // 白や薄い色は赤に変換
+  }
+
   return '#' + r.toString(16).padStart(2, '0') + g.toString(16).padStart(2, '0') + b.toString(16).padStart(2, '0');
 }
 
@@ -73,8 +81,8 @@ function convertPdfAnnotationToTextObject(
   // 色の変換
   const color = pdfColorToHex(annot.color);
 
-  // フォントサイズ（スケールに合わせて大きめに設定）
-  const fontSize = annot.subtype === 'FreeText' ? 48 : 42;
+  // フォントサイズ（スケールに合わせて設定）
+  const fontSize = annot.subtype === 'FreeText' ? 24 : 21;
 
   return {
     text: textContent,

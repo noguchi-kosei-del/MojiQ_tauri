@@ -16,12 +16,11 @@ export const DataViewer: React.FC = () => {
 
   const hasCorrectness = hasCorrectnessItems();
   const hasProposal = hasProposalItems();
-  const hasBoth = hasCorrectness && hasProposal;
 
   // Get filtered items based on current tab
   const filteredItems = useMemo(() => {
-    if (currentTab === 'both') {
-      return allItems;
+    if (currentTab === 'comments') {
+      return []; // Comments tab handled separately
     }
     return allItems.filter(item => item.checkKind === currentTab);
   }, [allItems, currentTab]);
@@ -66,14 +65,6 @@ export const DataViewer: React.FC = () => {
 
         {/* Tabs */}
         <div className="data-viewer-tabs">
-          {hasBoth && (
-            <button
-              className={`data-tab ${currentTab === 'both' ? 'active' : ''}`}
-              onClick={() => handleTabClick('both')}
-            >
-              両方表示 ({allItems.length})
-            </button>
-          )}
           {hasCorrectness && (
             <button
               className={`data-tab correctness ${currentTab === 'correctness' ? 'active' : ''}`}

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { ProofreadingCheckData, ProofreadingCheckItem } from '../types';
 
-export type ProofreadingTabType = 'both' | 'correctness' | 'proposal';
+export type ProofreadingTabType = 'comments' | 'correctness' | 'proposal';
 
 interface ProofreadingCheckState {
   // Modal state
@@ -59,7 +59,7 @@ export const useProofreadingCheckStore = create<ProofreadingCheckState & Proofre
     currentData: null,
     currentFileName: '',
     allItems: [],
-    currentTab: 'both',
+    currentTab: 'correctness',
     isLoading: false,
     error: null,
 
@@ -67,9 +67,7 @@ export const useProofreadingCheckStore = create<ProofreadingCheckState & Proofre
     openModal: () => set({ isModalOpen: true }),
     closeModal: () => set({
       isModalOpen: false,
-      currentData: null,
-      currentFileName: '',
-      allItems: [],
+      // データはクリアしない（パネルに表示し続けるため）
       error: null,
     }),
 
@@ -119,22 +117,20 @@ export const useProofreadingCheckStore = create<ProofreadingCheckState & Proofre
     },
 
     setCurrentData: (data, fileName = '') => {
-      // Merge items from variation and simple, filtering by picked
+      // Merge items from variation and simple (picked関係なくすべて表示)
       const items: ProofreadingCheckItem[] = [];
       if (data?.checks?.variation?.items) {
-        items.push(...data.checks.variation.items.filter(item => item.picked !== false));
+        items.push(...data.checks.variation.items);
       }
       if (data?.checks?.simple?.items) {
-        items.push(...data.checks.simple.items.filter(item => item.picked !== false));
+        items.push(...data.checks.simple.items);
       }
 
       // Determine default tab based on available items
       const hasCorrectness = items.some(i => i.checkKind === 'correctness');
       const hasProposal = items.some(i => i.checkKind === 'proposal');
-      let defaultTab: ProofreadingTabType = 'both';
-      if (hasCorrectness && hasProposal) {
-        defaultTab = 'both';
-      } else if (hasCorrectness) {
+      let defaultTab: ProofreadingTabType = 'correctness';
+      if (hasCorrectness) {
         defaultTab = 'correctness';
       } else if (hasProposal) {
         defaultTab = 'proposal';
@@ -154,7 +150,7 @@ export const useProofreadingCheckStore = create<ProofreadingCheckState & Proofre
       currentData: null,
       currentFileName: '',
       allItems: [],
-      currentTab: 'both',
+      currentTab: 'correctness',
     }),
 
     setLoading: (loading) => set({ isLoading: loading }),
@@ -162,8 +158,8 @@ export const useProofreadingCheckStore = create<ProofreadingCheckState & Proofre
 
     getFilteredItems: () => {
       const { allItems, currentTab } = get();
-      if (currentTab === 'both') {
-        return allItems;
+      if (currentTab === 'comments') {
+        return []; // Comments tab shows PDF annotations, not check items
       }
       return allItems.filter(item => item.checkKind === currentTab);
     },
