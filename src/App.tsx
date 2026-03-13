@@ -6,6 +6,7 @@ import { ask } from '@tauri-apps/plugin-dialog';
 import { CloseConfirmDialog, CloseConfirmResult } from './components/CloseConfirmDialog';
 import { SettingsModal } from './components/SettingsModal/SettingsModal';
 import { ProofreadingCheckModal } from './components/ProofreadingCheckModal';
+import { PageJumpDialog } from './components/PageJumpDialog';
 import { DrawingCanvas, SpreadCanvas } from './components/Canvas';
 import { DrawingToolbar } from './components/DrawingToolbar';
 import { DrawingSettingsBar } from './components/DrawingSettingsBar';
@@ -70,6 +71,9 @@ function App() {
     docId: string | null;
     docTitle: string;
   }>({ isOpen: false, docId: null, docTitle: '' });
+
+  // ページジャンプダイアログの状態（Ctrl+J用）
+  const [isPageJumpOpen, setIsPageJumpOpen] = useState(false);
 
   // Initialize theme on mount and sync with window title bar
   useEffect(() => {
@@ -850,6 +854,13 @@ function App() {
             window.dispatchEvent(new CustomEvent('mojiq-print'));
           }
         }
+        // Page Jump: Ctrl + J
+        else if (e.key === 'j') {
+          e.preventDefault();
+          if (pages.length > 1) {
+            setIsPageJumpOpen(true);
+          }
+        }
         // Tab shortcuts
         // Ctrl+W: 現在のタブを閉じる
         else if (e.key === 'w') {
@@ -1001,6 +1012,12 @@ function App() {
 
       {/* 環境設定モーダル */}
       <SettingsModal />
+
+      {/* ページジャンプダイアログ */}
+      <PageJumpDialog
+        isOpen={isPageJumpOpen}
+        onClose={() => setIsPageJumpOpen(false)}
+      />
 
       {/* 校正チェックモーダル */}
       <ProofreadingCheckModal />

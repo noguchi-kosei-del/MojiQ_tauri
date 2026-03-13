@@ -1,0 +1,111 @@
+.page-jump-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.page-jump-dialog {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  min-width: 280px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.page-jump-dialog label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 12px;
+}
+
+.page-jump-dialog input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 16px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.page-jump-dialog input:focus {
+  border-color: #1976d2;
+}
+
+.page-jump-error {
+  color: #c62828;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.page-jump-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.page-jump-buttons button {
+  padding: 8px 16px;
+  font-size: 14px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.page-jump-buttons button[type="button"] {
+  background: #e0e0e0;
+  color: #333;
+}
+
+.page-jump-buttons button[type="button"]:hover {
+  background: #d0d0d0;
+}
+
+.page-jump-buttons button[type="submit"] {
+  background: #1976d2;
+  color: #fff;
+}
+
+.page-jump-buttons button[type="submit"]:hover {
+  background: #1565c0;
+}
+
+/* ダークモード対応 */
+[data-theme="dark"] .page-jump-dialog {
+  background: #2d2d2d;
+}
+
+[data-theme="dark"] .page-jump-dialog label {
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .page-jump-dialog input {
+  background: #3d3d3d;
+  border-color: #555;
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .page-jump-dialog input:focus {
+  border-color: #42a5f5;
+}
+
+[data-theme="dark"] .page-jump-buttons button[type="button"] {
+  background: #555;
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .page-jump-buttons button[type="button"]:hover {
+  background: #666;
+}

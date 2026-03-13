@@ -1,6 +1,10 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useDrawingStore } from '../../stores/drawingStore';
 import { usePageNavStore } from '../../stores/pageNavStore';
+import {
+  isLandscapeDocument,
+  formatPageDisplay,
+} from '../../utils/pageNumberUtils';
 import './PageNav.css';
 
 // SVG Icons
@@ -27,6 +31,9 @@ export const PageNav: React.FC = () => {
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const totalPages = pages.length;
+
+  // 横長原稿（見開きPDF）かどうかを判定
+  const isLandscape = useMemo(() => isLandscapeDocument(pages), [pages]);
 
   // Calculate bubble left position based on value
   // Thumb width is 16px, slider container has 8px padding on each side
@@ -156,7 +163,7 @@ export const PageNav: React.FC = () => {
               left: getBubbleLeft(sliderValue, totalPages)
             }}
           >
-            {sliderValue}/{totalPages}
+            {formatPageDisplay(sliderValue, totalPages, isLandscape)}
           </span>
           <input
             type="range"

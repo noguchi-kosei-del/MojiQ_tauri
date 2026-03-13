@@ -56,6 +56,21 @@ pub struct SaveRequest {
     pub background_images: Vec<String>,
 }
 
+// 新しいPDF保存用構造体（描画オーバーレイPNG方式）
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PageDrawingsV2 {
+    pub page_number: usize,
+    pub drawing_overlay: String,  // 描画レイヤーのBase64 PNG
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SaveRequestV2 {
+    pub pages: Vec<PageDrawingsV2>,
+    pub background_images: Vec<String>,
+}
+
 #[tauri::command]
 pub async fn open_file_dialog() -> Result<Option<String>, String> {
     Ok(None)
@@ -242,6 +257,15 @@ pub async fn save_pdf(
     request: SaveRequest,
 ) -> Result<(), String> {
     create_pdf_with_drawings(&save_path, &request).map_err(|e| e.to_string())
+}
+
+// 新しいPDF保存（描画オーバーレイPNG方式）
+#[tauri::command]
+pub async fn save_pdf_v2(
+    save_path: String,
+    request: SaveRequestV2,
+) -> Result<(), String> {
+    crate::pdf::create_pdf_with_overlays(&save_path, &request).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -657,4 +681,16 @@ pub async fn print_pdf(request: SaveRequest) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+// 描画データJSONを保存
+#[tauri::command]
+pub async fn save_drawing_json(path: String, data: String) -> Result<(), String> {
+    fs::write(&path, data).map_err(|e| format!("Failed to save drawing data: {}", e))
+}
+
+// 描画データJSONを読み込み
+#[tauri::command]
+pub async fn load_drawing_json(path: String) -> Result<String, String> {
+    fs::read_to_string(&path).map_err(|e| format!("Failed to load drawing data: {}", e))
 }

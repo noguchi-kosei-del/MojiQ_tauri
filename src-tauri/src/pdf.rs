@@ -3,7 +3,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ::image::{DynamicImage, GenericImageView, ImageFormat, Rgba, RgbaImage};
 use printpdf::*;
 
-use crate::commands::{PageData, SaveRequest};
+use crate::commands::{PageData, SaveRequest, SaveRequestV2};
 
 #[allow(dead_code)]
 pub fn render_pdf_pages(path: &str) -> Result<Vec<PageData>, Box<dyn std::error::Error>> {
@@ -236,4 +236,193 @@ fn parse_color(color: &str) -> (u8, u8, u8) {
     } else {
         (0, 0, 0)
     }
+}
+
+/// 背景画像と描画オーバーレイを合成してPDFを作成
+pub fn create_pdf_with_overlays(
+    save_path: &str,
+    request: &SaveRequestV2,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let page_count = request.pages.len();
+    if page_count == 0 {
+        return Err("No pages to save".into());
+    }
+
+    // 最初のページのサイズを決定
+    let first_page = &request.pages[0];
+    let first_bg = request.background_images.first();
+    let (first_width_mm, first_height_mm) = if let Some(bg) = first_bg {
+        if !bg.is_empty() {
+            if let Some(bytes) = decode_data_url(bg) {
+                if let Ok(img) = ::image::load_from_memory(&bytes) {
+                    let (w, h) = img.dimensions();
+                    (Mm(w as f32 * 25.4 / 72.0), Mm(h as f32 * 25.4 / 72.0))
+                } else {
+                    (Mm(first_page.width as f32 * 25.4 / 72.0), Mm(first_page.height as f32 * 25.4 / 72.0))
+                }
+            } else {
+                (Mm(first_page.width as f32 * 25.4 / 72.0), Mm(first_page.height as f32 * 25.4 / 72.0))
+            }
+        } else {
+            (Mm(first_page.width as f32 * 25.4 / 72.0), Mm(first_page.height as f32 * 25.4 / 72.0))
+        }
+    } else {
+        (Mm(first_page.width as f32 * 25.4 / 72.0), Mm(first_page.height as f32 * 25.4 / 72.0))
+    };
+
+    let (doc, page1, layer1) = PdfDocument::new(
+        "MojiQ Document",
+        first_width_mm,
+        first_height_mm,
+        "Layer 1",
+    );
+
+    let mut current_layer = doc.get_page(page1).get_layer(layer1);
+
+    for idx in 0..page_count {
+        let page_data = &request.pages[idx];
+        let bg_image = request.background_images.get(idx);
+
+        // 背景画像を読み込み
+        let bg_loaded = if let Some(bg) = bg_image {
+            if !bg.is_empty() {
+                if let Some(bytes) = decode_data_url(bg) {
+                    ::image::load_from_memory(&bytes).ok()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // 描画オーバーレイを読み込み
+        let overlay_loaded = if !page_data.drawing_overlay.is_empty() {
+            if let Some(bytes) = decode_data_url(&page_data.drawing_overlay) {
+                ::image::load_from_memory(&bytes).ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // ページサイズを決定
+        let (width_mm, height_mm) = if let Some(ref img) = bg_loaded {
+            let (w, h) = img.dimensions();
+            (w as f32 * 25.4 / 72.0, h as f32 * 25.4 / 72.0)
+        } else {
+            (page_data.width as f32 * 25.4 / 72.0, page_data.height as f32 * 25.4 / 72.0)
+        };
+
+        // 2ページ目以降は新しいページを追加
+        if idx > 0 {
+            let (new_page, new_layer) = doc.add_page(
+                Mm(width_mm),
+                Mm(height_mm),
+                format!("Page {}", idx + 1),
+            );
+            current_layer = doc.get_page(new_page).get_layer(new_layer);
+        }
+
+        // 背景画像と描画オーバーレイを合成
+        let final_image = match (bg_loaded, overlay_loaded) {
+            (Some(bg), Some(overlay)) => {
+                // 両方ある場合は合成
+                Some(composite_images(&bg, &overlay))
+            }
+            (Some(bg), None) => {
+                // 背景のみ
+                Some(bg)
+            }
+            (None, Some(overlay)) => {
+                // オーバーレイのみ（白背景で合成）
+                let (w, h) = overlay.dimensions();
+                let mut white_bg = RgbaImage::new(w, h);
+                for pixel in white_bg.pixels_mut() {
+                    *pixel = Rgba([255, 255, 255, 255]);
+                }
+                let white_bg_dyn = DynamicImage::ImageRgba8(white_bg);
+                Some(composite_images(&white_bg_dyn, &overlay))
+            }
+            (None, None) => None,
+        };
+
+        // 合成画像をPDFに追加
+        if let Some(img) = final_image {
+            let (img_width, img_height) = img.dimensions();
+            let rgb_img = img.to_rgb8();
+
+            let image = Image::from(ImageXObject {
+                width: Px(img_width as usize),
+                height: Px(img_height as usize),
+                color_space: ColorSpace::Rgb,
+                bits_per_component: ColorBits::Bit8,
+                interpolate: true,
+                image_data: rgb_img.into_raw(),
+                image_filter: None,
+                clipping_bbox: None,
+                smask: None,
+            });
+
+            image.add_to_layer(
+                current_layer.clone(),
+                ImageTransform {
+                    translate_x: Some(Mm(0.0)),
+                    translate_y: Some(Mm(0.0)),
+                    scale_x: None,
+                    scale_y: None,
+                    dpi: Some(72.0),
+                    ..Default::default()
+                },
+            );
+        }
+    }
+
+    doc.save(&mut std::io::BufWriter::new(std::fs::File::create(save_path)?))?;
+    Ok(())
+}
+
+/// 2つの画像を合成（オーバーレイのアルファチャンネルを使用）
+fn composite_images(background: &DynamicImage, overlay: &DynamicImage) -> DynamicImage {
+    let (bg_width, bg_height) = background.dimensions();
+    let (ov_width, ov_height) = overlay.dimensions();
+
+    // 背景をRGBA形式に変換
+    let mut result = background.to_rgba8();
+
+    // オーバーレイをRGBA形式に変換
+    let overlay_rgba = overlay.to_rgba8();
+
+    // オーバーレイのサイズが背景と異なる場合はリサイズ
+    let overlay_resized = if ov_width != bg_width || ov_height != bg_height {
+        ::image::imageops::resize(
+            &overlay_rgba,
+            bg_width,
+            bg_height,
+            ::image::imageops::FilterType::Lanczos3,
+        )
+    } else {
+        overlay_rgba
+    };
+
+    // アルファ合成
+    for (x, y, pixel) in result.enumerate_pixels_mut() {
+        if x < bg_width && y < bg_height {
+            let overlay_pixel = overlay_resized.get_pixel(x, y);
+            let alpha = overlay_pixel[3] as f32 / 255.0;
+
+            if alpha > 0.0 {
+                // アルファブレンディング
+                pixel[0] = ((1.0 - alpha) * pixel[0] as f32 + alpha * overlay_pixel[0] as f32) as u8;
+                pixel[1] = ((1.0 - alpha) * pixel[1] as f32 + alpha * overlay_pixel[1] as f32) as u8;
+                pixel[2] = ((1.0 - alpha) * pixel[2] as f32 + alpha * overlay_pixel[2] as f32) as u8;
+                pixel[3] = 255; // 最終結果は不透明
+            }
+        }
+    }
+
+    DynamicImage::ImageRgba8(result)
 }

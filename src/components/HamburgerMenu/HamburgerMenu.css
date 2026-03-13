@@ -121,6 +121,28 @@
   color: var(--text-secondary);
 }
 
+/* Menu button style (for export/import) */
+.menu-button {
+  width: 100%;
+  border: none;
+  background: none;
+  text-align: left;
+}
+
+.menu-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.menu-button:disabled:hover {
+  background-color: transparent;
+}
+
+/* Menu section */
+.menu-section {
+  padding: 0;
+}
+
 /* Menu divider */
 .menu-divider {
   height: 1px;

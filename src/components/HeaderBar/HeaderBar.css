@@ -428,3 +428,34 @@
   stroke: #999;
 }
 
+/* Save menu checkbox option */
+.save-menu-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid #eee;
+  margin-top: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.save-menu-checkbox:hover {
+  background-color: #f0f0f0;
+}
+
+.save-menu-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #1976d2;
+}
+
+.save-menu-checkbox label {
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  user-select: none;
+}
+

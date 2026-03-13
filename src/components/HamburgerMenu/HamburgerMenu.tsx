@@ -2,8 +2,19 @@ import React, { useCallback, useEffect } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useDrawingStore } from '../../stores/drawingStore';
+import { useDocumentStore } from '../../stores/documentStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { ask } from '@tauri-apps/plugin-dialog';
+import { useLoadingStore } from '../../stores/loadingStore';
+import { ask, save, open, message } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
+import {
+  prepareExportData,
+  exportDataToJson,
+  parseImportJson,
+  scaleImportData,
+  applyImportDataToPages,
+  generateExportFileName,
+} from '../../utils/drawingExportImport';
 import './HamburgerMenu.css';
 
 // SVG Icons
@@ -72,6 +83,22 @@ const SettingsIcon = () => (
   </svg>
 );
 
+const ExportIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <polyline points="17 8 12 3 7 8"/>
+    <line x1="12" y1="3" x2="12" y2="15"/>
+  </svg>
+);
+
+const ImportIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <polyline points="7 10 12 15 17 10"/>
+    <line x1="12" y1="15" x2="12" y2="3"/>
+  </svg>
+);
+
 // Notion links
 const MENU_LINKS = [
   {
@@ -96,13 +123,115 @@ interface HamburgerMenuProps {
 export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ isOpen, onToggle }) => {
   const { theme, toggleTheme } = useThemeStore();
   const { isFlipped, toggleFlipped } = useWorkspaceStore();
-  const { pages, clearDocument } = useDrawingStore();
+  const { pages, clearDocument, setPages } = useDrawingStore();
+  const { getActiveDocument } = useDocumentStore();
   const { openModal: openSettingsModal } = useSettingsStore();
+  const { setLoading } = useLoadingStore();
 
   const handleOpenSettings = useCallback(() => {
     onToggle(); // メニューを閉じる
     openSettingsModal();
   }, [onToggle, openSettingsModal]);
+
+  // 描画データをエクスポート
+  const handleExportDrawingData = useCallback(async () => {
+    onToggle(); // メニューを閉じる
+
+    if (pages.length === 0) {
+      await message('エクスポートするドキュメントがありません。', { title: '描画データのエクスポート', kind: 'info' });
+      return;
+    }
+
+    try {
+      setLoading(true, '描画データを準備中...');
+      const exportData = prepareExportData(pages);
+
+      if (exportData.pageCount === 0) {
+        setLoading(false);
+        await message('エクスポートする描画データがありません。', { title: '描画データのエクスポート', kind: 'info' });
+        return;
+      }
+
+      const jsonString = exportDataToJson(exportData);
+      const activeDoc = getActiveDocument();
+      const defaultFileName = generateExportFileName(activeDoc?.title || 'drawing');
+
+      const savePath = await save({
+        filters: [
+          { name: 'MojiQ描画データ', extensions: ['mojiq.json'] },
+          { name: 'JSONファイル', extensions: ['json'] },
+        ],
+        defaultPath: defaultFileName,
+      });
+
+      if (savePath) {
+        await invoke('save_drawing_json', { path: savePath, data: jsonString });
+        setLoading(false);
+        await message('描画データをエクスポートしました。', { title: '描画データのエクスポート', kind: 'info' });
+      } else {
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error('Failed to export drawing data:', error);
+      setLoading(false);
+      await message('描画データのエクスポートに失敗しました。\n' + error, { title: 'エラー', kind: 'error' });
+    }
+  }, [onToggle, pages, getActiveDocument, setLoading]);
+
+  // 描画データをインポート
+  const handleImportDrawingData = useCallback(async () => {
+    onToggle(); // メニューを閉じる
+
+    if (pages.length === 0) {
+      await message('先にPDFまたは画像を読み込んでください。', { title: '描画データのインポート', kind: 'info' });
+      return;
+    }
+
+    try {
+      const filePath = await open({
+        filters: [
+          { name: 'MojiQ描画データ', extensions: ['mojiq.json', 'json'] },
+        ],
+        multiple: false,
+      });
+
+      if (!filePath) return;
+
+      setLoading(true, '描画データを読み込み中...');
+      const jsonString: string = await invoke('load_drawing_json', { path: filePath });
+      const importData = parseImportJson(jsonString);
+
+      // ページ数の確認
+      const maxImportPage = Math.max(...Object.keys(importData.data).map(Number));
+      const currentPageCount = pages.length;
+
+      if (maxImportPage > currentPageCount) {
+        const confirmed = await ask(
+          `インポートするデータには ${maxImportPage} ページ分の描画がありますが、現在のドキュメントは ${currentPageCount} ページです。\n存在するページのみに描画を適用します。続行しますか？`,
+          { title: '描画データのインポート', kind: 'warning' }
+        );
+        if (!confirmed) {
+          setLoading(false);
+          return;
+        }
+      }
+
+      // スケーリングと適用
+      const scaledData = scaleImportData(importData, pages);
+      const newPages = applyImportDataToPages(scaledData, pages);
+      setPages(newPages);
+
+      setLoading(false);
+      await message(
+        `${Object.keys(scaledData).length} ページ分の描画データをインポートしました。`,
+        { title: '描画データのインポート', kind: 'info' }
+      );
+    } catch (error) {
+      console.error('Failed to import drawing data:', error);
+      setLoading(false);
+      await message('描画データのインポートに失敗しました。\n' + error, { title: 'エラー', kind: 'error' });
+    }
+  }, [onToggle, pages, setPages, setLoading]);
 
   // Close menu on Escape key
   useEffect(() => {
@@ -154,6 +283,33 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ isOpen, onToggle }
         </div>
 
         <nav className="hamburger-menu-nav">
+          {/* 描画データ エクスポート/インポート */}
+          <div className="menu-section">
+            <button
+              className="menu-link menu-button"
+              onClick={handleExportDrawingData}
+              disabled={pages.length === 0}
+            >
+              <span className="menu-link-icon">
+                <ExportIcon />
+              </span>
+              描画データをエクスポート
+            </button>
+            <button
+              className="menu-link menu-button"
+              onClick={handleImportDrawingData}
+              disabled={pages.length === 0}
+            >
+              <span className="menu-link-icon">
+                <ImportIcon />
+              </span>
+              描画データをインポート
+            </button>
+          </div>
+
+          <div className="menu-divider" />
+
+          {/* 外部リンク */}
           {MENU_LINKS.map((link, index) => (
             <a
               key={index}

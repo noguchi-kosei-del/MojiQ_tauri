@@ -25,6 +25,9 @@ export interface MojiQSettings {
   arrowKey: {
     inverted: boolean;
   };
+  exportDrawing: {
+    withPdf: boolean;  // PDF保存時に描画データJSONも自動保存
+  };
 }
 
 // デフォルト設定
@@ -75,6 +78,9 @@ export const DEFAULT_SETTINGS: MojiQSettings = {
   arrowKey: {
     inverted: false,
   },
+  exportDrawing: {
+    withPdf: false,  // デフォルトは無効
+  },
 };
 
 interface SettingsState {
@@ -103,6 +109,10 @@ interface SettingsState {
   getArrowKeyInverted: () => boolean;
   setArrowKeyInverted: (inverted: boolean) => void;
 
+  // 描画データ自動エクスポート
+  getExportDrawingWithPdf: () => boolean;
+  setExportDrawingWithPdf: (withPdf: boolean) => void;
+
   // リセット
   resetToDefault: () => void;
 
@@ -118,6 +128,7 @@ function migrate(oldSettings: Partial<MojiQSettings>): MojiQSettings {
     scroll: oldSettings.scroll || { direction: 'normal' },
     panel: oldSettings.panel || { closeOnSelect: false },
     arrowKey: oldSettings.arrowKey || { inverted: false },
+    exportDrawing: oldSettings.exportDrawing || { withPdf: false },
   };
 
   // 既存のショートカット設定をマージ
@@ -256,6 +267,21 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const newSettings = {
         ...state.settings,
         arrowKey: { inverted },
+      };
+      saveSettings(newSettings);
+      return { settings: newSettings };
+    });
+  },
+
+  getExportDrawingWithPdf: () => {
+    return get().settings.exportDrawing?.withPdf ?? false;
+  },
+
+  setExportDrawingWithPdf: (withPdf: boolean) => {
+    set((state) => {
+      const newSettings = {
+        ...state.settings,
+        exportDrawing: { withPdf },
       };
       saveSettings(newSettings);
       return { settings: newSettings };

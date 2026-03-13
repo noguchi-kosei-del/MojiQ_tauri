@@ -176,6 +176,9 @@ interface Shape {
 | `list_proofreading_check_directory` | 校正チェックディレクトリ一覧を取得 |
 | `read_proofreading_check_file` | 校正チェックJSONファイルを読み込み |
 | `open_proofreading_viewer` | 校正チェックビューアウィンドウを開く |
+| `save_pdf_v2` | 描画オーバーレイ付きPDFを保存（PNG合成方式） |
+| `save_drawing_json` | 描画データをJSONファイルに保存 |
+| `load_drawing_json` | 描画データJSONファイルを読み込み |
 
 ## 状態管理 (Zustand Stores)
 
@@ -230,6 +233,7 @@ MojiQ_3.0/
 │   │   ├── GridSettingsPanel/ # 写植グリッド設定パネル
 │   │   ├── ProofreadingViewer/ # 校正チェックビューア
 │   │   ├── ProofreadingCheckModal/ # 校正チェックモーダル
+│   │   ├── PageJumpDialog/  # ページジャンプダイアログ
 │   │   └── ...              # その他コンポーネント
 │   ├── stores/              # Zustand状態管理
 │   │   ├── drawingStore.ts  # メイン描画状態
@@ -245,7 +249,10 @@ MojiQ_3.0/
 │   │   ├── pageRenderCache.ts  # LRUキャッシュ（マルチタブ対応）
 │   │   ├── imageCompression.ts  # 画像・PDF圧縮
 │   │   ├── fileValidation.ts  # ファイルバリデーション
-│   │   └── memoryUtils.ts   # メモリ検出ユーティリティ
+│   │   ├── memoryUtils.ts   # メモリ検出ユーティリティ
+│   │   ├── drawingExportImport.ts  # 描画データエクスポート/インポート
+│   │   ├── drawingRenderer.ts  # 描画要素のCanvasレンダリング
+│   │   └── pageNumberUtils.ts  # ページ番号計算（横長原稿対応）
 │   └── constants/           # 定数
 │       └── loadingLimits.ts # ファイル読み込み閾値
 ├── src-tauri/               # Tauriバックエンド
@@ -290,6 +297,7 @@ MojiQ_3.0/
 - `Ctrl+0`: ズームリセット
 - `F1`: 閲覧モード
 - `←` / `→`: ページ送り
+- `Ctrl+J`: ページジャンプ
 
 ### タブ操作
 - `Ctrl+Tab`: 次のタブ
@@ -416,3 +424,34 @@ MojiQ_3.0/
 - **定数管理**: `src/constants/loadingLimits.ts` に閾値を集約
 - **loadingStore拡張**: 圧縮状態（`isCompressing`, `compressionProgress`）追加
 - **documentStore改善**: タブ閉じ時・アンロード時にキャッシュをクリア
+
+#### 描画データエクスポート/インポート機能（旧MojiQ ver_2.08より移植）
+- **JSONエクスポート**: 描画データを`.mojiq.json`形式で保存
+  - `src/utils/drawingExportImport.ts` - エクスポート/インポートロジック
+  - `src/utils/drawingRenderer.ts` - Canvas描画レンダリング
+  - ストローク、図形、スタンプ、テキスト、画像、アノテーションをすべて保存
+- **JSONインポート**: 描画データを復元
+  - 座標スケーリング対応（異なるサイズのPDFでも適用可能）
+  - ページ数不一致時は確認ダイアログを表示
+- **PDF保存時の描画オーバーレイ**:
+  - PNGオーバーレイ方式でPDFに全描画要素を合成
+  - `save_pdf_v2` Tauriコマンド追加
+- **保存メニューにチェックボックス追加**:
+  - 「描画データを保存」チェックボックス
+  - PDF保存時に自動で`.mojiq.json`も出力
+- **描画データ読み込みボタン**:
+  - ヘッダーの保存ボタン右隣に配置
+  - `.mojiq.json`ファイルを選択して描画を復元
+
+#### 横長原稿のページ番号計算（旧MojiQ ver_2.08より移植）
+- **ノンブル計算**: 横長PDF（幅 > 高さ）で見開きページ番号を表示
+  - `src/utils/pageNumberUtils.ts` - ページ番号計算ユーティリティ
+  - 1ページ目は単独、2ページ目以降は見開き（2-3, 4-5...）
+  - 総ノンブル = 1 + (元ページ数 - 1) × 2
+- **PageNav更新**: 横長原稿時にノンブル形式で表示（例: `2-3/31`）
+
+#### ページジャンプ機能
+- **Ctrl+J**: ページジャンプダイアログを開く
+  - `src/components/PageJumpDialog/` - ダイアログコンポーネント
+  - ノンブル入力でページ移動
+  - 横長原稿の場合はノンブル計算を適用

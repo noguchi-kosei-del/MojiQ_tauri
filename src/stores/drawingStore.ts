@@ -68,6 +68,9 @@ interface DrawingStore extends DrawingState {
     pdfAnnotations: PdfAnnotationText[][];
   };
 
+  // Set pages directly (for drawing import)
+  setPages: (pages: PageState[]) => void;
+
   // Page navigation
   setCurrentPage: (page: number) => void;
   deleteCurrentPage: () => void;
@@ -476,6 +479,30 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       pdfPageInfos: state.pdfPageInfos,
       pdfAnnotations: state.pdfAnnotations,
     };
+  },
+
+  // ページを直接設定（描画データインポート用）
+  setPages: (pages) => {
+    const state = get();
+    // 履歴に追加
+    const newHistory = state.history.slice(0, state.historyIndex + 1);
+    newHistory.push({
+      pages: state.pages,
+      currentPage: state.currentPage,
+    });
+
+    set({
+      pages,
+      history: newHistory,
+      historyIndex: newHistory.length - 1,
+      // 選択状態をクリア
+      selectedStrokeIds: [],
+      selectedShapeIds: [],
+      selectedTextIds: [],
+      selectedImageIds: [],
+      selectedAnnotationShapeId: null,
+      selectionBounds: null,
+    });
   },
 
   setCurrentPage: (page) => {

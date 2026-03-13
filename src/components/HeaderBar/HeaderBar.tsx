@@ -6,11 +6,21 @@ import { useSpreadViewStore, BindingDirection } from '../../stores/spreadViewSto
 import { useViewerModeStore } from '../../stores/viewerModeStore';
 import { useThemeStore } from '../../stores/themeStore';
 import { useZoomStore } from '../../stores/zoomStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { open, save, ask, message } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LoadedDocument, PageState, Layer } from '../../types';
 import { loadPdfDocument as loadPdfDocumentFromFile, renderPdfPage } from '../../utils/pdfRenderer';
+import { renderPageDrawingsToCanvas, hasDrawings } from '../../utils/drawingRenderer';
+import {
+  prepareExportData,
+  exportDataToJson,
+  getDrawingJsonPath,
+  parseImportJson,
+  scaleImportData,
+  applyImportDataToPages,
+} from '../../utils/drawingExportImport';
 import { HamburgerMenu } from '../HamburgerMenu';
 import MojiQLogo from '../../../logo/MojiQ_icon.png';
 import './HeaderBar.css';
@@ -30,6 +40,15 @@ const SaveIcon = () => (
     <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
     <polyline points="17 21 17 13 7 13 7 21"/>
     <polyline points="7 3 7 8 15 8"/>
+  </svg>
+);
+
+// 描画データ読み込みアイコン
+const ImportDrawingIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <polyline points="7 10 12 15 17 10"/>
+    <line x1="12" y1="15" x2="12" y2="3"/>
   </svg>
 );
 
@@ -202,7 +221,7 @@ const createDefaultPage = (pageNumber: number, backgroundImage: string, width: n
 });
 
 export const HeaderBar: React.FC = () => {
-  const { loadDocument, loadPdfDocument, getDocumentState, pages, currentPage, undo, redo, historyIndex, history, clearAllDrawings, deleteCurrentPage } = useDrawingStore();
+  const { loadDocument, loadPdfDocument, getDocumentState, pages, currentPage, undo, redo, historyIndex, history, clearAllDrawings, deleteCurrentPage, setPages } = useDrawingStore();
   const {
     registerLoadedDocument,
     loadIntoActiveDocument,
@@ -222,6 +241,8 @@ export const HeaderBar: React.FC = () => {
   const { isActive: isViewerMode, enter: enterViewerMode, exit: exitViewerMode } = useViewerModeStore();
   const { theme, setTheme } = useThemeStore();
   const { zoom, setZoom, minZoom, maxZoom } = useZoomStore();
+  const { getExportDrawingWithPdf, setExportDrawingWithPdf } = useSettingsStore();
+  const exportDrawingWithPdf = getExportDrawingWithPdf();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSpreadMenuOpen, setIsSpreadMenuOpen] = useState(false);
@@ -569,25 +590,10 @@ export const HeaderBar: React.FC = () => {
       setProgress(10);
 
       const { pages, getPageImageAsync } = useDrawingStore.getState();
-      const pageDrawings = pages.map((page) => ({
-        page_number: page.pageNumber,
-        strokes: page.layers.flatMap((layer) =>
-          layer.visible
-            ? layer.strokes.map((stroke) => ({
-                points: stroke.points.map((p) => [p.x, p.y] as [number, number]),
-                color: stroke.color,
-                width: stroke.width,
-                pressure: stroke.points.map((p) => p.pressure || 0.5),
-              }))
-            : []
-        ),
-        width: page.width,
-        height: page.height,
-      }));
-
-      // リンク方式の場合、保存前に画像を読み込む
-      const backgroundImages: string[] = [];
       const totalPages = pages.length;
+
+      // 1. 背景画像を読み込む
+      const backgroundImages: string[] = [];
       for (let i = 0; i < totalPages; i++) {
         const page = pages[i];
         let imageData = page.backgroundImage;
@@ -605,20 +611,69 @@ export const HeaderBar: React.FC = () => {
         backgroundImages.push(imageData);
 
         // 進捗更新
-        setProgress(10 + Math.floor((i / totalPages) * 40));
+        setProgress(10 + Math.floor((i / totalPages) * 20));
       }
 
-      setLoading(true, 'PDFを生成中...');
-      setProgress(50);
+      // 2. 描画データをPNGオーバーレイとしてレンダリング
+      setLoading(true, '描画データをレンダリング中...');
+      const pageDrawingsV2: Array<{
+        page_number: number;
+        drawing_overlay: string;
+        width: number;
+        height: number;
+      }> = [];
 
-      await invoke('save_pdf', {
+      for (let i = 0; i < totalPages; i++) {
+        const page = pages[i];
+        setLoading(true, `描画をレンダリング中... (${i + 1}/${totalPages})`);
+
+        let overlayPng = '';
+        if (hasDrawings(page)) {
+          try {
+            overlayPng = await renderPageDrawingsToCanvas(page);
+          } catch (error) {
+            console.error(`Failed to render drawings for page ${i}:`, error);
+          }
+        }
+
+        pageDrawingsV2.push({
+          page_number: page.pageNumber,
+          drawing_overlay: overlayPng,
+          width: page.width,
+          height: page.height,
+        });
+
+        // 進捗更新
+        setProgress(30 + Math.floor((i / totalPages) * 40));
+      }
+
+      // 3. PDFを生成
+      setLoading(true, 'PDFを生成中...');
+      setProgress(70);
+
+      await invoke('save_pdf_v2', {
         savePath,
         request: {
-          original_path: null,
-          pages: pageDrawings,
+          pages: pageDrawingsV2,
           background_images: backgroundImages,
         },
       });
+
+      // 4. 描画データJSONを自動エクスポート（設定が有効な場合）
+      const exportWithPdf = useSettingsStore.getState().getExportDrawingWithPdf();
+      if (exportWithPdf) {
+        try {
+          const exportData = prepareExportData(pages);
+          if (exportData.pageCount > 0) {
+            const jsonString = exportDataToJson(exportData);
+            const jsonPath = getDrawingJsonPath(savePath);
+            await invoke('save_drawing_json', { path: jsonPath, data: jsonString });
+          }
+        } catch (error) {
+          console.error('Failed to auto-export drawing data:', error);
+          // 描画データのエクスポート失敗はPDF保存の失敗とはみなさない
+        }
+      }
 
       // ドキュメントを保存済みとしてマーク
       if (activeDocumentId) {
@@ -748,8 +803,8 @@ export const HeaderBar: React.FC = () => {
     }
   };
 
-  // Check if there are any drawings
-  const hasDrawings = pages.some(page =>
+  // Check if there are any drawings in the document
+  const documentHasDrawings = pages.some(page =>
     page.layers.some(layer => layer.strokes.length > 0 || layer.shapes.length > 0)
   );
 
@@ -936,6 +991,76 @@ export const HeaderBar: React.FC = () => {
     }
   };
 
+  // 描画データ読み込み
+  const handleImportDrawingData = async () => {
+    if (pages.length === 0) {
+      await message('先にPDFまたは画像を読み込んでください', { title: 'エラー', kind: 'error' });
+      return;
+    }
+
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [
+          {
+            name: 'MojiQ Drawing Data',
+            extensions: ['mojiq.json', 'json'],
+          },
+        ],
+      });
+
+      if (!selected) return;
+
+      setLoading(true, '描画データを読み込み中...');
+      setProgress(20);
+
+      const filePath = Array.isArray(selected) ? selected[0] : selected;
+      const jsonData = await invoke<string>('load_drawing_json', { path: filePath });
+      setProgress(50);
+
+      const importData = parseImportJson(jsonData);
+      if (!importData) {
+        setLoading(false);
+        await message('描画データの形式が不正です', { title: 'エラー', kind: 'error' });
+        return;
+      }
+
+      // ページ数チェック
+      if (importData.pageCount !== pages.length) {
+        const confirmed = await ask(
+          `描画データのページ数（${importData.pageCount}ページ）と現在のドキュメント（${pages.length}ページ）が一致しません。\n\n続行すると、対応するページにのみ描画が適用されます。続行しますか？`,
+          {
+            title: '確認',
+            kind: 'warning',
+            okLabel: '続行',
+            cancelLabel: 'キャンセル',
+          }
+        );
+        if (!confirmed) {
+          setLoading(false);
+          return;
+        }
+      }
+
+      setProgress(70);
+
+      // 座標スケーリング
+      const scaledData = scaleImportData(importData, pages);
+
+      // 描画データを適用
+      const newPages = applyImportDataToPages(scaledData, pages);
+      setPages(newPages);
+
+      setProgress(100);
+      setLoading(false);
+      await message('描画データを読み込みました', { title: '完了', kind: 'info' });
+    } catch (error) {
+      console.error('Failed to import drawing data:', error);
+      setLoading(false);
+      await message('描画データの読み込みに失敗しました: ' + error, { title: 'エラー', kind: 'error' });
+    }
+  };
+
   return (
     <>
       <div className="header-bar">
@@ -954,7 +1079,7 @@ export const HeaderBar: React.FC = () => {
           <button onClick={redo} disabled={historyIndex >= history.length - 1} title="やり直し (Ctrl+Y)">
             <RedoIcon />
           </button>
-          <button onClick={handleClearAllDrawings} disabled={!hasDrawings || isLoading} title="描画を全消去 (Ctrl+Delete)" className="clear-all-btn">
+          <button onClick={handleClearAllDrawings} disabled={!documentHasDrawings || isLoading} title="描画を全消去 (Ctrl+Delete)" className="clear-all-btn">
             <ClearAllIcon />
           </button>
         </div>
@@ -1017,10 +1142,35 @@ export const HeaderBar: React.FC = () => {
                     <SaveIcon />
                     <span>名前を付けて保存</span>
                   </button>
+                  <div
+                    className="save-menu-checkbox"
+                    onClick={() => setExportDrawingWithPdf(!exportDrawingWithPdf)}
+                  >
+                    <input
+                      type="checkbox"
+                      id="export-drawing-checkbox"
+                      checked={exportDrawingWithPdf}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        setExportDrawingWithPdf(e.target.checked);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <label htmlFor="export-drawing-checkbox">描画データを保存</label>
+                  </div>
                 </div>
               );
             })()}
           </div>
+
+          {/* 描画データ読み込みボタン */}
+          <button
+            onClick={handleImportDrawingData}
+            disabled={pages.length === 0 || isLoading}
+            title="描画データを読み込み"
+          >
+            <ImportDrawingIcon />
+          </button>
 
           {/* ページ編集ボタン */}
           <div className="spread-view-container">
