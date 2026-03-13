@@ -27,6 +27,8 @@ import { useCommentVisibilityStore } from './stores/commentVisibilityStore';
 import { LoadedDocument, FileMetadata } from './types';
 import { renderPdfToImages } from './utils/pdfRenderer';
 import { preloadAllBackgroundImages, backgroundImageCache } from './utils/backgroundImageCache';
+import { checkFileSize, checkPageCount } from './utils/fileValidation';
+import { compressPdfViaCanvas } from './utils/imageCompression';
 import './App.css';
 
 // 定数
@@ -129,10 +131,60 @@ function App() {
             });
 
             if (result.file_type === 'pdf' && result.pdf_data) {
+              // PDFデータをUint8Arrayに変換
+              const base64Data = result.pdf_data;
+              const binaryString = atob(base64Data);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              let pdfBytes = bytes;
+
+              // ファイルサイズチェック
+              const sizeValidation = checkFileSize(pdfBytes.length, 'pdf');
+              if (sizeValidation.needsCompression && sizeValidation.warning) {
+                const confirmed = await ask(sizeValidation.warning, {
+                  title: '確認',
+                  kind: 'warning',
+                });
+                if (!confirmed) {
+                  setLoading(false);
+                  return;
+                }
+                // PDF圧縮
+                setLoading(true, 'PDFを圧縮しています...');
+                pdfBytes = await compressPdfViaCanvas(pdfBytes, (current, total) => {
+                  setProgress(Math.floor((current / total) * 30));
+                });
+              }
+
+              // Base64に再エンコード
+              const compressedBase64 = btoa(
+                pdfBytes.reduce((data, byte) => data + String.fromCharCode(byte), '')
+              );
+
               setLoading(true, 'PDFをレンダリング中...');
-              const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
-                setProgress(Math.floor(progress * 0.8)); // 80%までをPDFレンダリングに使用
+              const pdfResult = await renderPdfToImages(compressedBase64, (progress) => {
+                setProgress(30 + Math.floor(progress * 0.5)); // 30-80%をPDFレンダリングに使用
               });
+
+              // ページ数チェック
+              const pageValidation = checkPageCount(pdfResult.pages.length);
+              if (!pageValidation.valid && pageValidation.error) {
+                await ask(pageValidation.error, { title: 'エラー', kind: 'error' });
+                setLoading(false);
+                return;
+              }
+              if (pageValidation.warning) {
+                const confirmed = await ask(pageValidation.warning, {
+                  title: '確認',
+                  kind: 'warning',
+                });
+                if (!confirmed) {
+                  setLoading(false);
+                  return;
+                }
+              }
 
               // 背景画像をHTMLImageElementとしてプリロード（ストア更新前に実行）
               setLoading(true, '画像をキャッシュ中...');
@@ -243,10 +295,60 @@ function App() {
             });
 
             if (result.file_type === 'pdf' && result.pdf_data) {
+              // PDFデータをUint8Arrayに変換
+              const base64Data = result.pdf_data;
+              const binaryString = atob(base64Data);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              let pdfBytes = bytes;
+
+              // ファイルサイズチェック
+              const sizeValidation = checkFileSize(pdfBytes.length, 'pdf');
+              if (sizeValidation.needsCompression && sizeValidation.warning) {
+                const confirmed = await ask(sizeValidation.warning, {
+                  title: '確認',
+                  kind: 'warning',
+                });
+                if (!confirmed) {
+                  setLoading(false);
+                  return;
+                }
+                // PDF圧縮
+                setLoading(true, 'PDFを圧縮しています...');
+                pdfBytes = await compressPdfViaCanvas(pdfBytes, (current, total) => {
+                  setProgress(Math.floor((current / total) * 30));
+                });
+              }
+
+              // Base64に再エンコード
+              const compressedBase64 = btoa(
+                pdfBytes.reduce((data, byte) => data + String.fromCharCode(byte), '')
+              );
+
               setLoading(true, 'PDFをレンダリング中...');
-              const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
-                setProgress(Math.floor(progress * 0.8));
+              const pdfResult = await renderPdfToImages(compressedBase64, (progress) => {
+                setProgress(30 + Math.floor(progress * 0.5));
               });
+
+              // ページ数チェック
+              const pageValidation = checkPageCount(pdfResult.pages.length);
+              if (!pageValidation.valid && pageValidation.error) {
+                await ask(pageValidation.error, { title: 'エラー', kind: 'error' });
+                setLoading(false);
+                return;
+              }
+              if (pageValidation.warning) {
+                const confirmed = await ask(pageValidation.warning, {
+                  title: '確認',
+                  kind: 'warning',
+                });
+                if (!confirmed) {
+                  setLoading(false);
+                  return;
+                }
+              }
 
               // 背景画像をHTMLImageElementとしてプリロード（ストア更新前に実行）
               setLoading(true, '画像をキャッシュ中...');
