@@ -123,6 +123,282 @@
 }
 
 /* ========================================= */
+/* カラーと線の太さセクション                */
+/* ========================================= */
+
+.panel-color-section {
+  padding: 0 12px 10px;
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.panel-color-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 100px;
+}
+
+.panel-linewidth-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 100px;
+}
+
+.panel-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 2px 0;
+}
+
+.panel-color-grid {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.panel-color-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 2px solid var(--border-color);
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.1s;
+  padding: 0;
+}
+
+.panel-color-swatch:hover {
+  transform: scale(1.1);
+}
+
+.panel-color-swatch.active {
+  transform: scale(1.15);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px #333;
+  z-index: 1;
+}
+
+.proofreading-panel.dark .panel-color-swatch.active {
+  box-shadow: 0 0 0 2px #ddd;
+}
+
+.panel-color-swatch.custom-color {
+  border: 2px dashed #ccc;
+}
+
+.proofreading-panel.dark .panel-color-swatch.custom-color {
+  border-color: #666;
+}
+
+/* スポイトボタン */
+.panel-eyedropper-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 2px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.15s ease;
+}
+
+.panel-eyedropper-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  transform: scale(1.1);
+}
+
+.panel-eyedropper-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.proofreading-panel.dark .panel-eyedropper-btn {
+  background: #333;
+  border-color: #555;
+  color: #ddd;
+}
+
+.proofreading-panel.dark .panel-eyedropper-btn:hover {
+  background: #444;
+  color: #fff;
+}
+
+/* グラデーションバー */
+.panel-color-gradient {
+  display: flex;
+  height: 12px;
+  border-radius: 3px;
+  overflow: visible;
+  margin-top: 4px;
+}
+
+.panel-gradient-segment {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+  background: inherit;
+}
+
+.panel-gradient-segment:hover {
+  transform: scaleY(1.3);
+  z-index: 1;
+}
+
+.panel-gradient-segment:first-child {
+  border-radius: 3px 0 0 3px;
+}
+
+.panel-gradient-segment:last-child {
+  border-radius: 0 3px 3px 0;
+}
+
+/* 線の太さ */
+.panel-line-width {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.panel-line-width label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.panel-line-width-input {
+  width: 50px !important;
+  flex: 0 0 50px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: bold;
+  color: #1976d2;
+  text-align: center;
+  background: var(--bg-primary);
+}
+
+.proofreading-panel.dark .panel-line-width-input {
+  background: #2a2a2a;
+  border-color: #555;
+  color: #64b5f6;
+}
+
+.panel-line-width-slider {
+  width: 100%;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: linear-gradient(to right, #ff8c00 0%, #666 0%);
+  border-radius: 3px;
+  outline: none;
+}
+
+.panel-line-width-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #ff8c00;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.panel-line-width-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ff8c00;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.panel-line-width-slider::-moz-range-progress {
+  background: #ff8c00;
+  height: 6px;
+  border-radius: 3px;
+}
+
+/* ========================================= */
+/* 済スタンプ・ルビスタンプセクション         */
+/* ========================================= */
+
+.panel-stamp-section {
+  padding: 8px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.panel-stamp-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.panel-stamp-btn {
+  flex: 1;
+  height: 32px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: bold;
+  color: #c62828;
+  background: var(--bg-primary);
+  border: 2px solid #ffcdd2;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.panel-stamp-btn:hover {
+  background: #ffebee;
+  border-color: #ef9a9a;
+}
+
+.panel-stamp-btn.active {
+  background: var(--bg-primary);
+  border-color: #c62828;
+  box-shadow: 0 0 0 2px rgba(198, 40, 40, 0.3);
+  color: #c62828;
+}
+
+.proofreading-panel.dark .panel-stamp-btn {
+  color: #ef9a9a;
+  background: var(--bg-secondary);
+  border-color: #5d2323;
+}
+
+.proofreading-panel.dark .panel-stamp-btn:hover {
+  background: #3d2020;
+  border-color: #7d3333;
+}
+
+.proofreading-panel.dark .panel-stamp-btn.active {
+  background: var(--bg-secondary);
+  border-color: #ef9a9a;
+  box-shadow: 0 0 0 2px rgba(239, 154, 154, 0.3);
+}
+
+/* ========================================= */
 /* ヘッダー                                  */
 /* ========================================= */
 

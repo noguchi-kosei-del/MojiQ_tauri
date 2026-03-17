@@ -219,3 +219,27 @@
   height: 16px;
   stroke: currentColor;
 }
+
+/* ========================================= */
+/* 校正チェックモード時の位置調整             */
+/* ========================================= */
+
+/* 校正チェックモード時: ツールバー(42px)とパネル(350px)を考慮してPDF表示領域の中央に配置 */
+/* オフセット = (パネル幅 + ツールバー幅) / 2 = (350 + 42) / 2 = 196px */
+.proofreading-mode .page-nav-bar {
+  left: calc(50% - 196px);
+}
+
+.proofreading-mode .page-nav-hover-area {
+  left: calc(50% - 196px);
+}
+
+/* 校正チェックモード + サイドバー折りたたみ時 */
+/* オフセット = (折りたたみパネル幅 + ツールバー幅) / 2 = (24 + 42) / 2 = 33px */
+.proofreading-mode.proofreading-panel-collapsed .page-nav-bar {
+  left: calc(50% - 33px);
+}
+
+.proofreading-mode.proofreading-panel-collapsed .page-nav-hover-area {
+  left: calc(50% - 33px);
+}

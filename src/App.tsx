@@ -28,6 +28,7 @@ import { useWorkspaceStore } from './stores/workspaceStore';
 import { useSpreadViewStore } from './stores/spreadViewStore';
 import { useCommentVisibilityStore } from './stores/commentVisibilityStore';
 import { useModeStore } from './stores/modeStore';
+import { useSidebarStore } from './stores/sidebarStore';
 import { LoadedDocument, FileMetadata } from './types';
 import { renderPdfToImages } from './utils/pdfRenderer';
 import { preloadAllBackgroundImages, backgroundImageCache } from './utils/backgroundImageCache';
@@ -60,6 +61,7 @@ function App() {
   const { isSpreadView, nextSpread, prevSpread, bindingDirection, disableSpreadView } = useSpreadViewStore();
   const { toggle: toggleCommentVisibility } = useCommentVisibilityStore();
   const { mode } = useModeStore();
+  const { isProofreadingPanelCollapsed } = useSidebarStore();
 
   // ページナビゲーション用の状態
   const isNavigatingRef = useRef(false);
@@ -969,7 +971,7 @@ function App() {
   }, [handleFileDrop]);
 
   return (
-    <div className={`app ${isViewerMode ? 'viewer-mode' : ''} ${isFlipped ? 'workspace-flipped' : ''} ${mode === 'proofreading' ? 'proofreading-mode' : ''}`}>
+    <div className={`app ${isViewerMode ? 'viewer-mode' : ''} ${isFlipped ? 'workspace-flipped' : ''} ${mode === 'proofreading' ? 'proofreading-mode' : ''} ${mode === 'proofreading' && isProofreadingPanelCollapsed ? 'proofreading-panel-collapsed' : ''}`}>
       <LoadingOverlay />
       <ViewerModeOverlay onExit={handleExitViewerMode} />
       <HeaderBar />

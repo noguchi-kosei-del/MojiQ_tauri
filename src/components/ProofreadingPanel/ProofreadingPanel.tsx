@@ -1,11 +1,21 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useProofreadingCheckStore } from '../../stores/proofreadingCheckStore';
 import { useThemeStore } from '../../stores/themeStore';
 import { useDrawingStore } from '../../stores/drawingStore';
 import { useSidebarStore } from '../../stores/sidebarStore';
-import { ProofreadingCheckItem } from '../../types';
-import { isLandscapeDocument, nombreToPdfPage } from '../../utils/pageNumberUtils';
+import { ProofreadingCheckItem, StampType } from '../../types';
+import { isLandscapeDocument, pdfPageToNombreRange } from '../../utils/pageNumberUtils';
 import './ProofreadingPanel.css';
+
+// プリセットカラー（赤、青）
+const PRESET_COLORS = ['#ff0000', '#0000ff'];
+
+// グラデーションカラー（指示入れモードと同じ）
+const GRADIENT_COLORS = [
+  '#ff0000', '#ff8000', '#ffff00', '#80ff00', '#00ff00',
+  '#00ff80', '#00ffff', '#0080ff', '#0000ff', '#8000ff',
+  '#ff00ff', '#ff0080',
+];
 
 // Comment item for PDF annotations
 interface CommentItem {
@@ -76,12 +86,6 @@ const sortCategories = (keys: string[]): string[] => {
 };
 
 // Icons
-const FolderOpenIcon: React.FC = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-  </svg>
-);
-
 const CheckListIcon: React.FC = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="10" y1="6" x2="21" y2="6"/>
@@ -118,6 +122,32 @@ const ExpandLeftIcon: React.FC = () => (
     <polyline points="15 18 9 12 15 6" />
   </svg>
 );
+
+// スポイトアイコン
+const EyedropperIcon: React.FC = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M19 3l2 2-1 1-2-2"/>
+    <path d="M17 5l-10 10-2 4 4-2 10-10"/>
+    <path d="M11 9l4 4"/>
+    <path d="M9 11l4 4"/>
+    <path d="M5 19l-2 2"/>
+  </svg>
+);
+
+// EyeDropper API type definition
+interface EyeDropperResult {
+  sRGBHex: string;
+}
+
+interface EyeDropperAPI {
+  open(): Promise<EyeDropperResult>;
+}
+
+declare global {
+  interface Window {
+    EyeDropper?: new () => EyeDropperAPI;
+  }
+}
 
 // Category items component
 interface CategoryItemsProps {
@@ -213,8 +243,77 @@ export const ProofreadingPanel: React.FC = () => {
     error,
     openModal,
   } = useProofreadingCheckStore();
-  const { pages, setCurrentPage, pdfAnnotations } = useDrawingStore();
+  const { pages, setCurrentPage, pdfAnnotations, color, setColor, strokeWidth, setStrokeWidth, tool, setTool, currentStampType, setCurrentStampType } = useDrawingStore();
   const { isProofreadingPanelCollapsed, toggleProofreadingPanel } = useSidebarStore();
+
+  // カラーピッカーref
+  const colorInputRef = useRef<HTMLInputElement>(null);
+
+  // カラー選択
+  const handleColorSelect = useCallback((newColor: string) => {
+    setColor(newColor);
+  }, [setColor]);
+
+  // カラーピッカーを開く
+  const handleOpenColorPicker = useCallback(() => {
+    colorInputRef.current?.click();
+  }, []);
+
+  // 線の太さ変更（数値入力）
+  const handleStrokeWidthChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(e.target.value);
+    if (!isNaN(value) && value >= 1 && value <= 20) {
+      setStrokeWidth(value);
+    }
+  }, [setStrokeWidth]);
+
+  // 線の太さ変更（スライダー）
+  const handleStrokeWidthSlider = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(e.target.value);
+    setStrokeWidth(value);
+  }, [setStrokeWidth]);
+
+  // 線の太さスライダーのホイール操作
+  const handleStrokeWidthWheel = useCallback((e: React.WheelEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -1 : 1;
+    const newValue = Math.max(1, Math.min(20, strokeWidth + delta));
+    setStrokeWidth(newValue);
+  }, [strokeWidth, setStrokeWidth]);
+
+  // スポイトツール
+  const handleEyedropper = useCallback(async () => {
+    if (!window.EyeDropper) {
+      console.warn('EyeDropper API is not supported in this browser');
+      return;
+    }
+    try {
+      const eyeDropper = new window.EyeDropper();
+      const result = await eyeDropper.open();
+      setColor(result.sRGBHex);
+    } catch (e) {
+      // User cancelled or error
+      console.log('EyeDropper cancelled or error:', e);
+    }
+  }, [setColor]);
+
+  // Check if EyeDropper API is available
+  const isEyeDropperSupported = typeof window !== 'undefined' && 'EyeDropper' in window;
+
+  // スタンプ選択ハンドラー
+  const handleStampSelect = useCallback((stampType: StampType) => {
+    setCurrentStampType(stampType);
+    setTool('stamp');
+    setColor('#ff0000');
+  }, [setCurrentStampType, setTool, setColor]);
+
+  // 済スタンプがアクティブかどうか
+  const isDoneStampActive = tool === 'stamp' && currentStampType === 'doneStamp';
+  // ルビスタンプがアクティブかどうか
+  const isRubyStampActive = tool === 'stamp' && currentStampType === 'rubyStamp';
+
+  // Check if document is landscape (spread PDF)
+  const isLandscape = useMemo(() => isLandscapeDocument(pages), [pages]);
 
   // Flatten PDF annotations into comment items
   const commentItems = useMemo((): CommentItem[] => {
@@ -223,18 +322,35 @@ export const ProofreadingPanel: React.FC = () => {
 
     pdfAnnotations.forEach((pageAnnotations, pageIndex) => {
       if (!pageAnnotations) return;
+      const pageData = pages[pageIndex];
+      const pageWidth = pageData?.width || 0;
+
       pageAnnotations.forEach(annot => {
         if (annot.text && annot.text.trim()) {
-          // Calculate page display (1-based, handle landscape)
-          const isLandscape = pages.length > 0 && isLandscapeDocument(pages);
+          const pdfPageNum = pageIndex + 1; // 1-based PDF page number
           let pageDisplay: string;
-          if (isLandscape && pageIndex > 0) {
-            // Landscape: page 0 = 1P, page 1 = 2-3P, page 2 = 4-5P, etc.
-            const startNombre = pageIndex * 2;
-            const endNombre = startNombre + 1;
-            pageDisplay = `${startNombre}-${endNombre}P`;
+
+          if (isLandscape && pdfPageNum >= 2) {
+            // Landscape spread: determine which page based on annotation x position
+            // PDF page 2 -> nombre 2-3, page 3 -> nombre 4-5, etc.
+            const [startNombre, endNombre] = pdfPageToNombreRange(pdfPageNum, true);
+
+            // Right-binding: left side = odd nombre (larger), right side = even nombre (smaller)
+            // Note: x < pageWidth/2 means physically LEFT side of the page
+            if (pageWidth > 0 && annot.x !== undefined) {
+              if (annot.x < pageWidth / 2) {
+                // Left side of spread (physically) = odd nombre (larger number)
+                pageDisplay = `${endNombre}P`;
+              } else {
+                // Right side of spread (physically) = even nombre (smaller number)
+                pageDisplay = `${startNombre}P`;
+              }
+            } else {
+              // Position unknown: show range
+              pageDisplay = `${startNombre}-${endNombre}P`;
+            }
           } else {
-            pageDisplay = `${pageIndex + 1}P`;
+            pageDisplay = `${pdfPageNum}P`;
           }
 
           items.push({
@@ -248,7 +364,7 @@ export const ProofreadingPanel: React.FC = () => {
     });
 
     return items;
-  }, [pdfAnnotations, pages]);
+  }, [pdfAnnotations, isLandscape, pages]);
 
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -292,17 +408,8 @@ export const ProofreadingPanel: React.FC = () => {
   const handlePageClick = useCallback((pageStr?: string) => {
     if (!pageStr || pages.length === 0) return;
 
-    let pageNum = parsePageNumber(pageStr);
+    const pageNum = parsePageNumber(pageStr);
     if (!pageNum) return;
-
-    // Handle landscape documents (見開きPDF)
-    const isLandscape = isLandscapeDocument(pages);
-    if (isLandscape && pageNum >= 2) {
-      // Convert nombre to PDF page
-      // ノンブル2,3 → PDFページ2
-      // ノンブル4,5 → PDFページ3
-      pageNum = nombreToPdfPage(pageNum, true);
-    }
 
     // Validate page number range
     if (pageNum < 1 || pageNum > pages.length) {
@@ -370,10 +477,6 @@ export const ProofreadingPanel: React.FC = () => {
       return (
         <div className="panel-empty">
           <p>校正チェックJSONを選択してください</p>
-          <button className="panel-select-btn" onClick={openModal}>
-            <FolderOpenIcon />
-            <span>ファイルを選択</span>
-          </button>
         </div>
       );
     }
@@ -440,26 +543,118 @@ export const ProofreadingPanel: React.FC = () => {
             </button>
           </div>
 
+          {/* カラーと線の太さセクション */}
+          <div className="panel-color-section">
+            {/* カラー列 */}
+            <div className="panel-color-column">
+              <h3 className="panel-section-title">カラー</h3>
+              <div className="panel-color-grid">
+                {PRESET_COLORS.map((presetColor) => (
+                  <button
+                    key={presetColor}
+                    className={`panel-color-swatch ${color === presetColor ? 'active' : ''}`}
+                    style={{ backgroundColor: presetColor }}
+                    onClick={() => handleColorSelect(presetColor)}
+                    title={presetColor === '#ff0000' ? '赤' : '青'}
+                  />
+                ))}
+                <button
+                  className={`panel-color-swatch custom-color ${!PRESET_COLORS.includes(color) ? 'active' : ''}`}
+                  style={{
+                    backgroundColor: !PRESET_COLORS.includes(color) ? color : 'transparent',
+                  }}
+                  onClick={handleOpenColorPicker}
+                  title="カスタムカラー"
+                />
+                {isEyeDropperSupported && (
+                  <button
+                    className="panel-eyedropper-btn"
+                    onClick={handleEyedropper}
+                    title="スポイト"
+                  >
+                    <EyedropperIcon />
+                  </button>
+                )}
+              </div>
+              <input
+                ref={colorInputRef}
+                type="color"
+                value={color}
+                onChange={(e) => handleColorSelect(e.target.value)}
+                style={{ display: 'none' }}
+              />
+              {/* グラデーションバー */}
+              <div className="panel-color-gradient">
+                {GRADIENT_COLORS.map((gradColor, index) => (
+                  <button
+                    key={index}
+                    className="panel-gradient-segment"
+                    style={{ backgroundColor: gradColor }}
+                    onClick={() => handleColorSelect(gradColor)}
+                  />
+                ))}
+              </div>
+            </div>
+            {/* 線の太さ列 */}
+            <div className="panel-linewidth-column">
+              <h3 className="panel-section-title">線の太さ</h3>
+              <div className="panel-line-width">
+                <label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    step="0.5"
+                    value={strokeWidth}
+                    onChange={handleStrokeWidthChange}
+                    className="panel-line-width-input"
+                  />
+                  px
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="20"
+                  step="0.5"
+                  value={strokeWidth}
+                  onChange={handleStrokeWidthSlider}
+                  onWheel={handleStrokeWidthWheel}
+                  className="panel-line-width-slider"
+                  style={{
+                    background: `linear-gradient(to right, #ff8c00 ${((strokeWidth - 1) / 19) * 100}%, #666 ${((strokeWidth - 1) / 19) * 100}%)`
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 済スタンプ・ルビスタンプセクション */}
+          <div className="panel-stamp-section">
+            <div className="panel-stamp-buttons">
+              <button
+                className={`panel-stamp-btn ${isDoneStampActive ? 'active' : ''}`}
+                onClick={() => handleStampSelect('doneStamp')}
+                title="済スタンプ"
+              >
+                済
+              </button>
+              <button
+                className={`panel-stamp-btn ${isRubyStampActive ? 'active' : ''}`}
+                onClick={() => handleStampSelect('rubyStamp')}
+                title="ルビスタンプ"
+              >
+                ルビ
+              </button>
+            </div>
+          </div>
+
           {/* Header */}
           <div className="panel-header">
             <div className="panel-header-top">
               <h2 className="panel-title">{title}</h2>
-              <button
-                className="panel-folder-btn"
-                onClick={openModal}
-                title="ファイルを選択"
-              >
-                <FolderOpenIcon />
-              </button>
             </div>
             {showTabs && (
               <div className="panel-tabs">
-                <button
-                  className={`panel-tab ${currentTab === 'comments' ? 'active' : ''}`}
-                  onClick={() => setCurrentTab('comments')}
-                >
-                  コメント{commentItems.length > 0 ? ` (${commentItems.length})` : ''}
-                </button>
                 <button
                   className={`panel-tab ${currentTab === 'correctness' ? 'active' : ''}`}
                   onClick={() => setCurrentTab('correctness')}
@@ -471,6 +666,12 @@ export const ProofreadingPanel: React.FC = () => {
                   onClick={() => setCurrentTab('proposal')}
                 >
                   提案{proposalItems.length > 0 ? ` (${proposalItems.length})` : ''}
+                </button>
+                <button
+                  className={`panel-tab ${currentTab === 'comments' ? 'active' : ''}`}
+                  onClick={() => setCurrentTab('comments')}
+                >
+                  コメント{commentItems.length > 0 ? ` (${commentItems.length})` : ''}
                 </button>
               </div>
             )}
