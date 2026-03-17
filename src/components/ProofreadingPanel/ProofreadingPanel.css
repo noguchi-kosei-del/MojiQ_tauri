@@ -480,6 +480,24 @@
   border-color: var(--accent-color);
 }
 
+/* タブの済タグ */
+.panel-tab-done {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  padding: 1px 4px;
+  font-size: 9px;
+  font-weight: bold;
+  background: #4caf50;
+  color: #fff;
+  border-radius: 3px;
+}
+
+.panel-tab.active .panel-tab-done {
+  background: rgba(255, 255, 255, 0.3);
+}
+
 /* ========================================= */
 /* コンテンツエリア                          */
 /* ========================================= */
@@ -539,6 +557,32 @@
   background: var(--bg-hover);
 }
 
+.panel-category-checkbox {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.panel-category-checkbox input {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: #4caf50;
+}
+
+.panel-category-checked-label {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  color: #1976d2;
+}
+
+.proofreading-panel.dark .panel-category-checked-label {
+  color: #64b5f6;
+}
+
 .panel-category-toggle {
   font-size: 8px;
   color: var(--text-secondary);
@@ -583,6 +627,28 @@
 
 .panel-table tr:last-child td {
   border-bottom: none;
+}
+
+.panel-table tr.checked {
+  opacity: 0.6;
+  background-color: rgba(0, 128, 0, 0.1);
+}
+
+.proofreading-panel.dark .panel-table tr.checked {
+  background-color: rgba(0, 200, 0, 0.1);
+}
+
+.panel-checkbox {
+  width: 24px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.panel-checkbox input {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: #4caf50;
 }
 
 .panel-page {
@@ -632,34 +698,21 @@
   color: #ef9a9a;
 }
 
-.panel-copy {
-  width: 28px;
+.panel-item-status {
+  width: 50px;
   text-align: center;
   vertical-align: middle;
 }
 
-.panel-copy-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.15s ease;
+.panel-item-checked-label {
+  font-size: 9px;
+  font-weight: 600;
+  color: #1976d2;
+  white-space: nowrap;
 }
 
-.panel-copy-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.panel-copy-btn.copied {
-  color: #27ae60;
+.proofreading-panel.dark .panel-item-checked-label {
+  color: #64b5f6;
 }
 
 /* ========================================= */
@@ -922,4 +975,64 @@
   color: var(--text-primary);
   line-height: 1.4;
   word-break: break-word;
+}
+
+/* ========================================= */
+/* コメントチェックボックス                    */
+/* ========================================= */
+
+.panel-comment-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.panel-comment-item.checked {
+  opacity: 0.7;
+  background-color: rgba(0, 128, 0, 0.1);
+}
+
+.proofreading-panel.dark .panel-comment-item.checked {
+  background-color: rgba(0, 200, 0, 0.1);
+}
+
+.panel-comment-checkbox {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.panel-comment-checkbox input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #ff0000;
+}
+
+.panel-comment-done-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #ff0000;
+  color: #ff0000;
+  font-size: 10px;
+  font-weight: bold;
+  flex-shrink: 0;
+  background: #fff;
+}
+
+.proofreading-panel.dark .panel-comment-done-badge {
+  background: #2a2a2a;
+  border-color: #ef5350;
+  color: #ef5350;
+}
+
+.panel-comment-body {
+  flex: 1;
+  min-width: 0;
 }

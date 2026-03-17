@@ -161,6 +161,10 @@ interface DrawingStore extends DrawingState {
   // Stamp operations
   setCurrentStampType: (stampType: StampType | null) => void;
   addStamp: (point: Point, leaderLine?: { start: Point; end: Point }) => void;
+
+  // Comment checkbox stamp operations (校正チェックコメント用)
+  addDoneStampToPage: (pageIndex: number, point: Point) => string | null;
+  removeShapeById: (pageIndex: number, shapeId: string) => void;
 }
 
 export const useDrawingStore = create<DrawingStore>((set, get) => ({
@@ -2323,6 +2327,62 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     const updatedPages = [...state.pages];
     updatedPages[state.currentPage] = {
       ...currentPageState,
+      layers: updatedLayers,
+    };
+
+    set({ pages: updatedPages });
+    get().saveToHistory();
+  },
+
+  // Comment checkbox stamp operations (校正チェックコメント用)
+  addDoneStampToPage: (pageIndex, point) => {
+    const state = get();
+    const pageState = state.pages[pageIndex];
+    if (!pageState) return null;
+
+    const stampId = `stamp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newShape: Shape = {
+      id: stampId,
+      type: 'stamp',
+      startPos: { x: point.x, y: point.y },
+      endPos: { x: point.x, y: point.y },
+      color: '#ff0000',  // 赤色固定
+      width: 2,
+      layerId: pageState.layers[0]?.id || '',  // 最初のレイヤーに追加
+      stampType: 'doneStamp',
+      size: 20,  // 旧MojiQと同じサイズ
+    };
+
+    const updatedLayers = pageState.layers.map((layer, idx) =>
+      idx === 0  // 最初のレイヤーに追加
+        ? { ...layer, shapes: [...layer.shapes, newShape] }
+        : layer
+    );
+
+    const updatedPages = [...state.pages];
+    updatedPages[pageIndex] = {
+      ...pageState,
+      layers: updatedLayers,
+    };
+
+    set({ pages: updatedPages });
+    get().saveToHistory();
+    return stampId;
+  },
+
+  removeShapeById: (pageIndex, shapeId) => {
+    const state = get();
+    const pageState = state.pages[pageIndex];
+    if (!pageState) return;
+
+    const updatedLayers = pageState.layers.map((layer) => ({
+      ...layer,
+      shapes: layer.shapes.filter((s) => s.id !== shapeId),
+    }));
+
+    const updatedPages = [...state.pages];
+    updatedPages[pageIndex] = {
+      ...pageState,
       layers: updatedLayers,
     };
 

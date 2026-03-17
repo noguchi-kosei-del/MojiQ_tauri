@@ -23,6 +23,8 @@ interface CommentItem {
   pageDisplay: string;  // Display string like "1P"
   text: string;
   type: string;
+  x: number;  // PDF注釈のx座標
+  y: number;  // PDF注釈のy座標
 }
 
 // Parse page string and extract page number
@@ -97,19 +99,6 @@ const CheckListIcon: React.FC = () => (
   </svg>
 );
 
-const CopyIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-  </svg>
-);
-
-const CheckIcon: React.FC = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20,6 9,17 4,12"/>
-  </svg>
-);
-
 // 折りたたみボタンアイコン（RightToolbarと統一）
 const CollapseRightIcon: React.FC = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -154,20 +143,22 @@ interface CategoryItemsProps {
   items: ProofreadingCheckItem[];
   collapsedCategories: Set<string>;
   toggleCategory: (category: string) => void;
-  copiedId: string | null;
-  handleCopy: (content: string, id: string) => void;
   handlePageClick: (pageStr?: string) => void;
   prefix?: string;
+  checkedItems?: Set<string>;
+  onToggleCheck?: (itemId: string) => void;
+  onToggleCategoryCheck?: (itemIds: string[], checked: boolean) => void;
 }
 
 const CategoryItems: React.FC<CategoryItemsProps> = ({
   items,
   collapsedCategories,
   toggleCategory,
-  copiedId,
-  handleCopy,
   handlePageClick,
   prefix = '',
+  checkedItems,
+  onToggleCheck,
+  onToggleCategoryCheck,
 }) => {
   const grouped = groupByCategory(items);
   const sortedKeys = sortCategories(Object.keys(grouped));
@@ -179,12 +170,33 @@ const CategoryItems: React.FC<CategoryItemsProps> = ({
         const colorClass = getCategoryColorClass(category);
         const catItems = grouped[category];
 
+        // カテゴリ内の全アイテムIDを取得
+        const categoryItemIds = catItems.map((_, index) => `${prefix}${category}-${index}`);
+        // カテゴリ内の全アイテムがチェックされているか
+        const allCategoryChecked = categoryItemIds.length > 0 &&
+          categoryItemIds.every(id => checkedItems?.has(id));
+        // カテゴリ内の一部がチェックされているか（indeterminate状態用）
+        const someCategoryChecked = categoryItemIds.some(id => checkedItems?.has(id));
+
         return (
           <div key={category} className={`panel-category ${colorClass} ${isCollapsed ? 'collapsed' : ''}`}>
-            <div className="panel-category-header" onClick={() => toggleCategory(`${prefix}${category}`)}>
-              <span className="panel-category-toggle">{isCollapsed ? '▶' : '▼'}</span>
-              <span className="panel-category-name">{category}</span>
-              <span className="panel-category-count">({catItems.length})</span>
+            <div className="panel-category-header">
+              {onToggleCategoryCheck && (
+                <label className="panel-category-checkbox" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={allCategoryChecked}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someCategoryChecked && !allCategoryChecked;
+                    }}
+                    onChange={() => onToggleCategoryCheck(categoryItemIds, !allCategoryChecked)}
+                  />
+                </label>
+              )}
+              <span className="panel-category-toggle" onClick={() => toggleCategory(`${prefix}${category}`)}>{isCollapsed ? '▶' : '▼'}</span>
+              <span className="panel-category-name" onClick={() => toggleCategory(`${prefix}${category}`)}>{category}</span>
+              <span className="panel-category-count" onClick={() => toggleCategory(`${prefix}${category}`)}>({catItems.length})</span>
+              {allCategoryChecked && <span className="panel-category-checked-label">確認済み</span>}
             </div>
             {!isCollapsed && (
               <div className="panel-category-body">
@@ -192,11 +204,22 @@ const CategoryItems: React.FC<CategoryItemsProps> = ({
                   <tbody>
                     {catItems.map((item, index) => {
                       const itemId = `${prefix}${category}-${index}`;
-                      const isCopied = copiedId === itemId;
                       const hasPage = !!item.page;
+                      const isChecked = checkedItems?.has(itemId) ?? false;
 
                       return (
-                        <tr key={index}>
+                        <tr key={index} className={isChecked ? 'checked' : ''}>
+                          {onToggleCheck && (
+                            <td className="panel-checkbox">
+                              <label onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => onToggleCheck(itemId)}
+                                />
+                              </label>
+                            </td>
+                          )}
                           <td
                             className={`panel-page ${hasPage ? 'clickable' : ''}`}
                             onClick={hasPage ? (e) => { e.stopPropagation(); handlePageClick(item.page); } : undefined}
@@ -206,16 +229,8 @@ const CategoryItems: React.FC<CategoryItemsProps> = ({
                           </td>
                           <td className="panel-excerpt">{item.excerpt || ''}</td>
                           <td className="panel-content">{item.content || ''}</td>
-                          <td className="panel-copy">
-                            {item.content && (
-                              <button
-                                className={`panel-copy-btn ${isCopied ? 'copied' : ''}`}
-                                onClick={() => handleCopy(item.content!, itemId)}
-                                title="コピー"
-                              >
-                                {isCopied ? <CheckIcon /> : <CopyIcon />}
-                              </button>
-                            )}
+                          <td className="panel-item-status">
+                            {isChecked && <span className="panel-item-checked-label">確認済み</span>}
                           </td>
                         </tr>
                       );
@@ -243,7 +258,7 @@ export const ProofreadingPanel: React.FC = () => {
     error,
     openModal,
   } = useProofreadingCheckStore();
-  const { pages, setCurrentPage, pdfAnnotations, color, setColor, strokeWidth, setStrokeWidth, tool, setTool, currentStampType, setCurrentStampType } = useDrawingStore();
+  const { pages, setCurrentPage, pdfAnnotations, color, setColor, strokeWidth, setStrokeWidth, tool, setTool, currentStampType, setCurrentStampType, addDoneStampToPage, removeShapeById } = useDrawingStore();
   const { isProofreadingPanelCollapsed, toggleProofreadingPanel } = useSidebarStore();
 
   // カラーピッカーref
@@ -358,6 +373,8 @@ export const ProofreadingPanel: React.FC = () => {
             pageDisplay,
             text: annot.text,
             type: annot.pdfAnnotationSource || 'Text',
+            x: annot.x,
+            y: annot.y,
           });
         }
       });
@@ -367,7 +384,49 @@ export const ProofreadingPanel: React.FC = () => {
   }, [pdfAnnotations, isLandscape, pages]);
 
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // チェック済みコメントの状態管理（校正チェックコメント用）
+  const [checkedComments, setCheckedComments] = useState<Set<number>>(new Set());
+  const [commentDoneStamps, setCommentDoneStamps] = useState<Map<number, { pageIndex: number; stampId: string }>>(new Map());
+
+  // チェックボックス変更ハンドラー
+  const toggleCommentChecked = useCallback((commentIndex: number) => {
+    const comment = commentItems[commentIndex];
+    if (!comment) return;
+
+    if (checkedComments.has(commentIndex)) {
+      // チェック解除 → スタンプ削除
+      const stampInfo = commentDoneStamps.get(commentIndex);
+      if (stampInfo) {
+        removeShapeById(stampInfo.pageIndex, stampInfo.stampId);
+        setCommentDoneStamps(prev => {
+          const next = new Map(prev);
+          next.delete(commentIndex);
+          return next;
+        });
+      }
+      setCheckedComments(prev => {
+        const next = new Set(prev);
+        next.delete(commentIndex);
+        return next;
+      });
+    } else {
+      // チェック → スタンプ追加
+      const stampId = addDoneStampToPage(comment.pageIndex, { x: comment.x, y: comment.y });
+      if (stampId) {
+        setCommentDoneStamps(prev => {
+          const next = new Map(prev);
+          next.set(commentIndex, { pageIndex: comment.pageIndex, stampId });
+          return next;
+        });
+      }
+      setCheckedComments(prev => {
+        const next = new Set(prev);
+        next.add(commentIndex);
+        return next;
+      });
+    }
+  }, [commentItems, checkedComments, commentDoneStamps, addDoneStampToPage, removeShapeById]);
 
   // Separate items by checkKind
   const correctnessItems = useMemo(() =>
@@ -375,10 +434,100 @@ export const ProofreadingPanel: React.FC = () => {
   const proposalItems = useMemo(() =>
     allItems.filter(item => item.checkKind === 'proposal'), [allItems]);
 
+  // 正誤・提案のチェック状態
+  const [checkedCorrectnessItems, setCheckedCorrectnessItems] = useState<Set<string>>(new Set());
+  const [checkedProposalItems, setCheckedProposalItems] = useState<Set<string>>(new Set());
+
+  // 正誤・提案のアイテムID一覧を取得（全アイテム数のカウント用）
+  const correctnessItemIds = useMemo(() => {
+    const ids: string[] = [];
+    const grouped = groupByCategory(correctnessItems);
+    Object.keys(grouped).forEach(category => {
+      grouped[category].forEach((_, index) => {
+        ids.push(`correctness-${category}-${index}`);
+      });
+    });
+    return ids;
+  }, [correctnessItems]);
+
+  const proposalItemIds = useMemo(() => {
+    const ids: string[] = [];
+    const grouped = groupByCategory(proposalItems);
+    Object.keys(grouped).forEach(category => {
+      grouped[category].forEach((_, index) => {
+        ids.push(`proposal-${category}-${index}`);
+      });
+    });
+    return ids;
+  }, [proposalItems]);
+
+  // 正誤チェックボックス変更ハンドラー
+  const toggleCorrectnessCheck = useCallback((itemId: string) => {
+    setCheckedCorrectnessItems(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  }, []);
+
+  // 提案チェックボックス変更ハンドラー
+  const toggleProposalCheck = useCallback((itemId: string) => {
+    setCheckedProposalItems(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  }, []);
+
+  // 正誤カテゴリ全体チェックハンドラー
+  const toggleCorrectnessCategoryCheck = useCallback((itemIds: string[], checked: boolean) => {
+    setCheckedCorrectnessItems(prev => {
+      const next = new Set(prev);
+      itemIds.forEach(id => {
+        if (checked) {
+          next.add(id);
+        } else {
+          next.delete(id);
+        }
+      });
+      return next;
+    });
+  }, []);
+
+  // 提案カテゴリ全体チェックハンドラー
+  const toggleProposalCategoryCheck = useCallback((itemIds: string[], checked: boolean) => {
+    setCheckedProposalItems(prev => {
+      const next = new Set(prev);
+      itemIds.forEach(id => {
+        if (checked) {
+          next.add(id);
+        } else {
+          next.delete(id);
+        }
+      });
+      return next;
+    });
+  }, []);
+
   // Check if any items have checkKind
   const hasCheckKind = allItems.some(item => item.checkKind);
   // Always show tabs when we have data or comments
   const showTabs = (hasCheckKind && allItems.length > 0) || commentItems.length > 0 || currentData;
+
+  // すべてのコメントがチェックされているか
+  const allCommentsChecked = commentItems.length > 0 && checkedComments.size === commentItems.length;
+  // すべての正誤がチェックされているか
+  const allCorrectnessChecked = correctnessItemIds.length > 0 && checkedCorrectnessItems.size === correctnessItemIds.length;
+  // すべての提案がチェックされているか
+  const allProposalChecked = proposalItemIds.length > 0 && checkedProposalItems.size === proposalItemIds.length;
 
   // Toggle category collapse
   const toggleCategory = useCallback((category: string) => {
@@ -391,17 +540,6 @@ export const ProofreadingPanel: React.FC = () => {
       }
       return next;
     });
-  }, []);
-
-  // Copy to clipboard
-  const handleCopy = useCallback(async (content: string, id: string) => {
-    try {
-      await navigator.clipboard.writeText(content);
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1500);
-    } catch (e) {
-      console.error('Copy failed:', e);
-    }
   }, []);
 
   // Jump to page
@@ -444,23 +582,36 @@ export const ProofreadingPanel: React.FC = () => {
 
     return (
       <div className="panel-comments-list">
-        {commentItems.map((comment, index) => (
-          <div key={index} className="panel-comment-item">
-            <div className="panel-comment-header">
-              <span
-                className="panel-comment-page clickable"
-                onClick={() => handleCommentPageClick(comment.pageIndex)}
-                title="クリックでページにジャンプ"
-              >
-                {comment.pageDisplay}
-              </span>
-              <span className={`panel-comment-type ${comment.type.toLowerCase()}`}>
-                {comment.type}
-              </span>
+        {commentItems.map((comment, index) => {
+          const isChecked = checkedComments.has(index);
+          return (
+            <div key={index} className={`panel-comment-item ${isChecked ? 'checked' : ''}`}>
+              <label className="panel-comment-checkbox" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={() => toggleCommentChecked(index)}
+                />
+              </label>
+              {isChecked && <span className="panel-comment-done-badge">済</span>}
+              <div className="panel-comment-body">
+                <div className="panel-comment-header">
+                  <span
+                    className="panel-comment-page clickable"
+                    onClick={() => handleCommentPageClick(comment.pageIndex)}
+                    title="クリックでページにジャンプ"
+                  >
+                    {comment.pageDisplay}
+                  </span>
+                  <span className={`panel-comment-type ${comment.type.toLowerCase()}`}>
+                    {comment.type}
+                  </span>
+                </div>
+                <div className="panel-comment-text">{comment.text}</div>
+              </div>
             </div>
-            <div className="panel-comment-text">{comment.text}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     );
   };
@@ -488,8 +639,6 @@ export const ProofreadingPanel: React.FC = () => {
           items={allItems}
           collapsedCategories={collapsedCategories}
           toggleCategory={toggleCategory}
-          copiedId={copiedId}
-          handleCopy={handleCopy}
           handlePageClick={handlePageClick}
         />
       );
@@ -498,6 +647,10 @@ export const ProofreadingPanel: React.FC = () => {
     // Single column layout for correctness or proposal
     const items = currentTab === 'correctness' ? correctnessItems : proposalItems;
     const tabName = currentTab === 'correctness' ? '正誤チェック' : '提案チェック';
+    const checkedItems = currentTab === 'correctness' ? checkedCorrectnessItems : checkedProposalItems;
+    const onToggleCheck = currentTab === 'correctness' ? toggleCorrectnessCheck : toggleProposalCheck;
+    const onToggleCategoryCheck = currentTab === 'correctness' ? toggleCorrectnessCategoryCheck : toggleProposalCategoryCheck;
+    const prefix = currentTab === 'correctness' ? 'correctness-' : 'proposal-';
 
     if (items.length === 0) {
       return <div className="panel-empty-small">「{tabName}」の項目がありません</div>;
@@ -508,9 +661,11 @@ export const ProofreadingPanel: React.FC = () => {
         items={items}
         collapsedCategories={collapsedCategories}
         toggleCategory={toggleCategory}
-        copiedId={copiedId}
-        handleCopy={handleCopy}
         handlePageClick={handlePageClick}
+        prefix={prefix}
+        checkedItems={checkedItems}
+        onToggleCheck={onToggleCheck}
+        onToggleCategoryCheck={onToggleCategoryCheck}
       />
     );
   };
@@ -660,18 +815,21 @@ export const ProofreadingPanel: React.FC = () => {
                   onClick={() => setCurrentTab('correctness')}
                 >
                   正誤{correctnessItems.length > 0 ? ` (${correctnessItems.length})` : ''}
+                  {allCorrectnessChecked && <span className="panel-tab-done">済</span>}
                 </button>
                 <button
                   className={`panel-tab ${currentTab === 'proposal' ? 'active' : ''}`}
                   onClick={() => setCurrentTab('proposal')}
                 >
                   提案{proposalItems.length > 0 ? ` (${proposalItems.length})` : ''}
+                  {allProposalChecked && <span className="panel-tab-done">済</span>}
                 </button>
                 <button
                   className={`panel-tab ${currentTab === 'comments' ? 'active' : ''}`}
                   onClick={() => setCurrentTab('comments')}
                 >
                   コメント{commentItems.length > 0 ? ` (${commentItems.length})` : ''}
+                  {allCommentsChecked && <span className="panel-tab-done">済</span>}
                 </button>
               </div>
             )}
