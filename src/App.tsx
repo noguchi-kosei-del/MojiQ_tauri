@@ -2,7 +2,7 @@ import { useEffect, useCallback, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { setTheme as setTauriTheme } from '@tauri-apps/api/app';
-import { ask } from '@tauri-apps/plugin-dialog';
+import { ask, message } from '@tauri-apps/plugin-dialog';
 import { CloseConfirmDialog, CloseConfirmResult } from './components/CloseConfirmDialog';
 import { SettingsModal } from './components/SettingsModal/SettingsModal';
 import { ProofreadingCheckModal } from './components/ProofreadingCheckModal';
@@ -32,8 +32,8 @@ import { useSidebarStore } from './stores/sidebarStore';
 import { LoadedDocument, FileMetadata } from './types';
 import { renderPdfToImages } from './utils/pdfRenderer';
 import { preloadAllBackgroundImages, backgroundImageCache } from './utils/backgroundImageCache';
-import { checkFileSize, checkPageCount } from './utils/fileValidation';
-import { compressPdfViaCanvas } from './utils/imageCompression';
+import { checkPageCount } from './utils/fileValidation';
+import { uint8ArrayToBase64 } from './utils/imageCompression';
 import './App.css';
 
 // 定数
@@ -41,7 +41,7 @@ const ZOOM_ANIMATION_DURATION = 300;
 const NAVIGATE_COOLDOWN_MS = 150;
 
 function App() {
-  const { loadDocument, loadDocumentWithAnnotations, loadDocumentWithLinks, loadAllPageImages, undo, redo, pages, currentPage, setCurrentPage, tool, setTool, selectedStrokeIds, selectedTextIds, deleteSelectedStrokes, clearAllDrawings, getDocumentState, restoreDocumentState, clearDocument } = useDrawingStore();
+  const { loadDocument, loadDocumentWithAnnotations, loadDocumentWithLinks, loadAllPageImages, undo, redo, pages, currentPage, setCurrentPage, tool, setTool, selectedStrokeIds, selectedTextIds, deleteSelectedStrokes, clearAllDrawings, getDocumentState, restoreDocumentState, clearDocument, activeProofreadingText, clearActiveProofreadingText } = useDrawingStore();
   const {
     activeDocumentId,
     syncFromDrawingStore,
@@ -115,6 +115,9 @@ function App() {
         // ファイル読み込み時は単ページモードに戻す
         disableSpreadView();
 
+        // 背景画像キャッシュをクリア（前のドキュメントの画像が表示されるのを防ぐ）
+        backgroundImageCache.clear();
+
         // アクティブなドキュメントがない場合は新規作成
         let currentActiveId = useDocumentStore.getState().activeDocumentId;
         if (!currentActiveId) {
@@ -136,9 +139,21 @@ function App() {
           if (pdfPaths.length > 0) {
             const filePath = pdfPaths[0];
             const fileName = filePath.split(/[/\\]/).pop() || 'PDF';
-            const result = await invoke<LoadedDocument>('load_file', {
-              path: filePath,
-            });
+
+            setLoading(true, 'ファイルを読み込んでいます...');
+            setProgress(10);
+
+            let result: LoadedDocument;
+            try {
+              result = await invoke<LoadedDocument>('load_file', {
+                path: filePath,
+              });
+            } catch (e) {
+              console.error('[App drop 1] Failed to load file:', e);
+              setLoading(false);
+              await message(String(e), { title: 'エラー', kind: 'error' });
+              return;
+            }
 
             if (result.file_type === 'pdf' && result.pdf_data) {
               // PDFデータをUint8Arrayに変換
@@ -148,30 +163,8 @@ function App() {
               for (let i = 0; i < binaryString.length; i++) {
                 bytes[i] = binaryString.charCodeAt(i);
               }
-              let pdfBytes = bytes;
-
-              // ファイルサイズチェック
-              const sizeValidation = checkFileSize(pdfBytes.length, 'pdf');
-              if (sizeValidation.needsCompression && sizeValidation.warning) {
-                const confirmed = await ask(sizeValidation.warning, {
-                  title: '確認',
-                  kind: 'warning',
-                });
-                if (!confirmed) {
-                  setLoading(false);
-                  return;
-                }
-                // PDF圧縮
-                setLoading(true, 'PDFを圧縮しています...');
-                pdfBytes = await compressPdfViaCanvas(pdfBytes, (current, total) => {
-                  setProgress(Math.floor((current / total) * 30));
-                });
-              }
-
-              // Base64に再エンコード
-              const compressedBase64 = btoa(
-                pdfBytes.reduce((data, byte) => data + String.fromCharCode(byte), '')
-              );
+              // Base64に再エンコード（チャンク分割で高速化）
+              const compressedBase64 = uint8ArrayToBase64(bytes);
 
               setLoading(true, 'PDFをレンダリング中...');
               const pdfResult = await renderPdfToImages(compressedBase64, (progress) => {
@@ -300,9 +293,21 @@ function App() {
           else if (paths.length === 1) {
             const filePath = paths[0];
             const fileName = filePath.split(/[/\\]/).pop() || 'ファイル';
-            const result = await invoke<LoadedDocument>('load_file', {
-              path: filePath,
-            });
+
+            setLoading(true, 'ファイルを読み込んでいます...');
+            setProgress(10);
+
+            let result: LoadedDocument;
+            try {
+              result = await invoke<LoadedDocument>('load_file', {
+                path: filePath,
+              });
+            } catch (e) {
+              console.error('[App drop 2] Failed to load file:', e);
+              setLoading(false);
+              await message(String(e), { title: 'エラー', kind: 'error' });
+              return;
+            }
 
             if (result.file_type === 'pdf' && result.pdf_data) {
               // PDFデータをUint8Arrayに変換
@@ -312,30 +317,8 @@ function App() {
               for (let i = 0; i < binaryString.length; i++) {
                 bytes[i] = binaryString.charCodeAt(i);
               }
-              let pdfBytes = bytes;
-
-              // ファイルサイズチェック
-              const sizeValidation = checkFileSize(pdfBytes.length, 'pdf');
-              if (sizeValidation.needsCompression && sizeValidation.warning) {
-                const confirmed = await ask(sizeValidation.warning, {
-                  title: '確認',
-                  kind: 'warning',
-                });
-                if (!confirmed) {
-                  setLoading(false);
-                  return;
-                }
-                // PDF圧縮
-                setLoading(true, 'PDFを圧縮しています...');
-                pdfBytes = await compressPdfViaCanvas(pdfBytes, (current, total) => {
-                  setProgress(Math.floor((current / total) * 30));
-                });
-              }
-
-              // Base64に再エンコード
-              const compressedBase64 = btoa(
-                pdfBytes.reduce((data, byte) => data + String.fromCharCode(byte), '')
-              );
+              // Base64に再エンコード（チャンク分割で高速化）
+              const compressedBase64 = uint8ArrayToBase64(bytes);
 
               setLoading(true, 'PDFをレンダリング中...');
               const pdfResult = await renderPdfToImages(compressedBase64, (progress) => {
@@ -708,6 +691,15 @@ function App() {
 
         // 閲覧モード中は他のキー操作を無効化
         return;
+      }
+
+      // Escape: 校正チェックテキストモードを解除
+      if (e.key === 'Escape') {
+        if (activeProofreadingText) {
+          e.preventDefault();
+          clearActiveProofreadingText();
+          return;
+        }
       }
 
       // F1: 閲覧モード開始

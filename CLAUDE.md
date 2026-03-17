@@ -512,3 +512,10 @@ MojiQ_3.0/
 - **drawingStore拡張**:
   - `addDoneStampToPage(pageIndex, point)` - 指定ページに済スタンプを追加
   - `removeShapeById(pageIndex, shapeId)` - 指定ページから指定IDのスタンプを削除
+
+#### ファイルサイズ制限機能
+- **300MB以上のファイル読み込みブロック**:
+  - Rust側（`commands.rs`）で`load_file`/`load_files`コマンドにファイルサイズチェックを追加
+  - 300MB以上のファイルはエラーを返して読み込みを拒否
+  - フロントエンド側でエラーをキャッチしてカスタムダイアログで表示
+  - エラーメッセージ: 「ファイルサイズが大きすぎるので読み込めません（XXX MB / 上限300MB）」

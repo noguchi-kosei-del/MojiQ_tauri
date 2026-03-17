@@ -31,12 +31,8 @@ export function checkFileSize(
   if (size >= threshold) {
     const sizeMB = Math.round(size / (1024 * 1024));
     return {
-      valid: true,
-      needsCompression: true,
-      warning:
-        type === 'pdf'
-          ? `PDFのサイズが非常に大きいため（${sizeMB}MB）、圧縮処理をします。\n処理に時間がかかる場合があります。続行しますか？`
-          : `画像の合計サイズが大きいため（${sizeMB}MB）、圧縮処理をします。\n処理に時間がかかる場合があります。続行しますか？`,
+      valid: false,
+      error: `ファイルサイズが大きすぎるので読み込めません（${sizeMB}MB / 上限300MB）`,
     };
   }
 

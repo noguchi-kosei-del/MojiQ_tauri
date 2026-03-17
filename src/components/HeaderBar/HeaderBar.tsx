@@ -23,6 +23,8 @@ import {
   applyImportDataToPages,
 } from '../../utils/drawingExportImport';
 import { HamburgerMenu } from '../HamburgerMenu';
+import { backgroundImageCache } from '../../utils/backgroundImageCache';
+import { uint8ArrayToBase64 } from '../../utils/imageCompression';
 import MojiQLogo from '../../../logo/MojiQ_icon.png';
 import './HeaderBar.css';
 
@@ -244,6 +246,8 @@ export const HeaderBar: React.FC = () => {
     syncFromDrawingStore,
     markAsSaved,
     getActiveDocument,
+    switchDocument,
+    createNewDocument,
   } = useDocumentStore();
   const { isLoading, setLoading, setProgress } = useLoadingStore();
   const {
@@ -336,6 +340,9 @@ export const HeaderBar: React.FC = () => {
     // ファイル読み込み時は単ページモードに戻す
     disableSpreadView();
 
+    // 背景画像キャッシュをクリア（前のドキュメントの画像が表示されるのを防ぐ）
+    backgroundImageCache.clear();
+
     try {
       const selected = await open({
         multiple: true,
@@ -351,12 +358,20 @@ export const HeaderBar: React.FC = () => {
         setLoading(true, 'ファイルを読み込み中...');
         setProgress(5);
 
+        // アクティブなドキュメントがない場合は新規作成
+        let currentActiveId = useDocumentStore.getState().activeDocumentId;
+        if (!currentActiveId) {
+          currentActiveId = createNewDocument({ title: '新規ドキュメント' });
+        }
+
         // アクティブなドキュメントが空かどうかチェック
-        const activeDoc = getActiveDocument();
-        const isActiveDocEmpty = activeDoc && activeDoc.pages.length === 0;
+        // - アクティブドキュメントが空の場合: 既存タブに読み込む
+        // - アクティブドキュメントにコンテンツがある場合: 新規タブを作成
+        const currentPages = useDrawingStore.getState().pages || [];
+        const shouldLoadIntoExisting = currentPages.length === 0;
 
         // 現在のドキュメント状態を保存（空でない場合のみ）
-        if (activeDocumentId && pages.length > 0) {
+        if (activeDocumentId && currentPages.length > 0) {
           const currentState = getDocumentState();
           syncFromDrawingStore(currentState);
         }
@@ -371,21 +386,71 @@ export const HeaderBar: React.FC = () => {
         );
         const pdfPaths = paths.filter(path => path.toLowerCase().endsWith('.pdf'));
 
+        // 同一ファイルが既に開かれているかチェックする関数
+        const findExistingDocumentByPath = (targetPath: string): string | null => {
+          const docs = useDocumentStore.getState().documents;
+          for (const [id, doc] of docs) {
+            if (doc.filePath === targetPath) {
+              return id;
+            }
+          }
+          return null;
+        };
+
         // PDFが含まれている場合は最初のPDFを読み込む
         if (pdfPaths.length > 0) {
-          setProgress(20);
+          setProgress(5);
           const filePath = pdfPaths[0];
           const fileName = filePath.split(/[/\\]/).pop() || 'PDF';
-          const result = await invoke<LoadedDocument>('load_file', {
-            path: filePath,
-          });
+
+          // 同一ファイルが既に開かれているかチェック
+          const existingDocId = findExistingDocumentByPath(filePath);
+          let loadIntoExistingDoc = false;
+          if (existingDocId) {
+            const confirmed = await ask(
+              '同一のファイル名ですが読み込みますか？（描画はリセットされます）',
+              { title: '確認', kind: 'warning' }
+            );
+            if (!confirmed) {
+              setLoading(false);
+              return;
+            }
+            loadIntoExistingDoc = true;
+            // 既存のタブに切り替え
+            switchDocument(existingDocId);
+          }
+
+          setLoading(true, 'ファイルを読み込んでいます...');
+          setProgress(10);
+
+          let result: LoadedDocument;
+          try {
+            result = await invoke<LoadedDocument>('load_file', {
+              path: filePath,
+            });
+          } catch (e) {
+            console.error('[HeaderBar openFile] Failed to load file:', e);
+            setLoading(false);
+            await message(String(e), { title: 'エラー', kind: 'error' });
+            return;
+          }
 
           if (result.file_type === 'pdf' && result.pdf_data) {
+            // PDFデータをUint8Arrayに変換
+            const base64Data = result.pdf_data;
+            const binaryString = atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            // Base64に再エンコード（チャンク分割で高速化）
+            const compressedBase64 = uint8ArrayToBase64(bytes);
+
             setLoading(true, 'PDFを読み込み中...');
-            setProgress(40);
-            const pdfResult = await loadPdfDocumentFromFile(result.pdf_data, (progress) => {
-              // 40%〜90%の範囲でプログレスを表示
-              setProgress(40 + (progress / 100) * 50);
+            setProgress(45);
+            const pdfResult = await loadPdfDocumentFromFile(compressedBase64, (progress) => {
+              // 45%〜90%の範囲でプログレスを表示
+              setProgress(45 + (progress / 100) * 45);
             });
             setProgress(90);
 
@@ -409,8 +474,8 @@ export const HeaderBar: React.FC = () => {
               return pageState;
             });
 
-            // アクティブなドキュメントが空の場合は既存タブに読み込む
-            if (isActiveDocEmpty) {
+            // 既存タブに読み込む条件: 空のタブ、または同一ファイルの上書き
+            if (shouldLoadIntoExisting || loadIntoExistingDoc) {
               loadIntoActiveDocument(
                 fileName,
                 filePath,
@@ -447,6 +512,22 @@ export const HeaderBar: React.FC = () => {
             return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
           });
 
+          // 同一ファイルが既に開かれているかチェック
+          const existingDocId = findExistingDocumentByPath(sortedPaths[0]);
+          let loadIntoExistingDoc = false;
+          if (existingDocId) {
+            const confirmed = await ask(
+              '同一のファイル名ですが読み込みますか？（描画はリセットされます）',
+              { title: '確認', kind: 'warning' }
+            );
+            if (!confirmed) {
+              setLoading(false);
+              return;
+            }
+            loadIntoExistingDoc = true;
+            switchDocument(existingDocId);
+          }
+
           setProgress(20);
           const result = await invoke<LoadedDocument>('load_files', {
             paths: sortedPaths,
@@ -462,8 +543,8 @@ export const HeaderBar: React.FC = () => {
           const folderPath = sortedPaths[0].split(/[/\\]/);
           const title = folderPath.length > 1 ? folderPath[folderPath.length - 2] : '画像';
 
-          // アクティブなドキュメントが空の場合は既存タブに読み込む
-          if (isActiveDocEmpty) {
+          // 既存タブに読み込む条件: 空のタブ、または同一ファイルの上書き
+          if (shouldLoadIntoExisting || loadIntoExistingDoc) {
             loadIntoActiveDocument(
               title,
               sortedPaths[0],
@@ -493,21 +574,59 @@ export const HeaderBar: React.FC = () => {
         }
         // 単一ファイルの場合
         else if (paths.length === 1) {
-          setProgress(20);
+          setProgress(5);
           const filePath = paths[0];
           const fileName = filePath.split(/[/\\]/).pop() || 'ファイル';
-          const result = await invoke<LoadedDocument>('load_file', {
-            path: filePath,
-          });
+
+          // 同一ファイルが既に開かれているかチェック
+          const existingDocId = findExistingDocumentByPath(filePath);
+          let loadIntoExistingDoc = false;
+          if (existingDocId) {
+            const confirmed = await ask(
+              '同一のファイル名ですが読み込みますか？（描画はリセットされます）',
+              { title: '確認', kind: 'warning' }
+            );
+            if (!confirmed) {
+              setLoading(false);
+              return;
+            }
+            loadIntoExistingDoc = true;
+            switchDocument(existingDocId);
+          }
+
+          setLoading(true, 'ファイルを読み込んでいます...');
+          setProgress(10);
+
+          let result: LoadedDocument;
+          try {
+            result = await invoke<LoadedDocument>('load_file', {
+              path: filePath,
+            });
+          } catch (e) {
+            console.error('[HeaderBar loadIntoActive] Failed to load file:', e);
+            setLoading(false);
+            await message(String(e), { title: 'エラー', kind: 'error' });
+            return;
+          }
 
           if (result.file_type === 'pdf' && result.pdf_data) {
+            // PDFデータをUint8Arrayに変換
+            const base64Data = result.pdf_data;
+            const binaryString = atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            // Base64に再エンコード（チャンク分割で高速化）
+            const compressedBase64 = uint8ArrayToBase64(bytes);
+
             setLoading(true, 'PDFを読み込み中...');
-            setProgress(40);
-            const pdfResult = await loadPdfDocumentFromFile(result.pdf_data, (progress) => {
-              // 40%〜90%の範囲でプログレスを表示
-              setProgress(40 + (progress / 100) * 50);
+            setProgress(60);
+            const pdfResult = await loadPdfDocumentFromFile(compressedBase64, (progress) => {
+              // 60%〜95%の範囲でプログレスを表示
+              setProgress(60 + (progress / 100) * 35);
             });
-            setProgress(90);
+            setProgress(95);
 
             // ページステートを作成
             const pageStates = pdfResult.pageInfos.map((info, pageIndex) => {
@@ -529,8 +648,8 @@ export const HeaderBar: React.FC = () => {
               return pageState;
             });
 
-            // アクティブなドキュメントが空の場合は既存タブに読み込む
-            if (isActiveDocEmpty) {
+            // 既存タブに読み込む条件: 空のタブ、または同一ファイルの上書き
+            if (shouldLoadIntoExisting || loadIntoExistingDoc) {
               loadIntoActiveDocument(
                 fileName,
                 filePath,
@@ -563,8 +682,8 @@ export const HeaderBar: React.FC = () => {
               createDefaultPage(p.page_number, p.image_data, p.width, p.height)
             );
 
-            // アクティブなドキュメントが空の場合は既存タブに読み込む
-            if (isActiveDocEmpty) {
+            // 既存タブに読み込む条件: 空のタブ、または同一ファイルの上書き
+            if (shouldLoadIntoExisting || loadIntoExistingDoc) {
               loadIntoActiveDocument(
                 fileName,
                 filePath,
