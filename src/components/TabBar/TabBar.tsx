@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useDocumentStore } from '../../stores/documentStore';
 import { useDrawingStore } from '../../stores/drawingStore';
 import { Tab } from './Tab';
@@ -13,11 +13,11 @@ interface TabBarProps {
 
 export const TabBar: React.FC<TabBarProps> = ({ onSwitchDocument, onCreateNewTab, onSaveAndClose }) => {
   const {
-    getTabInfoList,
     activeDocumentId,
     closeDocument,
     reorderTabs,
     documents,
+    tabOrder,
   } = useDocumentStore();
 
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
@@ -30,7 +30,18 @@ export const TabBar: React.FC<TabBarProps> = ({ onSwitchDocument, onCreateNewTab
     docTitle: string;
   }>({ isOpen: false, docId: null, docTitle: '' });
 
-  const tabs = getTabInfoList();
+  // tabOrderとdocumentsの変更を検知するためにuseMemoを使用
+  const tabs = useMemo(() => {
+    return tabOrder.map((id, index) => {
+      const doc = documents.get(id);
+      return {
+        id,
+        title: doc?.title || '不明',
+        isModified: doc?.isModified || false,
+        order: index,
+      };
+    });
+  }, [tabOrder, documents]);
 
   const handleActivate = useCallback((id: string) => {
     if (id !== activeDocumentId) {
@@ -121,9 +132,8 @@ export const TabBar: React.FC<TabBarProps> = ({ onSwitchDocument, onCreateNewTab
     e.preventDefault();
 
     if (draggedTabId && draggedTabId !== targetId) {
-      const tabs = getTabInfoList();
-      const fromIndex = tabs.findIndex(t => t.id === draggedTabId);
-      const toIndex = tabs.findIndex(t => t.id === targetId);
+      const fromIndex = tabOrder.indexOf(draggedTabId);
+      const toIndex = tabOrder.indexOf(targetId);
 
       if (fromIndex !== -1 && toIndex !== -1) {
         reorderTabs(fromIndex, toIndex);
@@ -132,7 +142,7 @@ export const TabBar: React.FC<TabBarProps> = ({ onSwitchDocument, onCreateNewTab
 
     setDraggedTabId(null);
     setDragOverTabId(null);
-  }, [draggedTabId, getTabInfoList, reorderTabs]);
+  }, [draggedTabId, tabOrder, reorderTabs]);
 
   const handleDragEnd = useCallback(() => {
     setDraggedTabId(null);
@@ -176,6 +186,7 @@ export const TabBar: React.FC<TabBarProps> = ({ onSwitchDocument, onCreateNewTab
           className="tab-add-btn"
           onClick={handleCreateNewTab}
           title="新規タブを作成"
+          disabled={tabs.length === 0}
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>

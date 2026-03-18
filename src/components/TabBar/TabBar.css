@@ -186,6 +186,16 @@
   background-color: var(--bg-tertiary);
 }
 
+.tab-add-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.tab-add-btn:disabled:hover {
+  background-color: transparent;
+  color: var(--text-secondary);
+}
+
 /* Viewer mode - hide tab bar */
 .app.viewer-mode .tab-bar {
   display: none;
