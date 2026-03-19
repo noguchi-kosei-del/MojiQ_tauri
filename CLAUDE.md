@@ -199,6 +199,7 @@ interface Shape {
 | `gridStore` | 写植グリッド（ページごとのグリッド、書き方向、サンプルテキスト） |
 | `proofreadingCheckStore` | 校正チェック（モーダル状態、ナビゲーション、データ表示） |
 | `modeStore` | モード管理（指示入れモード/校正チェックモード） |
+| `displayScaleStore` | 表示スケール（baseScale * zoom）の管理 |
 
 ## 開発・ビルド
 
@@ -528,18 +529,23 @@ MojiQ_3.0/
 
 ### 2026-03-19
 #### 描画スケーリング修正（旧MojiQ ver_2.09より移植）
-- **RENDER_SCALE適用**: テキスト・線の太さ・スタンプサイズにRENDER_SCALE（3.0）を適用
+- **displayScaleStore追加**: 表示スケールをストアで一元管理
+  - `src/stores/displayScaleStore.ts` - displayScale（baseScale * zoom）を保存
+  - DrawingCanvasで計算したdisplayScaleをストアに保存
+  - useCanvasでストアから読み取り、`renderScale = 1 / displayScale`で描画スケールを計算
+- **描画スケール安定化**: ツール切り替え時のテキストサイズ変動を解消
+  - 従来: `getBoundingClientRect()`依存で不安定
+  - 改善: 計算済みdisplayScaleをストア経由で取得し一貫したスケーリング
+- **テキスト・線の太さスケーリング**: currentRenderScaleRefを全描画関数で適用
   - `drawStroke`: ストロークの線幅をスケーリング
   - `drawShape`: 図形の線幅、スタンプサイズ、引出線をスケーリング
   - `drawAnnotation`: アノテーションのフォントサイズと線幅をスケーリング
   - `drawText`: テキストのフォントサイズとアウトライン線幅をスケーリング
   - `drawLeaderPreview`: 引出線プレビューの線幅とドット半径をスケーリング
-- **旧MojiQとのサイズ感統一**: テキスト入力・描画の線の太さを旧MojiQと同等に調整
+- **コメントテキストとテキストツールのサイズ統一**: 両者が同じrenderScaleを使用
 
 #### PDF注釈（コメントテキスト）表示改善
-- **フォントサイズ正規化**: ページサイズに基づいてフォントサイズを正規化
-  - 標準ページ高さ（3000px）を基準に `baseFontSize * (displayHeight / 3000)` で計算
-  - PDFの寸法に関わらず画面上で同じサイズに見えるよう調整
+- **フォントサイズ固定値**: PDF注釈テキストは`fontSize: 16`で統一（テキストツールのデフォルトと同じ）
 - **白フチの太さ統一**: フォントサイズに比例した白フチ（`scaledFontSize * 0.22`）
 - **見切れ防止**: テキスト位置をキャンバス境界内に収めるクランプ処理
   - `calculateTextBounds()`: テキストの幅と高さを計算

@@ -142,13 +142,10 @@ function convertPdfAnnotationToTextObject(
   // 色の変換
   const color = pdfColorToHex(annot.color);
 
-  // フォントサイズ（ページサイズに基づいて正規化）
-  // 標準ページ高さ（3000px）を基準に、どのPDFでも画面上で同じサイズに見えるよう調整
-  // 大きいページは大きいフォント、小さいページは小さいフォント（CSS表示スケールで補正される）
-  const standardHeight = 3000;
-  const baseFontSize = 18; // 標準ページでの論理フォントサイズ（少し大きめ）
-  const normalizedFontSize = baseFontSize * (displayHeight / standardHeight);
-  const fontSize = normalizedFontSize;
+  // フォントサイズ（固定値）
+  // テキストツールと同じスケール感で表示するため、固定のフォントサイズを使用
+  // RENDER_SCALE（3.0）が適用されるので、論理サイズとして指定
+  const fontSize = 16; // テキストツールのデフォルトと同じ
 
   // テキストサイズを計算（表示座標系で計算するためRENDER_SCALEを掛ける）
   const textBounds = calculateTextBounds(textContent, fontSize * RENDER_SCALE);

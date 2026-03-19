@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { useCanvas } from '../../hooks/useCanvas';
 import { useDrawingStore } from '../../stores/drawingStore';
 import { useDocumentStore } from '../../stores/documentStore';
@@ -7,11 +7,14 @@ import { useZoomStore } from '../../stores/zoomStore';
 import { useViewerModeStore } from '../../stores/viewerModeStore';
 import { useBgOpacityStore } from '../../stores/bgOpacityStore';
 import { useModeStore } from '../../stores/modeStore';
+import { useDisplayScaleStore } from '../../stores/displayScaleStore';
 import { AnnotationModal } from '../AnnotationModal';
 import { open, message } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { LoadedDocument } from '../../types';
-import { loadPdfDocument as loadPdfDocumentFromFile } from '../../utils/pdfRenderer';
+import { renderPdfToImages } from '../../utils/pdfRenderer';
+import { backgroundImageCache, preloadAllBackgroundImages } from '../../utils/backgroundImageCache';
+import { uint8ArrayToBase64 } from '../../utils/imageCompression';
 import './DrawingCanvas.css';
 
 // モードアイコン（指示入れモード）- HeaderBarと同じ
@@ -42,10 +45,8 @@ const FileOpenIcon = () => (
 export const DrawingCanvas: React.FC = () => {
   const {
     canvasRef,
-    backgroundCanvasRef,
     selectionCanvasRef,
     redrawCanvas,
-    drawBackground,
     showAnnotationModal,
     handleAnnotationSubmit,
     handleAnnotationCancel,
@@ -75,16 +76,21 @@ export const DrawingCanvas: React.FC = () => {
 
   // 画像ファイル入力用のref
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const { getCurrentPageState, tool, pages, currentPage, setCurrentPage, addShape, color, strokeWidth, loadPdfDocument } = useDrawingStore();
-  const { registerLoadedDocument } = useDocumentStore();
+  const { getCurrentPageState, tool, pages, currentPage, setCurrentPage, addShape, color, strokeWidth } = useDrawingStore();
+  const { loadIntoActiveDocument, createNewDocument } = useDocumentStore();
   const { setLoading, setProgress } = useLoadingStore();
   const { zoom, setZoom, minZoom, maxZoom, zoomStep } = useZoomStore();
   const { isActive: isViewerMode } = useViewerModeStore();
   const { bgOpacity } = useBgOpacityStore();
   const { mode } = useModeStore();
+  const { setDisplayScale } = useDisplayScaleStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const backgroundCanvasRef = useRef<HTMLCanvasElement>(null);
   const [baseScale, setBaseScale] = useState(1);
+
+  // 前回のページ情報を保持（サイズ変更時の再描画判定用）
+  const prevPageRef = useRef<{ page: number; width: number; height: number } | null>(null);
 
   // Pan state
   const [isPanning, setIsPanning] = useState(false);
@@ -166,6 +172,14 @@ export const DrawingCanvas: React.FC = () => {
 
       if (!selected) return;
 
+      // 背景画像キャッシュをクリア（前のドキュメントの画像が表示されるのを防ぐ）
+      backgroundImageCache.clear();
+
+      // アクティブなドキュメントがない場合は先に作成
+      if (!useDocumentStore.getState().activeDocumentId) {
+        createNewDocument({ title: '新規ドキュメント' });
+      }
+
       setLoading(true, 'ファイルを読み込み中...');
       setProgress(5);
 
@@ -180,27 +194,51 @@ export const DrawingCanvas: React.FC = () => {
 
       // PDFが含まれている場合は最初のPDFを読み込む
       if (pdfPaths.length > 0) {
-        setProgress(20);
+        setProgress(10);
         const filePath = pdfPaths[0];
         const fileName = filePath.split(/[/\\]/).pop() || 'PDF';
         const result = await invoke<LoadedDocument>('load_file', { path: filePath });
 
         if (result.file_type === 'pdf' && result.pdf_data) {
-          setLoading(true, 'PDFを読み込み中...');
-          setProgress(40);
-          const pdfResult = await loadPdfDocumentFromFile(result.pdf_data, (progress) => {
-            setProgress(40 + (progress / 100) * 50);
-          });
-          setProgress(90);
+          // PDFデータをUint8Arrayに変換（App.tsxと同じ方式）
+          const base64Data = result.pdf_data;
+          const binaryString = atob(base64Data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          const compressedBase64 = uint8ArrayToBase64(bytes);
 
-          loadPdfDocument(pdfResult.pdfDocument, pdfResult.pageInfos, pdfResult.annotations);
-          registerLoadedDocument(
+          setLoading(true, 'PDFをレンダリング中...');
+          const pdfResult = await renderPdfToImages(compressedBase64, (progress) => {
+            setProgress(20 + Math.floor(progress * 0.5));
+          });
+          setProgress(70);
+
+          // 背景画像をプリロード（ストア更新前に実行）
+          setLoading(true, '画像をキャッシュ中...');
+          await preloadAllBackgroundImages(
+            (pageNumber) => pdfResult.pages[pageNumber]?.image_data || null,
+            pdfResult.pages.length,
+            (current, total) => {
+              setProgress(70 + Math.floor((current / total) * 25));
+            }
+          );
+          setProgress(95);
+
+          // プリロード完了後にストアを更新
+          const { loadDocumentWithAnnotations } = useDrawingStore.getState();
+          loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations);
+
+          // ホーム画面からの読み込みは常にアクティブなタブに読み込む
+          const loadedPages = useDrawingStore.getState().pages;
+          loadIntoActiveDocument(
             fileName,
             filePath,
             'pdf',
+            loadedPages,
+            null,
             [],
-            pdfResult.pdfDocument,
-            pdfResult.pageInfos,
             pdfResult.annotations
           );
         }
@@ -208,9 +246,21 @@ export const DrawingCanvas: React.FC = () => {
         // 画像ファイルのみの場合
         setProgress(30);
         const result = await invoke<LoadedDocument>('load_files', { paths: imagePaths });
-        setProgress(80);
+        setProgress(50);
 
         if (result.pages && result.pages.length > 0) {
+          // 背景画像をプリロード（ストア更新前に実行）
+          setLoading(true, '画像をキャッシュ中...');
+          await preloadAllBackgroundImages(
+            (pageNumber) => result.pages[pageNumber]?.image_data || null,
+            result.pages.length,
+            (current, total) => {
+              setProgress(50 + Math.floor((current / total) * 40));
+            }
+          );
+          setProgress(90);
+
+          // プリロード完了後にストアを更新
           const { loadDocumentWithAnnotations } = useDrawingStore.getState();
           loadDocumentWithAnnotations(result.pages, []);
           const fileName = imagePaths.length === 1
@@ -218,7 +268,8 @@ export const DrawingCanvas: React.FC = () => {
             : `${imagePaths.length}枚の画像`;
           // PageDataをPageStateとして扱うため、loadDocumentWithAnnotationsで変換済みのpagesを使用
           const loadedPages = useDrawingStore.getState().pages;
-          registerLoadedDocument(fileName, imagePaths[0], 'images', loadedPages, null, [], []);
+          // ホーム画面からの読み込みは常にアクティブなタブに読み込む
+          loadIntoActiveDocument(fileName, imagePaths[0], 'images', loadedPages, null, [], []);
         }
       }
 
@@ -229,7 +280,7 @@ export const DrawingCanvas: React.FC = () => {
       setLoading(false);
       message(`ファイルを開けませんでした: ${e}`, { title: 'エラー', kind: 'error' });
     }
-  }, [setLoading, setProgress, loadPdfDocument, registerLoadedDocument]);
+  }, [setLoading, setProgress, loadIntoActiveDocument, createNewDocument]);
 
   const pageState = getCurrentPageState();
   const originalWidth = pageState?.width || 800;
@@ -269,12 +320,133 @@ export const DrawingCanvas: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [originalWidth, originalHeight, isViewerMode, pages.length, currentPage]);
 
-  // Redraw when page changes
+  // 背景キャンバスを直接更新（Reactのレンダリングサイクルから独立）
+  // useLayoutEffectを使用して、画面描画前にキャンバスを更新
+  useLayoutEffect(() => {
+    const bgCanvas = backgroundCanvasRef.current;
+    console.log('[BG Debug] useLayoutEffect called', {
+      currentPage,
+      hasCanvas: !!bgCanvas,
+      hasPageState: !!pageState,
+      cacheSize: backgroundImageCache.size,
+      hasCache: backgroundImageCache.has(currentPage),
+    });
+
+    if (!bgCanvas || !pageState) {
+      console.log('[BG Debug] Early return - no canvas or pageState');
+      return;
+    }
+
+    const ctx = bgCanvas.getContext('2d');
+    if (!ctx) {
+      console.log('[BG Debug] Early return - no context');
+      return;
+    }
+
+    const prev = prevPageRef.current;
+    const needsResize = !prev || prev.width !== originalWidth || prev.height !== originalHeight;
+
+    console.log('[BG Debug] State check', {
+      prev,
+      needsResize,
+      originalWidth,
+      originalHeight,
+      canvasWidth: bgCanvas.width,
+      canvasHeight: bgCanvas.height,
+    });
+
+    // サイズが変わる場合のみリサイズ（キャンバスがクリアされる）
+    if (needsResize) {
+      console.log('[BG Debug] Resizing canvas');
+      bgCanvas.width = originalWidth;
+      bgCanvas.height = originalHeight;
+    }
+
+    // 前回と同じページの場合はスキップ（既に描画済み）
+    if (prev && prev.page === currentPage && !needsResize) {
+      console.log('[BG Debug] Skip - same page, no resize needed');
+      return;
+    }
+
+    // 現在のページ情報を保存
+    prevPageRef.current = { page: currentPage, width: originalWidth, height: originalHeight };
+
+    // キャッシュから即座に描画
+    if (backgroundImageCache.has(currentPage)) {
+      const cachedImg = backgroundImageCache.get(currentPage);
+      if (cachedImg) {
+        console.log('[BG Debug] Drawing from cache', {
+          imgType: cachedImg instanceof ImageBitmap ? 'ImageBitmap' : 'HTMLImageElement',
+        });
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(cachedImg, 0, 0, originalWidth, originalHeight);
+        console.log('[BG Debug] Draw complete from cache');
+        return;
+      }
+    }
+
+    // キャッシュにない場合は白背景を描画
+    console.log('[BG Debug] No cache - drawing white background');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, originalWidth, originalHeight);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, pages.length, originalWidth, originalHeight]);
+
+  // キャッシュにない場合は非同期でロードして描画
   useEffect(() => {
-    drawBackground();
+    const loadAndDrawBackground = async () => {
+      const bgCanvas = backgroundCanvasRef.current;
+      if (!bgCanvas || !pageState) return;
+
+      // 既にキャッシュにある場合はスキップ（useLayoutEffectで描画済み）
+      if (backgroundImageCache.has(currentPage)) {
+        return;
+      }
+
+      const ctx = bgCanvas.getContext('2d');
+      if (!ctx) return;
+
+      // 背景画像のソースを決定
+      let imageSource: string | null = null;
+
+      if (pageState.backgroundImage) {
+        imageSource = pageState.backgroundImage;
+      } else if (pageState.imageLink?.type === 'file') {
+        try {
+          const { getPageImageAsync } = useDrawingStore.getState();
+          imageSource = await getPageImageAsync(currentPage);
+        } catch (error) {
+          console.error('Failed to load linked image:', error);
+          return;
+        }
+      }
+
+      if (!imageSource) return;
+
+      // 画像をロードしてキャッシュに保存、描画
+      try {
+        await backgroundImageCache.preloadImage(currentPage, imageSource);
+        const cachedImg = backgroundImageCache.get(currentPage);
+        if (cachedImg && bgCanvas.width === originalWidth && bgCanvas.height === originalHeight) {
+          ctx.clearRect(0, 0, originalWidth, originalHeight);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(cachedImg, 0, 0, originalWidth, originalHeight);
+        }
+      } catch (error) {
+        console.error('Failed to load background image:', error);
+      }
+    };
+    loadAndDrawBackground();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, pages.length, originalWidth, originalHeight]);
+
+  // 描画キャンバスの再描画（ページ変更時）
+  useEffect(() => {
     redrawCanvas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, pages.length, drawBackground, redrawCanvas, originalWidth, originalHeight]);
+  }, [currentPage, pages.length, redrawCanvas, originalWidth, originalHeight]);
 
   // Open file dialog when showImageInput becomes true
   useEffect(() => {
@@ -319,6 +491,11 @@ export const DrawingCanvas: React.FC = () => {
   const displayScale = baseScale * zoom;
   const displayWidth = originalWidth * displayScale;
   const displayHeight = originalHeight * displayScale;
+
+  // displayScaleをストアに保存（useCanvasで使用）
+  useEffect(() => {
+    setDisplayScale(displayScale);
+  }, [displayScale, setDisplayScale]);
 
   // Pan handlers
   const handlePanStart = useCallback((e: React.PointerEvent) => {
@@ -553,10 +730,9 @@ export const DrawingCanvas: React.FC = () => {
                 height: displayHeight,
               }}
             >
+            {/* 背景キャンバス: useLayoutEffectで直接制御（サイズ変更によるクリアを防ぐ） */}
             <canvas
               ref={backgroundCanvasRef}
-              width={originalWidth}
-              height={originalHeight}
               className="background-canvas"
               style={{
                 width: displayWidth,

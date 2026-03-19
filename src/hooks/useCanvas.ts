@@ -6,10 +6,7 @@ import { useCommentVisibilityStore } from '../stores/commentVisibilityStore';
 import { backgroundImageCache } from '../utils/backgroundImageCache';
 import { useCalibrationStore, MM_PER_PT } from '../stores/calibrationStore';
 import { useGridStore } from '../stores/gridStore';
-
-// 描画スケール（PDFレンダリングスケールと同じ）
-// PDFが3倍でレンダリングされているため、線幅やフォントサイズも同様にスケーリング
-const RENDER_SCALE = 3.0;
+import { useDisplayScaleStore } from '../stores/displayScaleStore';
 
 // アノテーションモード: 0=通常, 1=図形描画中, 2=引出線描画中
 type AnnotationState = 0 | 1 | 2;
@@ -67,6 +64,8 @@ export const useCanvas = () => {
   const currentImageEndRef = useRef<Point | null>(null);
   // 画像キャッシュ（imageData URLからHTMLImageElementへのマッピング）
   const imageCache = useRef<Map<string, HTMLImageElement>>(new Map());
+  // 現在の描画スケール（1/displayScale）
+  const currentRenderScaleRef = useRef<number>(1.0);
   const currentStrokeRef = useRef<Point[]>([]);
   const selectionStartRef = useRef<Point | null>(null);
   const dragStartRef = useRef<Point | null>(null);
@@ -154,6 +153,9 @@ export const useCanvas = () => {
 
   // コメントテキスト表示/非表示状態
   const { isHidden: isCommentHidden } = useCommentVisibilityStore();
+
+  // 表示スケール（DrawingCanvasから設定される）
+  const { displayScale } = useDisplayScaleStore();
 
   const getCurrentPageState = useCallback(() => {
     return pages[currentPage];
@@ -259,8 +261,8 @@ export const useCanvas = () => {
         const point = points[i];
         const pressure = point.pressure || 0.5;
         // マーカーは圧力で太さを変えない
-        // RENDER_SCALE を適用して旧MojiQと同等のサイズにする
-        const scaledWidth = stroke.width * RENDER_SCALE;
+        // currentRenderScaleRef.current を適用して旧MojiQと同等のサイズにする
+        const scaledWidth = stroke.width * currentRenderScaleRef.current;
         ctx.lineWidth = ('isMarker' in stroke && stroke.isMarker)
           ? scaledWidth
           : scaledWidth * (0.5 + pressure);
@@ -448,25 +450,25 @@ export const useCanvas = () => {
       const { startPos, endPos, type } = shape;
 
       // スケーリングされた線幅
-      const scaledWidth = shape.width * RENDER_SCALE;
+      const scaledWidth = shape.width * currentRenderScaleRef.current;
 
       // スタンプの場合
       if (type === 'stamp' && 'stampType' in shape && shape.stampType) {
         const baseStampSize = 'size' in shape && shape.size ? shape.size : 20;
-        const stampSize = baseStampSize * RENDER_SCALE;
+        const stampSize = baseStampSize * currentRenderScaleRef.current;
         const stampColor = isSelected ? '#0078d4' : shape.color;
 
         // 引出線がある場合は描画
         if ('leaderLine' in shape && shape.leaderLine) {
           ctx.beginPath();
           ctx.strokeStyle = stampColor;
-          ctx.lineWidth = 2 * RENDER_SCALE;
+          ctx.lineWidth = 2 * currentRenderScaleRef.current;
           ctx.moveTo(shape.leaderLine.start.x, shape.leaderLine.start.y);
           ctx.lineTo(shape.leaderLine.end.x, shape.leaderLine.end.y);
           ctx.stroke();
 
           // 引出線の先端（開始点）に●を描画
-          const dotRadius = 3 * RENDER_SCALE;
+          const dotRadius = 3 * currentRenderScaleRef.current;
           ctx.beginPath();
           ctx.arc(shape.leaderLine.start.x, shape.leaderLine.start.y, dotRadius, 0, 2 * Math.PI);
           ctx.fillStyle = stampColor;
@@ -495,7 +497,7 @@ export const useCanvas = () => {
         // フォントラベルを描画（フォント指定枠線の場合）
         if ('fontLabel' in shape && shape.fontLabel) {
           const { fontName, textX, textY, textAlign } = shape.fontLabel;
-          const labelFontSize = 16 * RENDER_SCALE;
+          const labelFontSize = 16 * currentRenderScaleRef.current;
           ctx.font = `bold ${labelFontSize}px sans-serif`;
           ctx.fillStyle = isSelected ? '#0078d4' : shape.color;
           ctx.textAlign = textAlign;
@@ -503,7 +505,7 @@ export const useCanvas = () => {
 
           // 白い縁取り
           ctx.save();
-          ctx.lineWidth = 4 * RENDER_SCALE;
+          ctx.lineWidth = 4 * currentRenderScaleRef.current;
           ctx.strokeStyle = '#ffffff';
           ctx.strokeText(fontName, textX, textY);
           ctx.restore();
@@ -528,7 +530,7 @@ export const useCanvas = () => {
         ctx.lineTo(endPos.x, endPos.y);
         ctx.stroke();
 
-        const headLen = Math.max(8 * RENDER_SCALE, scaledWidth * 3);
+        const headLen = Math.max(8 * currentRenderScaleRef.current, scaledWidth * 3);
         const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x);
         drawArrowHead(ctx, endPos.x, endPos.y, angle, headLen);
       } else if (baseType === 'doubleArrow') {
@@ -537,7 +539,7 @@ export const useCanvas = () => {
         ctx.lineTo(endPos.x, endPos.y);
         ctx.stroke();
 
-        const headLen = Math.max(8 * RENDER_SCALE, scaledWidth * 3);
+        const headLen = Math.max(8 * currentRenderScaleRef.current, scaledWidth * 3);
         const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x);
         // 終端側の矢頭
         drawArrowHead(ctx, endPos.x, endPos.y, angle, headLen);
@@ -564,7 +566,7 @@ export const useCanvas = () => {
           ctx.stroke();
 
           // 先端に●を描画
-          const dotRadius = Math.max(scaledWidth, 2 * RENDER_SCALE);
+          const dotRadius = Math.max(scaledWidth, 2 * currentRenderScaleRef.current);
           ctx.beginPath();
           ctx.arc(shape.leaderLine.start.x, shape.leaderLine.start.y, dotRadius, 0, 2 * Math.PI);
           ctx.fillStyle = isSelected ? '#0078d4' : shape.color;
@@ -585,8 +587,8 @@ export const useCanvas = () => {
         // ラベルを右下に描画
         const label = 'label' in shape && shape.label ? shape.label : '小';
         if (label) {
-          const labelFontSize = Math.max(10 * RENDER_SCALE, Math.min(16 * RENDER_SCALE, size * 0.4));
-          const padding = 3 * RENDER_SCALE;
+          const labelFontSize = Math.max(10 * currentRenderScaleRef.current, Math.min(16 * currentRenderScaleRef.current, size * 0.4));
+          const padding = 3 * currentRenderScaleRef.current;
           const labelX = minX + size - padding;
           const labelY = minY + size - padding;
 
@@ -597,7 +599,7 @@ export const useCanvas = () => {
           // 白フチを描画
           ctx.save();
           ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 3 * RENDER_SCALE;
+          ctx.lineWidth = 3 * currentRenderScaleRef.current;
           ctx.lineJoin = 'round';
           ctx.strokeText(label, labelX, labelY);
           ctx.restore();
@@ -623,20 +625,20 @@ export const useCanvas = () => {
     (ctx: CanvasRenderingContext2D, annotation: Annotation, shapeColor: string) => {
       const { leaderLine, text, x, y, fontSize, isVertical, align, color: annColor } = annotation;
       const color = annColor || shapeColor;
-      const scaledFontSize = fontSize * RENDER_SCALE;
+      const scaledFontSize = fontSize * currentRenderScaleRef.current;
 
       // 引出線を描画
       ctx.save();
       ctx.beginPath();
       ctx.strokeStyle = color;
-      ctx.lineWidth = 2 * RENDER_SCALE;
+      ctx.lineWidth = 2 * currentRenderScaleRef.current;
       ctx.moveTo(leaderLine.start.x, leaderLine.start.y);
       ctx.lineTo(leaderLine.end.x, leaderLine.end.y);
       ctx.stroke();
 
       // 引出線の起点に●を描画
       ctx.beginPath();
-      ctx.arc(leaderLine.start.x, leaderLine.start.y, 3 * RENDER_SCALE, 0, 2 * Math.PI);
+      ctx.arc(leaderLine.start.x, leaderLine.start.y, 3 * currentRenderScaleRef.current, 0, 2 * Math.PI);
       ctx.fillStyle = color;
       ctx.fill();
       ctx.restore();
@@ -727,7 +729,7 @@ export const useCanvas = () => {
 
       if (!text) return;
 
-      const scaledFontSize = fontSize * RENDER_SCALE;
+      const scaledFontSize = fontSize * currentRenderScaleRef.current;
 
       ctx.save();
       ctx.fillStyle = isSelected ? '#0078d4' : textColor;
@@ -804,14 +806,14 @@ export const useCanvas = () => {
       if (textElement.leaderLine) {
         const { start, end } = textElement.leaderLine;
         ctx.strokeStyle = textColor;
-        ctx.lineWidth = 2 * RENDER_SCALE;
+        ctx.lineWidth = 2 * currentRenderScaleRef.current;
         ctx.beginPath();
         ctx.moveTo(start.x, start.y);
         ctx.lineTo(end.x, end.y);
         ctx.stroke();
 
         // 先端に●を描画
-        const dotRadius = 3 * RENDER_SCALE;
+        const dotRadius = 3 * currentRenderScaleRef.current;
         ctx.beginPath();
         ctx.arc(start.x, start.y, dotRadius, 0, 2 * Math.PI);
         ctx.fillStyle = textColor;
@@ -904,8 +906,8 @@ export const useCanvas = () => {
       ctx.save();
       ctx.beginPath();
       ctx.strokeStyle = shapeColor;
-      ctx.lineWidth = 2 * RENDER_SCALE;
-      ctx.setLineDash([5 * RENDER_SCALE, 5 * RENDER_SCALE]);
+      ctx.lineWidth = 2 * currentRenderScaleRef.current;
+      ctx.setLineDash([5 * currentRenderScaleRef.current, 5 * currentRenderScaleRef.current]);
       ctx.moveTo(startPos.x, startPos.y);
       ctx.lineTo(endPos.x, endPos.y);
       ctx.stroke();
@@ -913,7 +915,7 @@ export const useCanvas = () => {
 
       // 起点に●を描画
       ctx.beginPath();
-      ctx.arc(startPos.x, startPos.y, 3 * RENDER_SCALE, 0, 2 * Math.PI);
+      ctx.arc(startPos.x, startPos.y, 3 * currentRenderScaleRef.current, 0, 2 * Math.PI);
       ctx.fillStyle = shapeColor;
       ctx.fill();
       ctx.restore();
@@ -1100,7 +1102,7 @@ export const useCanvas = () => {
     if (!shape.fontLabel) return false;
 
     const { fontName, textX, textY, textAlign } = shape.fontLabel;
-    const fontSize = 16 * RENDER_SCALE;
+    const fontSize = 16 * currentRenderScaleRef.current;
     const textWidth = fontName.length * fontSize * 0.7; // 概算
 
     let textMinX: number, textMaxX: number;
@@ -1142,9 +1144,9 @@ export const useCanvas = () => {
     if (!canvas || !ctx || !shape.fontLabel) return;
 
     const { fontName, textX, textY, textAlign } = shape.fontLabel;
-    const fontSize = 16 * RENDER_SCALE;
+    const fontSize = 16 * currentRenderScaleRef.current;
     const textWidth = fontName.length * fontSize * 0.7;
-    const padding = 4 * RENDER_SCALE;
+    const padding = 4 * currentRenderScaleRef.current;
 
     let boxX = textX;
     if (textAlign !== 'left') {
@@ -1153,7 +1155,7 @@ export const useCanvas = () => {
 
     ctx.save();
     ctx.strokeStyle = '#ff8c00'; // オレンジ色
-    ctx.lineWidth = 2 * RENDER_SCALE;
+    ctx.lineWidth = 2 * currentRenderScaleRef.current;
     ctx.setLineDash([]);
     ctx.strokeRect(
       boxX - padding,
@@ -1397,11 +1399,11 @@ export const useCanvas = () => {
     const midX = (start.x + end.x) / 2;
     const midY = (start.y + end.y) / 2;
 
-    ctx.font = `${14 * RENDER_SCALE}px sans-serif`;
+    ctx.font = `${14 * currentRenderScaleRef.current}px sans-serif`;
     ctx.fillStyle = '#2196f3';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-    ctx.fillText(`${Math.round(distancePx)}px`, midX, midY - 5 * RENDER_SCALE);
+    ctx.fillText(`${Math.round(distancePx)}px`, midX, midY - 5 * currentRenderScaleRef.current);
 
     ctx.restore();
   }, []);
@@ -1465,6 +1467,13 @@ export const useCanvas = () => {
     if (!canvas || !ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // displayScaleから描画スケールを計算
+    // displayScale = baseScale * zoom（キャンバスのCSS表示スケール）
+    // renderScale = 1 / displayScale（キャンバス内部座標に対するスケーリング係数）
+    // これにより、画面上で常に一定のサイズで表示される
+    const renderScale = displayScale > 0 ? 1 / displayScale : 1;
+    currentRenderScaleRef.current = renderScale;
 
     // Draw strokes
     const strokes = getAllStrokes();
@@ -1601,7 +1610,7 @@ export const useCanvas = () => {
     if (labeledRectPhase > 0 && labeledRectLeaderStartRef.current && currentShapeEndRef.current) {
       ctx.save();
       ctx.strokeStyle = color;
-      ctx.lineWidth = strokeWidth * RENDER_SCALE;
+      ctx.lineWidth = strokeWidth * currentRenderScaleRef.current;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
@@ -1618,7 +1627,7 @@ export const useCanvas = () => {
           ctx.stroke();
 
           // 先端に●を描画
-          const dotRadius = Math.max(strokeWidth * RENDER_SCALE, 2 * RENDER_SCALE);
+          const dotRadius = Math.max(strokeWidth * currentRenderScaleRef.current, 2 * currentRenderScaleRef.current);
           ctx.beginPath();
           ctx.arc(leaderStart.x, leaderStart.y, dotRadius, 0, 2 * Math.PI);
           ctx.fillStyle = color;
@@ -1636,7 +1645,7 @@ export const useCanvas = () => {
         ctx.stroke();
 
         // 先端に●を描画
-        const dotRadius = Math.max(strokeWidth * RENDER_SCALE, 2 * RENDER_SCALE);
+        const dotRadius = Math.max(strokeWidth * currentRenderScaleRef.current, 2 * currentRenderScaleRef.current);
         ctx.beginPath();
         ctx.arc(leaderStart.x, leaderStart.y, dotRadius, 0, 2 * Math.PI);
         ctx.fillStyle = color;
@@ -1667,7 +1676,7 @@ export const useCanvas = () => {
       ctx.save();
       ctx.beginPath();
       ctx.strokeStyle = color;
-      ctx.lineWidth = strokeWidth * RENDER_SCALE;
+      ctx.lineWidth = strokeWidth * currentRenderScaleRef.current;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
@@ -1682,7 +1691,7 @@ export const useCanvas = () => {
       if (currentPolylineEndRef.current) {
         const lastPoint = polylinePointsRef.current[polylinePointsRef.current.length - 1];
         ctx.beginPath();
-        ctx.setLineDash([5 * RENDER_SCALE, 5 * RENDER_SCALE]);
+        ctx.setLineDash([5 * currentRenderScaleRef.current, 5 * currentRenderScaleRef.current]);
         ctx.moveTo(lastPoint.x, lastPoint.y);
         ctx.lineTo(currentPolylineEndRef.current.x, currentPolylineEndRef.current.y);
         ctx.stroke();
@@ -1713,7 +1722,7 @@ export const useCanvas = () => {
 
       ctx.save();
       ctx.strokeStyle = color;
-      ctx.lineWidth = 2 * RENDER_SCALE;
+      ctx.lineWidth = 2 * currentRenderScaleRef.current;
 
       // 引出線を描画
       ctx.beginPath();
@@ -1722,7 +1731,7 @@ export const useCanvas = () => {
       ctx.stroke();
 
       // 先端に●を描画
-      const dotRadius = 3 * RENDER_SCALE;
+      const dotRadius = 3 * currentRenderScaleRef.current;
       ctx.beginPath();
       ctx.arc(start.x, start.y, dotRadius, 0, 2 * Math.PI);
       ctx.fillStyle = color;
@@ -1730,7 +1739,7 @@ export const useCanvas = () => {
 
       // 終点にスタンプのプレビューを表示（引出線が十分長い場合）
       if (distance > 10) {
-        // スタンプのデフォルトサイズ（RENDER_SCALEはdrawStamp内で適用）
+        // スタンプのデフォルトサイズ（currentRenderScaleRef.currentはdrawStamp内で適用）
         const defaultSizes: Record<StampType, number> = {
           doneStamp: 28,
           rubyStamp: 14,
@@ -1744,7 +1753,7 @@ export const useCanvas = () => {
           hirakuStamp: 14,
           komojiStamp: 20,
         };
-        const stampSize = (defaultSizes[currentStampType] || 20) * RENDER_SCALE;
+        const stampSize = (defaultSizes[currentStampType] || 20) * currentRenderScaleRef.current;
         drawStamp(ctx, end.x, end.y, currentStampType, stampSize, color);
       }
 
@@ -1759,7 +1768,7 @@ export const useCanvas = () => {
 
       ctx.save();
       ctx.strokeStyle = proofreadingTextColor || color;
-      ctx.lineWidth = 2 * RENDER_SCALE;
+      ctx.lineWidth = 2 * currentRenderScaleRef.current;
 
       // 引出線を描画
       ctx.beginPath();
@@ -1768,7 +1777,7 @@ export const useCanvas = () => {
       ctx.stroke();
 
       // 先端に●を描画
-      const dotRadius = 3 * RENDER_SCALE;
+      const dotRadius = 3 * currentRenderScaleRef.current;
       ctx.beginPath();
       ctx.arc(start.x, start.y, dotRadius, 0, 2 * Math.PI);
       ctx.fillStyle = proofreadingTextColor || color;
@@ -1781,7 +1790,7 @@ export const useCanvas = () => {
         const textX = end.x + Math.cos(angle) * padding;
         const textY = end.y + Math.sin(angle) * padding;
 
-        ctx.font = `${14 * RENDER_SCALE}px sans-serif`;
+        ctx.font = `${14 * currentRenderScaleRef.current}px sans-serif`;
         ctx.fillStyle = proofreadingTextColor || color;
         ctx.globalAlpha = 0.6;
         ctx.fillText(activeProofreadingText, textX, textY);
@@ -1821,7 +1830,7 @@ export const useCanvas = () => {
     } else {
       clearSelectionCanvas();
     }
-  }, [getAllStrokes, getAllShapes, getAllTexts, getLocalAllImages, drawStroke, drawShape, drawText, drawImage, drawImagePreview, drawStamp, isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, isDrawingStampLeader, isDrawingProofreadingLeader, activeProofreadingText, proofreadingTextColor, currentStampType, labeledRectPhase, tool, color, strokeWidth, selectedStrokeIds, selectionBounds, drawSelectionBounds, clearSelectionCanvas, drawLeaderPreview, selectedAnnotationShapeId, drawAnnotationSelectionBox, drawTextSelectionBox, selectedFontLabelShapeId, drawFontLabelSelectionBox, drawGrid, drawCalibrationLine, currentPage, isCalibrating, isDrawingGrid]);
+  }, [getAllStrokes, getAllShapes, getAllTexts, getLocalAllImages, drawStroke, drawShape, drawText, drawImage, drawImagePreview, drawStamp, isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, isDrawingStampLeader, isDrawingProofreadingLeader, activeProofreadingText, proofreadingTextColor, currentStampType, labeledRectPhase, tool, color, strokeWidth, selectedStrokeIds, selectionBounds, drawSelectionBounds, clearSelectionCanvas, drawLeaderPreview, selectedAnnotationShapeId, drawAnnotationSelectionBox, drawTextSelectionBox, selectedFontLabelShapeId, drawFontLabelSelectionBox, drawGrid, drawCalibrationLine, currentPage, isCalibrating, isDrawingGrid, displayScale]);
 
   const drawBackground = useCallback(async () => {
     const canvas = backgroundCanvasRef.current;
