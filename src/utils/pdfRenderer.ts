@@ -43,6 +43,65 @@ function pdfToMojiQCoordinates(
   };
 }
 
+// テキストの境界ボックスを計算
+function calculateTextBounds(text: string, fontSize: number): { width: number; height: number } {
+  const lines = (text || '').split('\n');
+  const lineHeight = fontSize * 1.2;
+
+  // 各行の幅を計算（半角文字は0.6、全角は1.0）
+  let maxWidth = 0;
+  for (const line of lines) {
+    let width = 0;
+    for (const char of line) {
+      if (char.charCodeAt(0) < 128) {
+        width += fontSize * 0.6;
+      } else {
+        width += fontSize;
+      }
+    }
+    maxWidth = Math.max(maxWidth, width);
+  }
+
+  const totalHeight = lines.length * lineHeight;
+  return { width: maxWidth || fontSize, height: totalHeight || lineHeight };
+}
+
+// テキスト位置をキャンバス境界内に収める
+function clampTextPosition(
+  x: number,
+  y: number,
+  textWidth: number,
+  textHeight: number,
+  canvasWidth: number,
+  canvasHeight: number
+): { x: number; y: number } {
+  const margin = 5;
+  let newX = x;
+  let newY = y;
+
+  // 右端チェック: テキストが右端をはみ出す場合、左にシフト
+  if (newX + textWidth > canvasWidth - margin) {
+    newX = canvasWidth - textWidth - margin;
+  }
+
+  // 左端チェック
+  if (newX < margin) {
+    newX = margin;
+  }
+
+  // 下端チェック: テキストが下端をはみ出す場合、上にシフト
+  if (newY + textHeight > canvasHeight - margin) {
+    newY = canvasHeight - textHeight - margin;
+  }
+
+  // 上端チェック
+  if (newY < margin) {
+    newY = margin;
+  }
+
+  return { x: newX, y: newY };
+}
+
 // PDF注釈をテキストオブジェクトに変換
 function convertPdfAnnotationToTextObject(
   annot: {
@@ -54,7 +113,9 @@ function convertPdfAnnotationToTextObject(
   },
   pdfHeight: number,
   scaleX: number,
-  scaleY: number
+  scaleY: number,
+  displayWidth: number,
+  displayHeight: number
 ): PdfAnnotationText | null {
   // contentsまたはcontentsObj.strからテキストを取得
   const textContent = annot.contents || annot.contentsObj?.str || '';
@@ -81,13 +142,31 @@ function convertPdfAnnotationToTextObject(
   // 色の変換
   const color = pdfColorToHex(annot.color);
 
-  // フォントサイズ（スケールに合わせて設定）
-  const fontSize = annot.subtype === 'FreeText' ? 24 : 21;
+  // フォントサイズ（ページサイズに基づいて正規化）
+  // 標準ページ高さ（3000px）を基準に、どのPDFでも画面上で同じサイズに見えるよう調整
+  // 大きいページは大きいフォント、小さいページは小さいフォント（CSS表示スケールで補正される）
+  const standardHeight = 3000;
+  const baseFontSize = 18; // 標準ページでの論理フォントサイズ（少し大きめ）
+  const normalizedFontSize = baseFontSize * (displayHeight / standardHeight);
+  const fontSize = normalizedFontSize;
+
+  // テキストサイズを計算（表示座標系で計算するためRENDER_SCALEを掛ける）
+  const textBounds = calculateTextBounds(textContent, fontSize * RENDER_SCALE);
+
+  // 境界内に収める
+  const clampedPos = clampTextPosition(
+    pos.x,
+    pos.y,
+    textBounds.width,
+    textBounds.height,
+    displayWidth,
+    displayHeight
+  );
 
   return {
     text: textContent,
-    x: pos.x,
-    y: pos.y,
+    x: clampedPos.x,
+    y: clampedPos.y,
     color: color,
     fontSize: fontSize,
     isVertical: false,
@@ -115,7 +194,9 @@ async function extractPdfAnnotations(
       annot,
       viewport.height,
       scaleX,
-      scaleY
+      scaleY,
+      displayWidth,
+      displayHeight
     );
     if (obj) {
       objects.push(obj);

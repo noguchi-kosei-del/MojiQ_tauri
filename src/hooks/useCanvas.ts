@@ -7,6 +7,10 @@ import { backgroundImageCache } from '../utils/backgroundImageCache';
 import { useCalibrationStore, MM_PER_PT } from '../stores/calibrationStore';
 import { useGridStore } from '../stores/gridStore';
 
+// 描画スケール（PDFレンダリングスケールと同じ）
+// PDFが3倍でレンダリングされているため、線幅やフォントサイズも同様にスケーリング
+const RENDER_SCALE = 3.0;
+
 // アノテーションモード: 0=通常, 1=図形描画中, 2=引出線描画中
 type AnnotationState = 0 | 1 | 2;
 
@@ -83,6 +87,11 @@ export const useCanvas = () => {
   const stampStartRef = useRef<Point | null>(null);
   const currentStampEndRef = useRef<Point | null>(null);
 
+  // 校正チェックテキスト引出線用
+  const [isDrawingProofreadingLeader, setIsDrawingProofreadingLeader] = useState(false);
+  const proofreadingLeaderStartRef = useRef<Point | null>(null);
+  const proofreadingLeaderEndRef = useRef<Point | null>(null);
+
   // キャリブレーション用
   const [isCalibrating, setIsCalibrating] = useState(false);
   const calibrationPreviewEndRef = useRef<Point | null>(null);
@@ -139,6 +148,8 @@ export const useCanvas = () => {
     currentStampType,
     addStamp,
     updateShape,
+    activeProofreadingText,
+    proofreadingTextColor,
   } = useDrawingStore();
 
   // コメントテキスト表示/非表示状態
@@ -248,9 +259,11 @@ export const useCanvas = () => {
         const point = points[i];
         const pressure = point.pressure || 0.5;
         // マーカーは圧力で太さを変えない
+        // RENDER_SCALE を適用して旧MojiQと同等のサイズにする
+        const scaledWidth = stroke.width * RENDER_SCALE;
         ctx.lineWidth = ('isMarker' in stroke && stroke.isMarker)
-          ? stroke.width
-          : stroke.width * (0.5 + pressure);
+          ? scaledWidth
+          : scaledWidth * (0.5 + pressure);
         ctx.lineTo(point.x, point.y);
       }
 
@@ -287,19 +300,20 @@ export const useCanvas = () => {
       if (stampType === 'doneStamp') {
         // 済スタンプ（円形）
         const radius = size / 2;
+        const baseLineWidth = size / 20; // サイズに比例した線幅
 
         // 外側の円（白フチ）
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, 2 * Math.PI);
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 5;
+        ctx.lineWidth = baseLineWidth * 2.5;
         ctx.stroke();
 
         // 外側の円（枠線）
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, 2 * Math.PI);
         ctx.strokeStyle = stampColor;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = baseLineWidth;
         ctx.stroke();
 
         // 「済」の文字（白フチ）
@@ -307,7 +321,7 @@ export const useCanvas = () => {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = baseLineWidth * 1.5;
         ctx.strokeText('済', x, y);
 
         // 「済」の文字
@@ -320,6 +334,7 @@ export const useCanvas = () => {
         const cornerRadius = size * 0.15;
         const rectX = x - width / 2;
         const rectY = y - height / 2;
+        const baseLineWidth = size / 20;
 
         // 角丸長方形を描画
         const drawRoundedRect = (rx: number, ry: number, rw: number, rh: number, r: number) => {
@@ -339,13 +354,13 @@ export const useCanvas = () => {
         // 外側の角丸長方形（白フチ）
         drawRoundedRect(rectX, rectY, width, height, cornerRadius);
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = baseLineWidth * 2.5;
         ctx.stroke();
 
         // 外側の角丸長方形（枠線）
         drawRoundedRect(rectX, rectY, width, height, cornerRadius);
         ctx.strokeStyle = stampColor;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = baseLineWidth;
         ctx.stroke();
 
         // 「ルビ」の文字（白フチ）
@@ -353,7 +368,7 @@ export const useCanvas = () => {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = baseLineWidth * 1.5;
         ctx.strokeText('ルビ', x, y);
 
         // 「ルビ」の文字
@@ -362,19 +377,20 @@ export const useCanvas = () => {
       } else if (stampType === 'komojiStamp') {
         // 小文字スタンプ（○に小）
         const radius = size / 2;
+        const baseLineWidth = size / 20;
 
         // 外側の円（白フチ）
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, 2 * Math.PI);
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = baseLineWidth * 2.5;
         ctx.stroke();
 
         // 外側の円（枠線）
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, 2 * Math.PI);
         ctx.strokeStyle = stampColor;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = baseLineWidth;
         ctx.stroke();
 
         // 「小」の文字（白フチ）
@@ -382,7 +398,7 @@ export const useCanvas = () => {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = baseLineWidth * 1.5;
         ctx.strokeText('小', x, y);
 
         // 「小」の文字
@@ -405,13 +421,14 @@ export const useCanvas = () => {
         };
 
         const text = stampTexts[stampType] || '';
+        const baseLineWidth = size / 15;
 
         // テキスト（白フチ）
         ctx.font = `bold ${size * 0.9}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 4;
+        ctx.lineWidth = baseLineWidth * 2;
         ctx.strokeText(text, x, y);
 
         // テキスト
@@ -430,22 +447,26 @@ export const useCanvas = () => {
 
       const { startPos, endPos, type } = shape;
 
+      // スケーリングされた線幅
+      const scaledWidth = shape.width * RENDER_SCALE;
+
       // スタンプの場合
       if (type === 'stamp' && 'stampType' in shape && shape.stampType) {
-        const stampSize = 'size' in shape && shape.size ? shape.size : 20;
+        const baseStampSize = 'size' in shape && shape.size ? shape.size : 20;
+        const stampSize = baseStampSize * RENDER_SCALE;
         const stampColor = isSelected ? '#0078d4' : shape.color;
 
         // 引出線がある場合は描画
         if ('leaderLine' in shape && shape.leaderLine) {
           ctx.beginPath();
           ctx.strokeStyle = stampColor;
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 2 * RENDER_SCALE;
           ctx.moveTo(shape.leaderLine.start.x, shape.leaderLine.start.y);
           ctx.lineTo(shape.leaderLine.end.x, shape.leaderLine.end.y);
           ctx.stroke();
 
           // 引出線の先端（開始点）に●を描画
-          const dotRadius = Math.max(2, 3);
+          const dotRadius = 3 * RENDER_SCALE;
           ctx.beginPath();
           ctx.arc(shape.leaderLine.start.x, shape.leaderLine.start.y, dotRadius, 0, 2 * Math.PI);
           ctx.fillStyle = stampColor;
@@ -459,7 +480,7 @@ export const useCanvas = () => {
 
       ctx.beginPath();
       ctx.strokeStyle = isSelected ? '#0078d4' : shape.color;
-      ctx.lineWidth = shape.width;
+      ctx.lineWidth = scaledWidth;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
@@ -474,7 +495,7 @@ export const useCanvas = () => {
         // フォントラベルを描画（フォント指定枠線の場合）
         if ('fontLabel' in shape && shape.fontLabel) {
           const { fontName, textX, textY, textAlign } = shape.fontLabel;
-          const labelFontSize = 16;
+          const labelFontSize = 16 * RENDER_SCALE;
           ctx.font = `bold ${labelFontSize}px sans-serif`;
           ctx.fillStyle = isSelected ? '#0078d4' : shape.color;
           ctx.textAlign = textAlign;
@@ -482,7 +503,7 @@ export const useCanvas = () => {
 
           // 白い縁取り
           ctx.save();
-          ctx.lineWidth = 4;
+          ctx.lineWidth = 4 * RENDER_SCALE;
           ctx.strokeStyle = '#ffffff';
           ctx.strokeText(fontName, textX, textY);
           ctx.restore();
@@ -507,7 +528,7 @@ export const useCanvas = () => {
         ctx.lineTo(endPos.x, endPos.y);
         ctx.stroke();
 
-        const headLen = Math.max(8, shape.width * 3);
+        const headLen = Math.max(8 * RENDER_SCALE, scaledWidth * 3);
         const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x);
         drawArrowHead(ctx, endPos.x, endPos.y, angle, headLen);
       } else if (baseType === 'doubleArrow') {
@@ -516,7 +537,7 @@ export const useCanvas = () => {
         ctx.lineTo(endPos.x, endPos.y);
         ctx.stroke();
 
-        const headLen = Math.max(8, shape.width * 3);
+        const headLen = Math.max(8 * RENDER_SCALE, scaledWidth * 3);
         const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x);
         // 終端側の矢頭
         drawArrowHead(ctx, endPos.x, endPos.y, angle, headLen);
@@ -543,7 +564,7 @@ export const useCanvas = () => {
           ctx.stroke();
 
           // 先端に●を描画
-          const dotRadius = Math.max(shape.width, 2);
+          const dotRadius = Math.max(scaledWidth, 2 * RENDER_SCALE);
           ctx.beginPath();
           ctx.arc(shape.leaderLine.start.x, shape.leaderLine.start.y, dotRadius, 0, 2 * Math.PI);
           ctx.fillStyle = isSelected ? '#0078d4' : shape.color;
@@ -564,8 +585,8 @@ export const useCanvas = () => {
         // ラベルを右下に描画
         const label = 'label' in shape && shape.label ? shape.label : '小';
         if (label) {
-          const labelFontSize = Math.max(10, Math.min(16, size * 0.4));
-          const padding = 3;
+          const labelFontSize = Math.max(10 * RENDER_SCALE, Math.min(16 * RENDER_SCALE, size * 0.4));
+          const padding = 3 * RENDER_SCALE;
           const labelX = minX + size - padding;
           const labelY = minY + size - padding;
 
@@ -576,7 +597,7 @@ export const useCanvas = () => {
           // 白フチを描画
           ctx.save();
           ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 3;
+          ctx.lineWidth = 3 * RENDER_SCALE;
           ctx.lineJoin = 'round';
           ctx.strokeText(label, labelX, labelY);
           ctx.restore();
@@ -602,19 +623,20 @@ export const useCanvas = () => {
     (ctx: CanvasRenderingContext2D, annotation: Annotation, shapeColor: string) => {
       const { leaderLine, text, x, y, fontSize, isVertical, align, color: annColor } = annotation;
       const color = annColor || shapeColor;
+      const scaledFontSize = fontSize * RENDER_SCALE;
 
       // 引出線を描画
       ctx.save();
       ctx.beginPath();
       ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2 * RENDER_SCALE;
       ctx.moveTo(leaderLine.start.x, leaderLine.start.y);
       ctx.lineTo(leaderLine.end.x, leaderLine.end.y);
       ctx.stroke();
 
       // 引出線の起点に●を描画
       ctx.beginPath();
-      ctx.arc(leaderLine.start.x, leaderLine.start.y, 3, 0, 2 * Math.PI);
+      ctx.arc(leaderLine.start.x, leaderLine.start.y, 3 * RENDER_SCALE, 0, 2 * Math.PI);
       ctx.fillStyle = color;
       ctx.fill();
       ctx.restore();
@@ -623,15 +645,16 @@ export const useCanvas = () => {
       if (text) {
         ctx.save();
         ctx.fillStyle = color;
-        ctx.font = `${fontSize}px sans-serif`;
+        ctx.font = `${scaledFontSize}px sans-serif`;
 
         const lines = text.split('\n');
-        const lineHeight = fontSize * 1.2;
+        const lineHeight = scaledFontSize * 1.2;
 
-        // 白い縁取り付きでテキストを描画
+        // 白い縁取り付きでテキストを描画（フォントサイズに比例した太さ）
+        const outlineWidth = Math.max(2, scaledFontSize * 0.22);
         const drawWithOutline = (char: string, px: number, py: number) => {
           ctx.save();
-          ctx.lineWidth = 3;
+          ctx.lineWidth = outlineWidth;
           ctx.strokeStyle = '#ffffff';
           ctx.strokeText(char, px, py);
           ctx.restore();
@@ -642,7 +665,7 @@ export const useCanvas = () => {
           // 縦書き
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          const verticalLineHeight = fontSize * 1.1;
+          const verticalLineHeight = scaledFontSize * 1.1;
 
           // 句読点など右上に移動させる文字
           const punctuationChars = ['、', '。', '，', '．', '｡', '､'];
@@ -653,9 +676,9 @@ export const useCanvas = () => {
             const chars = Array.from(line);
 
             chars.forEach((char) => {
-              const currentY = y + cursorY + fontSize / 2;
+              const currentY = y + cursorY + scaledFontSize / 2;
               if (char === ' ') {
-                cursorY += fontSize * 0.3;
+                cursorY += scaledFontSize * 0.3;
                 return;
               }
 
@@ -670,14 +693,14 @@ export const useCanvas = () => {
                 ctx.restore();
               } else if (isPunctuation) {
                 // 句読点は右上に移動
-                const offsetX = fontSize * 0.7;
-                const offsetY = -fontSize * 0.55;
+                const offsetX = scaledFontSize * 0.7;
+                const offsetY = -scaledFontSize * 0.55;
                 drawWithOutline(char, currentX + offsetX, currentY + offsetY);
               } else {
                 drawWithOutline(char, currentX, currentY);
               }
 
-              cursorY += fontSize;
+              cursorY += scaledFontSize;
             });
           });
         } else {
@@ -704,17 +727,20 @@ export const useCanvas = () => {
 
       if (!text) return;
 
+      const scaledFontSize = fontSize * RENDER_SCALE;
+
       ctx.save();
       ctx.fillStyle = isSelected ? '#0078d4' : textColor;
-      ctx.font = `${fontSize}px sans-serif`;
+      ctx.font = `${scaledFontSize}px sans-serif`;
 
       const lines = text.split('\n');
-      const lineHeight = fontSize * 1.2;
+      const lineHeight = scaledFontSize * 1.2;
 
-      // 白い縁取り付きでテキストを描画
+      // 白い縁取り付きでテキストを描画（フォントサイズに比例した太さ）
+      const outlineWidth = Math.max(2, scaledFontSize * 0.22);
       const drawWithOutline = (char: string, px: number, py: number) => {
         ctx.save();
-        ctx.lineWidth = 3;
+        ctx.lineWidth = outlineWidth;
         ctx.strokeStyle = '#ffffff';
         ctx.strokeText(char, px, py);
         ctx.restore();
@@ -725,7 +751,7 @@ export const useCanvas = () => {
         // 縦書き
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const verticalLineHeight = fontSize * 1.1;
+        const verticalLineHeight = scaledFontSize * 1.1;
 
         // 句読点など右上に移動させる文字
         const punctuationChars = ['、', '。', '，', '．', '｡', '､'];
@@ -736,9 +762,9 @@ export const useCanvas = () => {
           const chars = Array.from(line);
 
           chars.forEach((char) => {
-            const currentY = y + cursorY + fontSize / 2;
+            const currentY = y + cursorY + scaledFontSize / 2;
             if (char === ' ') {
-              cursorY += fontSize * 0.3;
+              cursorY += scaledFontSize * 0.3;
               return;
             }
 
@@ -753,14 +779,14 @@ export const useCanvas = () => {
               ctx.restore();
             } else if (isPunctuation) {
               // 句読点は右上に移動
-              const offsetX = fontSize * 0.7;
-              const offsetY = -fontSize * 0.55;
+              const offsetX = scaledFontSize * 0.7;
+              const offsetY = -scaledFontSize * 0.55;
               drawWithOutline(char, currentX + offsetX, currentY + offsetY);
             } else {
               drawWithOutline(char, currentX, currentY);
             }
 
-            cursorY += fontSize;
+            cursorY += scaledFontSize;
           });
         });
       } else {
@@ -772,6 +798,24 @@ export const useCanvas = () => {
           const currentY = y + (index * lineHeight);
           drawWithOutline(line, x, currentY);
         });
+      }
+
+      // 引出線を描画（校正チェックテキスト用）
+      if (textElement.leaderLine) {
+        const { start, end } = textElement.leaderLine;
+        ctx.strokeStyle = textColor;
+        ctx.lineWidth = 2 * RENDER_SCALE;
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        ctx.lineTo(end.x, end.y);
+        ctx.stroke();
+
+        // 先端に●を描画
+        const dotRadius = 3 * RENDER_SCALE;
+        ctx.beginPath();
+        ctx.arc(start.x, start.y, dotRadius, 0, 2 * Math.PI);
+        ctx.fillStyle = textColor;
+        ctx.fill();
       }
 
       ctx.restore();
@@ -860,8 +904,8 @@ export const useCanvas = () => {
       ctx.save();
       ctx.beginPath();
       ctx.strokeStyle = shapeColor;
-      ctx.lineWidth = 2;
-      ctx.setLineDash([5, 5]);
+      ctx.lineWidth = 2 * RENDER_SCALE;
+      ctx.setLineDash([5 * RENDER_SCALE, 5 * RENDER_SCALE]);
       ctx.moveTo(startPos.x, startPos.y);
       ctx.lineTo(endPos.x, endPos.y);
       ctx.stroke();
@@ -869,7 +913,7 @@ export const useCanvas = () => {
 
       // 起点に●を描画
       ctx.beginPath();
-      ctx.arc(startPos.x, startPos.y, 3, 0, 2 * Math.PI);
+      ctx.arc(startPos.x, startPos.y, 3 * RENDER_SCALE, 0, 2 * Math.PI);
       ctx.fillStyle = shapeColor;
       ctx.fill();
       ctx.restore();
@@ -1056,7 +1100,7 @@ export const useCanvas = () => {
     if (!shape.fontLabel) return false;
 
     const { fontName, textX, textY, textAlign } = shape.fontLabel;
-    const fontSize = 16;
+    const fontSize = 16 * RENDER_SCALE;
     const textWidth = fontName.length * fontSize * 0.7; // 概算
 
     let textMinX: number, textMaxX: number;
@@ -1098,9 +1142,9 @@ export const useCanvas = () => {
     if (!canvas || !ctx || !shape.fontLabel) return;
 
     const { fontName, textX, textY, textAlign } = shape.fontLabel;
-    const fontSize = 16;
+    const fontSize = 16 * RENDER_SCALE;
     const textWidth = fontName.length * fontSize * 0.7;
-    const padding = 4;
+    const padding = 4 * RENDER_SCALE;
 
     let boxX = textX;
     if (textAlign !== 'left') {
@@ -1109,7 +1153,7 @@ export const useCanvas = () => {
 
     ctx.save();
     ctx.strokeStyle = '#ff8c00'; // オレンジ色
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 * RENDER_SCALE;
     ctx.setLineDash([]);
     ctx.strokeRect(
       boxX - padding,
@@ -1353,11 +1397,11 @@ export const useCanvas = () => {
     const midX = (start.x + end.x) / 2;
     const midY = (start.y + end.y) / 2;
 
-    ctx.font = '14px sans-serif';
+    ctx.font = `${14 * RENDER_SCALE}px sans-serif`;
     ctx.fillStyle = '#2196f3';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-    ctx.fillText(`${Math.round(distancePx)}px`, midX, midY - 5);
+    ctx.fillText(`${Math.round(distancePx)}px`, midX, midY - 5 * RENDER_SCALE);
 
     ctx.restore();
   }, []);
@@ -1557,7 +1601,7 @@ export const useCanvas = () => {
     if (labeledRectPhase > 0 && labeledRectLeaderStartRef.current && currentShapeEndRef.current) {
       ctx.save();
       ctx.strokeStyle = color;
-      ctx.lineWidth = strokeWidth;
+      ctx.lineWidth = strokeWidth * RENDER_SCALE;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
@@ -1574,7 +1618,7 @@ export const useCanvas = () => {
           ctx.stroke();
 
           // 先端に●を描画
-          const dotRadius = Math.max(strokeWidth, 2);
+          const dotRadius = Math.max(strokeWidth * RENDER_SCALE, 2 * RENDER_SCALE);
           ctx.beginPath();
           ctx.arc(leaderStart.x, leaderStart.y, dotRadius, 0, 2 * Math.PI);
           ctx.fillStyle = color;
@@ -1592,7 +1636,7 @@ export const useCanvas = () => {
         ctx.stroke();
 
         // 先端に●を描画
-        const dotRadius = Math.max(strokeWidth, 2);
+        const dotRadius = Math.max(strokeWidth * RENDER_SCALE, 2 * RENDER_SCALE);
         ctx.beginPath();
         ctx.arc(leaderStart.x, leaderStart.y, dotRadius, 0, 2 * Math.PI);
         ctx.fillStyle = color;
@@ -1623,7 +1667,7 @@ export const useCanvas = () => {
       ctx.save();
       ctx.beginPath();
       ctx.strokeStyle = color;
-      ctx.lineWidth = strokeWidth;
+      ctx.lineWidth = strokeWidth * RENDER_SCALE;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
@@ -1638,7 +1682,7 @@ export const useCanvas = () => {
       if (currentPolylineEndRef.current) {
         const lastPoint = polylinePointsRef.current[polylinePointsRef.current.length - 1];
         ctx.beginPath();
-        ctx.setLineDash([5, 5]);
+        ctx.setLineDash([5 * RENDER_SCALE, 5 * RENDER_SCALE]);
         ctx.moveTo(lastPoint.x, lastPoint.y);
         ctx.lineTo(currentPolylineEndRef.current.x, currentPolylineEndRef.current.y);
         ctx.stroke();
@@ -1669,7 +1713,7 @@ export const useCanvas = () => {
 
       ctx.save();
       ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2 * RENDER_SCALE;
 
       // 引出線を描画
       ctx.beginPath();
@@ -1678,7 +1722,7 @@ export const useCanvas = () => {
       ctx.stroke();
 
       // 先端に●を描画
-      const dotRadius = 3;
+      const dotRadius = 3 * RENDER_SCALE;
       ctx.beginPath();
       ctx.arc(start.x, start.y, dotRadius, 0, 2 * Math.PI);
       ctx.fillStyle = color;
@@ -1686,7 +1730,7 @@ export const useCanvas = () => {
 
       // 終点にスタンプのプレビューを表示（引出線が十分長い場合）
       if (distance > 10) {
-        // スタンプのデフォルトサイズ
+        // スタンプのデフォルトサイズ（RENDER_SCALEはdrawStamp内で適用）
         const defaultSizes: Record<StampType, number> = {
           doneStamp: 28,
           rubyStamp: 14,
@@ -1700,8 +1744,48 @@ export const useCanvas = () => {
           hirakuStamp: 14,
           komojiStamp: 20,
         };
-        const stampSize = defaultSizes[currentStampType] || 20;
+        const stampSize = (defaultSizes[currentStampType] || 20) * RENDER_SCALE;
         drawStamp(ctx, end.x, end.y, currentStampType, stampSize, color);
+      }
+
+      ctx.restore();
+    }
+
+    // Draw proofreading text leader line preview
+    if (isDrawingProofreadingLeader && proofreadingLeaderStartRef.current && proofreadingLeaderEndRef.current && activeProofreadingText) {
+      const start = proofreadingLeaderStartRef.current;
+      const end = proofreadingLeaderEndRef.current;
+      const distance = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
+
+      ctx.save();
+      ctx.strokeStyle = proofreadingTextColor || color;
+      ctx.lineWidth = 2 * RENDER_SCALE;
+
+      // 引出線を描画
+      ctx.beginPath();
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(end.x, end.y);
+      ctx.stroke();
+
+      // 先端に●を描画
+      const dotRadius = 3 * RENDER_SCALE;
+      ctx.beginPath();
+      ctx.arc(start.x, start.y, dotRadius, 0, 2 * Math.PI);
+      ctx.fillStyle = proofreadingTextColor || color;
+      ctx.fill();
+
+      // 終点にテキストのプレビューを表示（引出線が十分長い場合）
+      if (distance > 10) {
+        const angle = Math.atan2(end.y - start.y, end.x - start.x);
+        const padding = 5;
+        const textX = end.x + Math.cos(angle) * padding;
+        const textY = end.y + Math.sin(angle) * padding;
+
+        ctx.font = `${14 * RENDER_SCALE}px sans-serif`;
+        ctx.fillStyle = proofreadingTextColor || color;
+        ctx.globalAlpha = 0.6;
+        ctx.fillText(activeProofreadingText, textX, textY);
+        ctx.globalAlpha = 1.0;
       }
 
       ctx.restore();
@@ -1737,7 +1821,7 @@ export const useCanvas = () => {
     } else {
       clearSelectionCanvas();
     }
-  }, [getAllStrokes, getAllShapes, getAllTexts, getLocalAllImages, drawStroke, drawShape, drawText, drawImage, drawImagePreview, drawStamp, isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, isDrawingStampLeader, currentStampType, labeledRectPhase, tool, color, strokeWidth, selectedStrokeIds, selectionBounds, drawSelectionBounds, clearSelectionCanvas, drawLeaderPreview, selectedAnnotationShapeId, drawAnnotationSelectionBox, drawTextSelectionBox, selectedFontLabelShapeId, drawFontLabelSelectionBox, drawGrid, drawCalibrationLine, currentPage, isCalibrating, isDrawingGrid]);
+  }, [getAllStrokes, getAllShapes, getAllTexts, getLocalAllImages, drawStroke, drawShape, drawText, drawImage, drawImagePreview, drawStamp, isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, isDrawingStampLeader, isDrawingProofreadingLeader, activeProofreadingText, proofreadingTextColor, currentStampType, labeledRectPhase, tool, color, strokeWidth, selectedStrokeIds, selectionBounds, drawSelectionBounds, clearSelectionCanvas, drawLeaderPreview, selectedAnnotationShapeId, drawAnnotationSelectionBox, drawTextSelectionBox, selectedFontLabelShapeId, drawFontLabelSelectionBox, drawGrid, drawCalibrationLine, currentPage, isCalibrating, isDrawingGrid]);
 
   const drawBackground = useCallback(async () => {
     const canvas = backgroundCanvasRef.current;
@@ -1786,17 +1870,49 @@ export const useCanvas = () => {
       return;
     }
 
-    const img = new Image();
-    img.onload = () => {
-      // キャッシュに保存
-      backgroundImageCache.set(currentPage, img);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    };
-    img.src = imageSource;
+    // 画像の読み込みを待ってから描画
+    await new Promise<void>((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        // キャッシュに保存
+        backgroundImageCache.set(currentPage, img);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve();
+      };
+      img.onerror = () => {
+        console.error('Failed to load background image');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        resolve();
+      };
+      img.src = imageSource;
+    });
   }, [getCurrentPageState, currentPage]);
+
+  // 同期的にキャッシュから背景を描画（useLayoutEffect用）
+  // キャッシュにある場合はtrueを返し、ない場合はfalseを返す
+  const drawBackgroundFromCache = useCallback((): boolean => {
+    const canvas = backgroundCanvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return false;
+
+    // キャッシュにある場合は即座に描画
+    if (backgroundImageCache.has(currentPage)) {
+      const cachedImg = backgroundImageCache.get(currentPage);
+      if (cachedImg) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(cachedImg, 0, 0, canvas.width, canvas.height);
+        return true;
+      }
+    }
+
+    return false;
+  }, [currentPage]);
 
   const handlePointerDown = useCallback(
     (e: PointerEvent) => {
@@ -2127,7 +2243,14 @@ export const useCanvas = () => {
           setSelectedAnnotationShapeId(null);
         }
       } else if (tool === 'text') {
-        // テキストツール - クリック位置を記録してモーダル表示
+        // 校正チェックからのテキストがある場合は引出線モードを開始
+        if (activeProofreadingText) {
+          setIsDrawingProofreadingLeader(true);
+          proofreadingLeaderStartRef.current = point;
+          proofreadingLeaderEndRef.current = point;
+          return;
+        }
+        // 通常のテキストツール - クリック位置を記録してモーダル表示
         pendingTextPosRef.current = point;
         setEditingTextId(null);
         setShowTextModal(true);
@@ -2431,6 +2554,10 @@ export const useCanvas = () => {
         // スタンプの引出線プレビュー更新
         currentStampEndRef.current = point;
         redrawCanvas();
+      } else if (isDrawingProofreadingLeader && proofreadingLeaderStartRef.current) {
+        // 校正チェックテキストの引出線プレビュー更新
+        proofreadingLeaderEndRef.current = point;
+        redrawCanvas();
       } else if (labeledRectPhase === 1 && labeledRectLeaderStartRef.current) {
         // labeledRect: 引出線フェーズ
         const leaderStart = labeledRectLeaderStartRef.current;
@@ -2616,6 +2743,51 @@ export const useCanvas = () => {
         setIsDrawingStampLeader(false);
         stampStartRef.current = null;
         currentStampEndRef.current = null;
+        redrawCanvas();
+        return;
+      }
+
+      // 校正チェックテキスト引出線の完了
+      if (isDrawingProofreadingLeader && proofreadingLeaderStartRef.current && proofreadingLeaderEndRef.current && activeProofreadingText) {
+        const start = proofreadingLeaderStartRef.current;
+        const end = proofreadingLeaderEndRef.current;
+        const distance = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
+
+        // 引出線の最小距離（これより短い場合は引出線なしで配置）
+        const MIN_LEADER_DISTANCE = 10;
+
+        if (distance > MIN_LEADER_DISTANCE) {
+          // 引出線付きでテキストを配置
+          // テキスト位置を引出線終端から少しオフセット
+          const angle = Math.atan2(end.y - start.y, end.x - start.x);
+          const padding = 5;
+          const textX = end.x + Math.cos(angle) * padding;
+          const textY = end.y + Math.sin(angle) * padding;
+
+          addText({
+            text: activeProofreadingText,
+            x: textX,
+            y: textY,
+            color: proofreadingTextColor || color,
+            fontSize: 14,
+            isVertical: false,
+            leaderLine: { start, end },
+          });
+        } else {
+          // 引出線なしでテキストを配置（クリックと同じ）
+          addText({
+            text: activeProofreadingText,
+            x: start.x,
+            y: start.y,
+            color: proofreadingTextColor || color,
+            fontSize: 14,
+            isVertical: false,
+          });
+        }
+
+        setIsDrawingProofreadingLeader(false);
+        proofreadingLeaderStartRef.current = null;
+        proofreadingLeaderEndRef.current = null;
         redrawCanvas();
         return;
       }
@@ -3184,6 +3356,7 @@ export const useCanvas = () => {
     selectionCanvasRef,
     redrawCanvas,
     drawBackground,
+    drawBackgroundFromCache,
     // アノテーションモーダル関連
     showAnnotationModal,
     handleAnnotationSubmit,

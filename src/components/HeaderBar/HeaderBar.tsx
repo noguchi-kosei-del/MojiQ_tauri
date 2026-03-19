@@ -11,8 +11,8 @@ import { useModeStore } from '../../stores/modeStore';
 import { open, save, ask, message } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { LoadedDocument, PageState, Layer } from '../../types';
-import { loadPdfDocument as loadPdfDocumentFromFile, renderPdfPage } from '../../utils/pdfRenderer';
+import { LoadedDocument } from '../../types';
+import { renderPdfToImages, renderPdfPage } from '../../utils/pdfRenderer';
 import { renderPageDrawingsToCanvas, hasDrawings } from '../../utils/drawingRenderer';
 import {
   prepareExportData,
@@ -23,7 +23,7 @@ import {
   applyImportDataToPages,
 } from '../../utils/drawingExportImport';
 import { HamburgerMenu } from '../HamburgerMenu';
-import { backgroundImageCache } from '../../utils/backgroundImageCache';
+import { backgroundImageCache, preloadAllBackgroundImages } from '../../utils/backgroundImageCache';
 import { uint8ArrayToBase64 } from '../../utils/imageCompression';
 import MojiQLogo from '../../../logo/MojiQ_icon.png';
 import './HeaderBar.css';
@@ -217,28 +217,8 @@ const CloseIcon = () => (
 );
 
 // デフォルトレイヤーを作成するヘルパー関数
-const createDefaultLayer = (): Layer => ({
-  id: `layer-${Date.now()}`,
-  name: 'Layer 1',
-  visible: true,
-  opacity: 1,
-  strokes: [],
-  shapes: [],
-  texts: [],
-  images: [],
-});
-
-// デフォルトページを作成するヘルパー関数
-const createDefaultPage = (pageNumber: number, backgroundImage: string, width: number, height: number): PageState => ({
-  pageNumber,
-  layers: [createDefaultLayer()],
-  backgroundImage,
-  width,
-  height,
-});
-
 export const HeaderBar: React.FC = () => {
-  const { loadDocument, loadPdfDocument, getDocumentState, pages, currentPage, undo, redo, historyIndex, history, clearAllDrawings, deleteCurrentPage, setPages } = useDrawingStore();
+  const { loadDocument, loadDocumentWithAnnotations, getDocumentState, pages, currentPage, undo, redo, historyIndex, history, clearAllDrawings, deleteCurrentPage, setPages } = useDrawingStore();
   const {
     registerLoadedDocument,
     loadIntoActiveDocument,
@@ -446,33 +426,29 @@ export const HeaderBar: React.FC = () => {
             // Base64に再エンコード（チャンク分割で高速化）
             const compressedBase64 = uint8ArrayToBase64(bytes);
 
-            setLoading(true, 'PDFを読み込み中...');
-            setProgress(45);
-            const pdfResult = await loadPdfDocumentFromFile(compressedBase64, (progress) => {
-              // 45%〜90%の範囲でプログレスを表示
-              setProgress(45 + (progress / 100) * 45);
+            setLoading(true, 'PDFをレンダリング中...');
+            const pdfResult = await renderPdfToImages(compressedBase64, (progress) => {
+              // 30%〜70%の範囲でプログレスを表示
+              setProgress(30 + Math.floor(progress * 0.4));
             });
-            setProgress(90);
+            setProgress(70);
 
-            // ページステートを作成
-            const pageStates = pdfResult.pageInfos.map((info, pageIndex) => {
-              const pageState = createDefaultPage(info.pageNumber, '', info.width, info.height);
-              const pageAnnotations = pdfResult.annotations[pageIndex] || [];
-              if (pageAnnotations.length > 0 && pageState.layers[0]) {
-                const layerId = pageState.layers[0].id;
-                pageState.layers[0].texts = pageAnnotations.map((annot, idx) => ({
-                  id: `pdf-annot-${pageIndex}-${idx}-${Date.now()}`,
-                  text: annot.text,
-                  x: annot.x,
-                  y: annot.y,
-                  color: annot.color,
-                  fontSize: annot.fontSize,
-                  isVertical: annot.isVertical,
-                  layerId: layerId,
-                }));
+            // 背景画像をプリロード（ストア更新前に実行）
+            setLoading(true, '画像をキャッシュ中...');
+            await preloadAllBackgroundImages(
+              (pageNumber) => pdfResult.pages[pageNumber]?.image_data || null,
+              pdfResult.pages.length,
+              (current, total) => {
+                setProgress(70 + Math.floor((current / total) * 25));
               }
-              return pageState;
-            });
+            );
+            setProgress(95);
+
+            // プリロード完了後にストアを更新
+            loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations);
+
+            // 読み込み後のページ状態を取得
+            const loadedPages = useDrawingStore.getState().pages;
 
             // 既存タブに読み込む条件: 空のタブ、または同一ファイルの上書き
             if (shouldLoadIntoExisting || loadIntoExistingDoc) {
@@ -480,9 +456,9 @@ export const HeaderBar: React.FC = () => {
                 fileName,
                 filePath,
                 'pdf',
-                pageStates,
-                pdfResult.pdfDocument,
-                pdfResult.pageInfos,
+                loadedPages,
+                null,
+                [],
                 pdfResult.annotations
               );
             } else {
@@ -491,15 +467,12 @@ export const HeaderBar: React.FC = () => {
                 fileName,
                 filePath,
                 'pdf',
-                pageStates,
-                pdfResult.pdfDocument,
-                pdfResult.pageInfos,
+                loadedPages,
+                null,
+                [],
                 pdfResult.annotations
               );
             }
-
-            // drawingStoreにも読み込み
-            loadPdfDocument(pdfResult.pdfDocument, pdfResult.pageInfos, pdfResult.annotations);
             setProgress(100);
           }
         }
@@ -532,12 +505,24 @@ export const HeaderBar: React.FC = () => {
           const result = await invoke<LoadedDocument>('load_files', {
             paths: sortedPaths,
           });
+          setProgress(50);
+
+          // 背景画像をプリロード（ストア更新前に実行）
+          setLoading(true, '画像をキャッシュ中...');
+          await preloadAllBackgroundImages(
+            (pageNumber) => result.pages[pageNumber]?.image_data || null,
+            result.pages.length,
+            (current, total) => {
+              setProgress(50 + Math.floor((current / total) * 40));
+            }
+          );
           setProgress(90);
 
-          // ページステートを作成
-          const pageStates = result.pages.map((p) =>
-            createDefaultPage(p.page_number, p.image_data, p.width, p.height)
-          );
+          // プリロード完了後にストアを更新
+          loadDocument(result.pages);
+
+          // 読み込み後のページ状態を取得
+          const loadedPages = useDrawingStore.getState().pages;
 
           // フォルダ名またはファイル名をタイトルに
           const folderPath = sortedPaths[0].split(/[/\\]/);
@@ -549,7 +534,7 @@ export const HeaderBar: React.FC = () => {
               title,
               sortedPaths[0],
               'images',
-              pageStates,
+              loadedPages,
               null,
               [],
               []
@@ -560,14 +545,13 @@ export const HeaderBar: React.FC = () => {
               title,
               sortedPaths[0],
               'images',
-              pageStates,
+              loadedPages,
               null,
               [],
               []
             );
           }
 
-          loadDocument(result.pages);
           setProgress(100);
           setLoading(false);
           return;
@@ -620,33 +604,29 @@ export const HeaderBar: React.FC = () => {
             // Base64に再エンコード（チャンク分割で高速化）
             const compressedBase64 = uint8ArrayToBase64(bytes);
 
-            setLoading(true, 'PDFを読み込み中...');
-            setProgress(60);
-            const pdfResult = await loadPdfDocumentFromFile(compressedBase64, (progress) => {
-              // 60%〜95%の範囲でプログレスを表示
-              setProgress(60 + (progress / 100) * 35);
+            setLoading(true, 'PDFをレンダリング中...');
+            const pdfResult = await renderPdfToImages(compressedBase64, (progress) => {
+              // 30%〜70%の範囲でプログレスを表示
+              setProgress(30 + Math.floor(progress * 0.4));
             });
+            setProgress(70);
+
+            // 背景画像をプリロード（ストア更新前に実行）
+            setLoading(true, '画像をキャッシュ中...');
+            await preloadAllBackgroundImages(
+              (pageNumber) => pdfResult.pages[pageNumber]?.image_data || null,
+              pdfResult.pages.length,
+              (current, total) => {
+                setProgress(70 + Math.floor((current / total) * 25));
+              }
+            );
             setProgress(95);
 
-            // ページステートを作成
-            const pageStates = pdfResult.pageInfos.map((info, pageIndex) => {
-              const pageState = createDefaultPage(info.pageNumber, '', info.width, info.height);
-              const pageAnnotations = pdfResult.annotations[pageIndex] || [];
-              if (pageAnnotations.length > 0 && pageState.layers[0]) {
-                const layerId = pageState.layers[0].id;
-                pageState.layers[0].texts = pageAnnotations.map((annot, idx) => ({
-                  id: `pdf-annot-${pageIndex}-${idx}-${Date.now()}`,
-                  text: annot.text,
-                  x: annot.x,
-                  y: annot.y,
-                  color: annot.color,
-                  fontSize: annot.fontSize,
-                  isVertical: annot.isVertical,
-                  layerId: layerId,
-                }));
-              }
-              return pageState;
-            });
+            // プリロード完了後にストアを更新
+            loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations);
+
+            // 読み込み後のページ状態を取得
+            const loadedPages = useDrawingStore.getState().pages;
 
             // 既存タブに読み込む条件: 空のタブ、または同一ファイルの上書き
             if (shouldLoadIntoExisting || loadIntoExistingDoc) {
@@ -654,9 +634,9 @@ export const HeaderBar: React.FC = () => {
                 fileName,
                 filePath,
                 'pdf',
-                pageStates,
-                pdfResult.pdfDocument,
-                pdfResult.pageInfos,
+                loadedPages,
+                null,
+                [],
                 pdfResult.annotations
               );
             } else {
@@ -665,22 +645,32 @@ export const HeaderBar: React.FC = () => {
                 fileName,
                 filePath,
                 'pdf',
-                pageStates,
-                pdfResult.pdfDocument,
-                pdfResult.pageInfos,
+                loadedPages,
+                null,
+                [],
                 pdfResult.annotations
               );
             }
-
-            loadPdfDocument(pdfResult.pdfDocument, pdfResult.pageInfos, pdfResult.annotations);
             setProgress(100);
           } else {
+            setProgress(50);
+
+            // 背景画像をプリロード（ストア更新前に実行）
+            setLoading(true, '画像をキャッシュ中...');
+            await preloadAllBackgroundImages(
+              (pageNumber) => result.pages[pageNumber]?.image_data || null,
+              result.pages.length,
+              (current, total) => {
+                setProgress(50 + Math.floor((current / total) * 40));
+              }
+            );
             setProgress(90);
 
-            // ページステートを作成
-            const pageStates = result.pages.map((p) =>
-              createDefaultPage(p.page_number, p.image_data, p.width, p.height)
-            );
+            // プリロード完了後にストアを更新
+            loadDocument(result.pages);
+
+            // 読み込み後のページ状態を取得
+            const loadedPages = useDrawingStore.getState().pages;
 
             // 既存タブに読み込む条件: 空のタブ、または同一ファイルの上書き
             if (shouldLoadIntoExisting || loadIntoExistingDoc) {
@@ -688,7 +678,7 @@ export const HeaderBar: React.FC = () => {
                 fileName,
                 filePath,
                 'images',
-                pageStates,
+                loadedPages,
                 null,
                 [],
                 []
@@ -699,14 +689,12 @@ export const HeaderBar: React.FC = () => {
                 fileName,
                 filePath,
                 'images',
-                pageStates,
+                loadedPages,
                 null,
                 [],
                 []
               );
             }
-
-            loadDocument(result.pages);
             setProgress(100);
           }
         }
@@ -1224,36 +1212,41 @@ export const HeaderBar: React.FC = () => {
             <ProofreadingModeIcon />
           </button>
         </div>
-        <span className="header-divider" />
-        <div className="header-left">
-          <button onClick={undo} disabled={historyIndex <= 0} title="元に戻す (Ctrl+Z)">
-            <UndoIcon />
-          </button>
-          <button onClick={redo} disabled={historyIndex >= history.length - 1} title="やり直し (Ctrl+Y)">
-            <RedoIcon />
-          </button>
-          <button onClick={handleClearAllDrawings} disabled={!documentHasDrawings || isLoading} title="描画を全消去 (Ctrl+Delete)" className="clear-all-btn">
-            <ClearAllIcon />
-          </button>
-        </div>
+        {/* アンドゥ・リドゥ・全消去 */}
+        {pages.length > 0 && (
+          <>
+            <span className="header-divider" />
+            <div className="header-left">
+              <button onClick={undo} disabled={historyIndex <= 0} title="元に戻す (Ctrl+Z)">
+                <UndoIcon />
+              </button>
+              <button onClick={redo} disabled={historyIndex >= history.length - 1} title="やり直し (Ctrl+Y)">
+                <RedoIcon />
+              </button>
+              <button onClick={handleClearAllDrawings} disabled={!documentHasDrawings || isLoading} title="描画を全消去 (Ctrl+Delete)" className="clear-all-btn">
+                <ClearAllIcon />
+              </button>
+            </div>
+          </>
+        )}
 
         {/* ズームコントロール */}
         {pages.length > 0 && (
           <div className="header-zoom">
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent('canvas-zoom-out'))}
-              disabled={zoom <= minZoom}
-              title="ズームアウト (Ctrl+-)"
-            >
-              <ZoomOutIcon />
-            </button>
-            <span className="zoom-value">{Math.round(zoom * 100)}%</span>
             <button
               onClick={() => window.dispatchEvent(new CustomEvent('canvas-zoom-in'))}
               disabled={zoom >= maxZoom}
               title="ズームイン (Ctrl++)"
             >
               <ZoomInIcon />
+            </button>
+            <span className="zoom-value">{Math.round(zoom * 100)}%</span>
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('canvas-zoom-out'))}
+              disabled={zoom <= minZoom}
+              title="ズームアウト (Ctrl+-)"
+            >
+              <ZoomOutIcon />
             </button>
           </div>
         )}
