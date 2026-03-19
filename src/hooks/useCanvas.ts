@@ -136,6 +136,7 @@ export const useCanvas = () => {
     addText,
     updateText,
     selectTextAtPoint,
+    selectTextsInRect,
     moveSelectedTexts,
     selectedTextIds,
     calculateTextBounds,
@@ -2812,9 +2813,10 @@ export const useCanvas = () => {
           const height = Math.abs(endPoint.y - startPoint.y);
 
           if (width > 5 && height > 5) {
-            // 矩形選択：ストロークと図形の両方を選択
+            // 矩形選択：ストローク、図形、テキストを選択
             selectStrokesInRect({ x, y, width, height });
             selectShapesInRect({ x, y, width, height });
+            selectTextsInRect({ x, y, width, height });
           } else {
             // 小さなクリック - まず図形を試し、なければストロークを選択
             const clickedShape = selectShapeAtPoint(endPoint, 10);

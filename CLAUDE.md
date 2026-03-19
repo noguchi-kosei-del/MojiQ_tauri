@@ -562,3 +562,25 @@ MojiQ_3.0/
 - **タブ色反転**: 選択中/非選択中の背景色を反転
   - 非選択タブ: `var(--bg-primary)`
   - 選択中タブ: `var(--bg-tertiary)`
+
+#### テキスト選択判定の改善
+- **正確なテキストサイズ測定**: Canvas APIの`measureText`を使用
+  - `calculateTextBounds`: オフスクリーンCanvasで正確なテキスト幅を測定
+  - `calculateAnnotationTextBounds`: アノテーション（+テキスト）も同様に対応
+  - オフスクリーンCanvasをキャッシュしてパフォーマンス最適化
+- **スケーリング対応**: `displayScaleStore`から`displayScale`を取得
+  - `renderScale = 1 / displayScale`を計算して描画時と同じスケーリングを適用
+  - テキスト選択ボックスが実際の描画サイズと一致
+
+#### 選択ツールのドラッグ選択にテキスト対応
+- **`selectTextsInRect`関数追加**: 矩形選択でテキストも選択可能に
+  - `drawingStore.ts`に実装
+  - テキストの境界と選択矩形の重なりをチェック
+  - 既存のストローク・図形選択と統合
+
+#### デフォルト設定の変更
+- **デフォルトフォントサイズ**: 16pt → 14pt
+  - AnnotationModal（テキスト/アノテーション入力）
+  - pdfRenderer（PDF注釈テキスト）
+  - drawingExportImport（インポート時のフォールバック）
+- **デフォルトツール**: ペン → 選択ツール（起動時は選択ツール）

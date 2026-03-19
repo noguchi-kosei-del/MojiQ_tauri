@@ -310,7 +310,7 @@ function exportedObjectToText(obj: ExportedObject): TextElement {
     x: obj.x || 0,
     y: obj.y || 0,
     color: obj.color,
-    fontSize: obj.fontSize || 16,
+    fontSize: obj.fontSize || 14,
     isVertical: obj.isVertical || false,
     layerId: obj.layerId,
     pdfAnnotationSource: obj.pdfAnnotationSource as TextElement['pdfAnnotationSource'],

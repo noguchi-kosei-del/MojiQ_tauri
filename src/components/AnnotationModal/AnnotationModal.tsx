@@ -18,7 +18,7 @@ export const AnnotationModal: React.FC<AnnotationModalProps> = ({
   onSubmit,
   initialText = '',
   initialIsVertical = false,
-  initialFontSize = 16,
+  initialFontSize = 14,
   initialAnnotation = null,
 }) => {
   const [text, setText] = useState(initialText);

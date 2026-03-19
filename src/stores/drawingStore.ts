@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { DrawingState, PageState, Layer, Stroke, Shape, Point, ToolType, SelectionBounds, Annotation, TextElement, PdfAnnotationText, ImageElement, PdfPageInfo, HistoryState, StampType, ImageLink, FileMetadata } from '../types';
 import { renderPdfPage } from '../utils/pdfRenderer';
 import { imageCache } from '../utils/imageCache';
+import { useDisplayScaleStore } from './displayScaleStore';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
 const createDefaultLayer = (): Layer => ({
@@ -124,6 +125,7 @@ interface DrawingStore extends DrawingState {
   updateText: (textId: string, updates: Partial<Omit<TextElement, 'id' | 'layerId'>>) => void;
   deleteText: (textId: string) => void;
   selectTextAtPoint: (point: Point, tolerance: number) => TextElement | null;
+  selectTextsInRect: (rect: SelectionBounds) => void;
   calculateTextBounds: (text: TextElement) => SelectionBounds;
   moveSelectedTexts: (dx: number, dy: number) => void;
   getSelectedTexts: () => TextElement[];
@@ -165,15 +167,33 @@ interface DrawingStore extends DrawingState {
   // Comment checkbox stamp operations (校正チェックコメント用)
   addDoneStampToPage: (pageIndex: number, point: Point) => string | null;
   removeShapeById: (pageIndex: number, shapeId: string) => void;
+
+  // 校正チェック直接描画用
+  activeProofreadingText: string | null;
+  proofreadingTextColor: string | null;
+  setActiveProofreadingText: (text: string | null, color: string | null) => void;
+  clearActiveProofreadingText: () => void;
+}
+
+// テキスト測定用のオフスクリーンCanvas（パフォーマンス最適化のためキャッシュ）
+let measureCanvas: HTMLCanvasElement | null = null;
+let measureCtx: CanvasRenderingContext2D | null = null;
+
+function getMeasureContext(): CanvasRenderingContext2D | null {
+  if (!measureCanvas) {
+    measureCanvas = document.createElement('canvas');
+    measureCtx = measureCanvas.getContext('2d');
+  }
+  return measureCtx;
 }
 
 export const useDrawingStore = create<DrawingStore>((set, get) => ({
   pages: [],
   currentPage: 0,
   currentLayerId: '',
-  tool: 'pen',
+  tool: 'select',
   color: '#000000',
-  strokeWidth: 3,
+  strokeWidth: 2,
   history: [],
   historyIndex: -1,
   selectedStrokeIds: [],
@@ -188,6 +208,9 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
   pdfAnnotations: [],
   // スタンプ関連
   currentStampType: null,
+  // 校正チェック直接描画用
+  activeProofreadingText: null,
+  proofreadingTextColor: null,
 
   loadDocument: (pages) => {
     const pageStates = pages.map((p) =>
@@ -1421,37 +1444,51 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     const { x, y, fontSize, text, isVertical, align } = annotation;
     if (!text) return null;
 
+    // displayScaleを取得してrenderScaleを計算
+    const displayScale = useDisplayScaleStore.getState().displayScale;
+    const renderScale = displayScale > 0 ? 1 / displayScale : 1;
+    const scaledFontSize = fontSize * renderScale;
+
     const lines = text.split('\n');
     let textWidth: number, textHeight: number;
 
+    // キャッシュされたオフスクリーンCanvasで正確なテキストサイズを測定
+    const ctx = getMeasureContext();
+
     if (isVertical) {
       // 縦書きの場合
-      const lineHeight = fontSize * 1.1;
+      const lineHeight = scaledFontSize * 1.1;
       const charCounts = lines.map(line => Array.from(line).length);
       const maxCharsInLine = Math.max(...charCounts, 1);
-      textHeight = maxCharsInLine * fontSize;
+      textHeight = maxCharsInLine * scaledFontSize;
       textWidth = Math.max(lines.length, 1) * lineHeight;
     } else {
-      // 横書きの場合 - 文字幅を正確に計算
-      const lineHeight = fontSize * 1.2;
-      const charWidths = lines.map(line => {
-        let width = 0;
-        for (const char of line) {
-          if (char.charCodeAt(0) < 128) {
-            width += fontSize * 0.6; // ASCII文字は狭い
-          } else {
-            width += fontSize; // 全角文字は通常幅
+      // 横書きの場合 - Canvasで正確な幅を測定
+      const lineHeight = scaledFontSize * 1.2;
+      if (ctx) {
+        ctx.font = `${scaledFontSize}px sans-serif`;
+        const measuredWidths = lines.map(line => ctx.measureText(line).width);
+        textWidth = Math.max(...measuredWidths, scaledFontSize);
+      } else {
+        const charWidths = lines.map(line => {
+          let width = 0;
+          for (const char of line) {
+            if (char.charCodeAt(0) < 128) {
+              width += scaledFontSize * 0.6;
+            } else {
+              width += scaledFontSize;
+            }
           }
-        }
-        return width;
-      });
-      textWidth = Math.max(...charWidths, fontSize);
+          return width;
+        });
+        textWidth = Math.max(...charWidths, scaledFontSize);
+      }
       textHeight = lines.length * lineHeight;
     }
 
     let textMinX: number;
     if (isVertical) {
-      textMinX = x - textWidth + fontSize / 2;
+      textMinX = x - textWidth + scaledFontSize / 2;
     } else if (align === 'right') {
       textMinX = x - textWidth;
     } else {
@@ -1818,30 +1855,49 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     const { x, y, fontSize, text: content, isVertical } = text;
     const lines = content.split('\n');
 
+    // displayScaleを取得してrenderScaleを計算
+    // 描画時は scaledFontSize = fontSize * renderScale で描画されている
+    const displayScale = useDisplayScaleStore.getState().displayScale;
+    const renderScale = displayScale > 0 ? 1 / displayScale : 1;
+    const scaledFontSize = fontSize * renderScale;
+
     let textWidth: number, textHeight: number;
 
+    // キャッシュされたオフスクリーンCanvasで正確なテキストサイズを測定
+    const ctx = getMeasureContext();
+
     if (isVertical) {
-      const lineHeight = fontSize * 1.1;
+      const lineHeight = scaledFontSize * 1.1;
       const charCounts = lines.map(line => Array.from(line).length);
       const maxCharsInLine = Math.max(...charCounts, 1);
-      textHeight = maxCharsInLine * fontSize;
+      textHeight = maxCharsInLine * scaledFontSize;
       textWidth = Math.max(lines.length, 1) * lineHeight;
       // 縦書きは右から左に進むので、xは右端
-      return { x: x - textWidth + fontSize / 2, y, width: textWidth, height: textHeight };
+      return { x: x - textWidth + scaledFontSize / 2, y, width: textWidth, height: textHeight };
     } else {
-      const lineHeight = fontSize * 1.2;
-      const charWidths = lines.map(line => {
-        let width = 0;
-        for (const char of line) {
-          if (char.charCodeAt(0) < 128) {
-            width += fontSize * 0.6;
-          } else {
-            width += fontSize;
+      const lineHeight = scaledFontSize * 1.2;
+
+      if (ctx) {
+        // Canvasで正確な幅を測定（スケーリングされたフォントサイズを使用）
+        ctx.font = `${scaledFontSize}px sans-serif`;
+        const measuredWidths = lines.map(line => ctx.measureText(line).width);
+        textWidth = Math.max(...measuredWidths, scaledFontSize);
+      } else {
+        // フォールバック: 推定値を使用
+        const charWidths = lines.map(line => {
+          let width = 0;
+          for (const char of line) {
+            if (char.charCodeAt(0) < 128) {
+              width += scaledFontSize * 0.6;
+            } else {
+              width += scaledFontSize;
+            }
           }
-        }
-        return width;
-      });
-      textWidth = Math.max(...charWidths, fontSize);
+          return width;
+        });
+        textWidth = Math.max(...charWidths, scaledFontSize);
+      }
+
       textHeight = lines.length * lineHeight;
       return { x, y, width: textWidth, height: textHeight };
     }
@@ -1872,6 +1928,68 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     }
 
     return null;
+  },
+
+  selectTextsInRect: (rect) => {
+    const state = get();
+    const currentPageState = state.pages[state.currentPage];
+    if (!currentPageState) return;
+
+    const selectedIds: string[] = [];
+
+    currentPageState.layers
+      .filter((l) => l.visible)
+      .forEach((layer) => {
+        layer.texts.forEach((text) => {
+          const bounds = get().calculateTextBounds(text);
+          // テキストが選択範囲と重なるかチェック
+          const intersects = !(bounds.x + bounds.width < rect.x || bounds.x > rect.x + rect.width ||
+                              bounds.y + bounds.height < rect.y || bounds.y > rect.y + rect.height);
+          if (intersects) {
+            selectedIds.push(text.id);
+          }
+        });
+      });
+
+    // 選択されたテキストの範囲を計算
+    let bounds: SelectionBounds | null = null;
+    if (selectedIds.length > 0) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      currentPageState.layers.forEach((layer) => {
+        layer.texts
+          .filter((t) => selectedIds.includes(t.id))
+          .forEach((text) => {
+            const textBounds = get().calculateTextBounds(text);
+            minX = Math.min(minX, textBounds.x);
+            minY = Math.min(minY, textBounds.y);
+            maxX = Math.max(maxX, textBounds.x + textBounds.width);
+            maxY = Math.max(maxY, textBounds.y + textBounds.height);
+          });
+      });
+      bounds = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+    }
+
+    // 既存の選択と統合
+    const currentStrokeIds = state.selectedStrokeIds;
+    const currentShapeIds = state.selectedShapeIds;
+    const currentBounds = state.selectionBounds;
+
+    if (selectedIds.length > 0 || currentStrokeIds.length > 0 || currentShapeIds.length > 0) {
+      let finalBounds = bounds;
+      if ((currentStrokeIds.length > 0 || currentShapeIds.length > 0) && currentBounds && bounds) {
+        finalBounds = {
+          x: Math.min(bounds.x, currentBounds.x),
+          y: Math.min(bounds.y, currentBounds.y),
+          width: Math.max(bounds.x + bounds.width, currentBounds.x + currentBounds.width) - Math.min(bounds.x, currentBounds.x),
+          height: Math.max(bounds.y + bounds.height, currentBounds.y + currentBounds.height) - Math.min(bounds.y, currentBounds.y),
+        };
+      } else if ((currentStrokeIds.length > 0 || currentShapeIds.length > 0) && currentBounds) {
+        finalBounds = currentBounds;
+      }
+      set({ selectedTextIds: selectedIds, selectionBounds: finalBounds });
+    } else {
+      set({ selectedTextIds: [], selectionBounds: currentBounds });
+    }
   },
 
   moveSelectedTexts: (dx, dy) => {
@@ -2388,5 +2506,22 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
 
     set({ pages: updatedPages });
     get().saveToHistory();
+  },
+
+  // 校正チェック直接描画用
+  setActiveProofreadingText: (text, color) => {
+    set({
+      activeProofreadingText: text,
+      proofreadingTextColor: color,
+      tool: 'text',
+      color: color || '#ff0000',
+    });
+  },
+
+  clearActiveProofreadingText: () => {
+    set({
+      activeProofreadingText: null,
+      proofreadingTextColor: null,
+    });
   },
 }));

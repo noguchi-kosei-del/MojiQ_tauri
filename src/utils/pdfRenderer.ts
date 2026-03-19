@@ -145,7 +145,7 @@ function convertPdfAnnotationToTextObject(
   // フォントサイズ（固定値）
   // テキストツールと同じスケール感で表示するため、固定のフォントサイズを使用
   // RENDER_SCALE（3.0）が適用されるので、論理サイズとして指定
-  const fontSize = 16; // テキストツールのデフォルトと同じ
+  const fontSize = 14; // テキストツールのデフォルトと同じ
 
   // テキストサイズを計算（表示座標系で計算するためRENDER_SCALEを掛ける）
   const textBounds = calculateTextBounds(textContent, fontSize * RENDER_SCALE);
