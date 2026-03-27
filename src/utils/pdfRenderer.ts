@@ -1,5 +1,6 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import type { PageData, PdfAnnotationText, PdfPageInfo, PdfAnnotationSourceType } from '../types';
+import { base64ToUint8ArrayAsync } from './pdfWorkerManager';
 
 // PDF.js worker setup
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -9,6 +10,49 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 
 // レンダリングスケール
 const RENDER_SCALE = 3.0;
+
+// Canvas明示解放（メモリリーク防止）
+function releaseCanvas(canvas: HTMLCanvasElement): void {
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
+/**
+ * Base64をUint8Arrayに変換（Web Worker使用で大容量データ対応）
+ * - 大きいデータ: Web Workerで処理（メインスレッドブロック回避）
+ * - 小さいデータ: fetch APIで処理（オーバーヘッド最小化）
+ */
+async function base64ToUint8Array(base64: string): Promise<Uint8Array> {
+  // 大きいデータ（約75KB以上）はWeb Workerで処理
+  if (base64.length >= 100000) {
+    try {
+      return await base64ToUint8ArrayAsync(base64);
+    } catch {
+      // Workerが失敗した場合はfetchにフォールバック
+      console.warn('Web Worker failed, falling back to fetch');
+    }
+  }
+
+  // 小さいデータまたはWorker失敗時はfetch APIで処理
+  const dataUrl = `data:application/octet-stream;base64,${base64}`;
+  try {
+    const response = await fetch(dataUrl);
+    const arrayBuffer = await response.arrayBuffer();
+    return new Uint8Array(arrayBuffer);
+  } catch {
+    // 最終フォールバック: 従来のatob方式
+    const pdfData = atob(base64);
+    const pdfArray = new Uint8Array(pdfData.length);
+    for (let i = 0; i < pdfData.length; i++) {
+      pdfArray[i] = pdfData.charCodeAt(i);
+    }
+    return pdfArray;
+  }
+}
 
 // PDF色配列からHEX文字列に変換
 function pdfColorToHex(pdfColor: number[] | null | undefined): string {
@@ -219,11 +263,7 @@ export async function loadPdfDocument(
   pdfBase64: string,
   onProgress?: (progress: number) => void
 ): Promise<PdfLoadResult> {
-  const pdfData = atob(pdfBase64);
-  const pdfArray = new Uint8Array(pdfData.length);
-  for (let i = 0; i < pdfData.length; i++) {
-    pdfArray[i] = pdfData.charCodeAt(i);
-  }
+  const pdfArray = await base64ToUint8Array(pdfBase64);
 
   onProgress?.(10);
 
@@ -286,7 +326,12 @@ export async function renderPdfPage(
     viewport: viewport,
   }).promise;
 
-  return canvas.toDataURL('image/png');
+  const imageData = canvas.toDataURL('image/png');
+
+  // Canvas明示解放（メモリリーク防止）
+  releaseCanvas(canvas);
+
+  return imageData;
 }
 
 // 後方互換性のため、従来の関数も残す
@@ -294,11 +339,7 @@ export async function renderPdfToImages(
   pdfBase64: string,
   onProgress?: (progress: number) => void
 ): Promise<PdfRenderResult> {
-  const pdfData = atob(pdfBase64);
-  const pdfArray = new Uint8Array(pdfData.length);
-  for (let i = 0; i < pdfData.length; i++) {
-    pdfArray[i] = pdfData.charCodeAt(i);
-  }
+  const pdfArray = await base64ToUint8Array(pdfBase64);
 
   onProgress?.(10); // PDF parsing started
 
@@ -329,6 +370,9 @@ export async function renderPdfToImages(
     }).promise;
 
     const imageData = canvas.toDataURL('image/png');
+
+    // Canvas明示解放（メモリリーク防止）
+    releaseCanvas(canvas);
 
     // Use rendered size for display (high resolution)
     pages.push({

@@ -1,10 +1,34 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::fs;
-use std::time::UNIX_EPOCH;
+use std::time::{UNIX_EPOCH, SystemTime, Duration};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 use crate::pdf::create_pdf_with_drawings;
+
+/// 古い一時ファイルをクリーンアップ（1時間以上前のmojiq-print-*.pdfを削除）
+fn cleanup_old_temp_files(temp_dir: &Path) {
+    let one_hour_ago = SystemTime::now()
+        .checked_sub(Duration::from_secs(3600))
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+
+    if let Ok(entries) = fs::read_dir(temp_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with("mojiq-print-") && name.ends_with(".pdf") {
+                    if let Ok(metadata) = fs::metadata(&path) {
+                        if let Ok(modified) = metadata.modified() {
+                            if modified < one_hour_ago {
+                                let _ = fs::remove_file(&path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 // ファイルメタデータ（リンク方式用）
 #[derive(Debug, Serialize, Deserialize)]
@@ -647,14 +671,18 @@ pub async fn print_pdf(request: SaveRequest) -> Result<(), String> {
     use std::env;
     use std::process::Command;
 
-    // 一時ファイルパスを生成
+    // 一時ファイルパスを生成（タイムスタンプ+プロセスIDで衝突防止）
     let temp_dir = env::temp_dir();
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
+        .map(|d| d.as_nanos())  // ナノ秒精度で衝突をさらに防止
         .unwrap_or(0);
-    let temp_path = temp_dir.join(format!("mojiq-print-{}.pdf", timestamp));
+    let pid = std::process::id();
+    let temp_path = temp_dir.join(format!("mojiq-print-{}-{}.pdf", timestamp, pid));
     let temp_path_str = temp_path.to_string_lossy().to_string();
+
+    // 古い一時ファイルをクリーンアップ（1時間以上前のファイル）
+    cleanup_old_temp_files(&temp_dir);
 
     // PDFを生成
     create_pdf_with_drawings(&temp_path_str, &request).map_err(|e| e.to_string())?;

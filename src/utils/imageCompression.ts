@@ -18,6 +18,16 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 /** 圧縮進捗コールバック */
 export type CompressionProgressCallback = (current: number, total: number) => void;
 
+/** Canvas明示解放（メモリリーク防止） */
+function releaseCanvas(canvas: HTMLCanvasElement): void {
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
 /** 圧縮結果 */
 export interface CompressionResult {
   /** 圧縮後のデータ */
@@ -60,9 +70,8 @@ export async function compressImage(
       // JPEG形式で圧縮
       const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
 
-      // メモリ解放
-      canvas.width = 0;
-      canvas.height = 0;
+      // Canvas明示解放（メモリリーク防止）
+      releaseCanvas(canvas);
 
       resolve(compressedDataUrl);
     };
@@ -133,8 +142,8 @@ export async function compressPdfViaCanvas(
       }
 
       const originalViewport = page.getViewport({ scale: 1.0 });
-      // 2倍スケールでレンダリング（品質維持）
-      const renderScale = 2.0;
+      // 1倍スケールでレンダリング（高速化）
+      const renderScale = 1.0;
       const viewport = page.getViewport({ scale: renderScale });
 
       const canvas = document.createElement('canvas');
@@ -154,12 +163,12 @@ export async function compressPdfViaCanvas(
           // pdfjs-dist 5.x requires canvas but it's optional at runtime
         } as Parameters<typeof page.render>[0]).promise;
       } catch (renderError) {
-        canvas.width = 0;
-        canvas.height = 0;
+        releaseCanvas(canvas);
         throw new Error(`ページ ${i} のレンダリングに失敗しました`);
       }
 
-      const imgData = canvas.toDataURL('image/png');
+      // JPEG形式（高速圧縮）
+      const imgData = canvas.toDataURL('image/jpeg', 0.75);
 
       // PDFのポイント単位に変換 (72 DPI)
       const pageWidthPt = (originalViewport.width * 72) / 96;
@@ -178,11 +187,11 @@ export async function compressPdfViaCanvas(
         newPdf!.addPage([pageWidthPt, pageHeightPt], orient as 'l' | 'p');
       }
 
-      newPdf!.addImage(imgData, 'PNG', 0, 0, pageWidthPt, pageHeightPt, undefined, 'SLOW');
+      // JPEG形式で高速追加
+      newPdf!.addImage(imgData, 'JPEG', 0, 0, pageWidthPt, pageHeightPt, undefined, 'FAST');
 
-      // メモリ解放
-      canvas.width = 0;
-      canvas.height = 0;
+      // Canvas明示解放（メモリリーク防止）
+      releaseCanvas(canvas);
     }
 
     if (!newPdf) {
@@ -204,6 +213,20 @@ export async function compressPdfViaCanvas(
  */
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+/**
+ * Uint8ArrayをBase64文字列に変換（大きなファイル対応）
+ * 旧MojiQ ver_2.08のpdf-utils.jsから移植
+ */
+export function uint8ArrayToBase64(uint8Array: Uint8Array): string {
+  const chunkSize = 0x8000; // 32KB chunks
+  const chunks: string[] = [];
+  for (let i = 0; i < uint8Array.length; i += chunkSize) {
+    const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
+    chunks.push(String.fromCharCode.apply(null, Array.from(chunk)));
+  }
+  return btoa(chunks.join(''));
 }
 
 /**

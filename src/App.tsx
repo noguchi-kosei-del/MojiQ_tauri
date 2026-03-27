@@ -33,7 +33,6 @@ import { LoadedDocument, FileMetadata } from './types';
 import { renderPdfToImages } from './utils/pdfRenderer';
 import { preloadAllBackgroundImages, backgroundImageCache } from './utils/backgroundImageCache';
 import { checkPageCount } from './utils/fileValidation';
-import { uint8ArrayToBase64 } from './utils/imageCompression';
 import './App.css';
 
 // 定数
@@ -41,7 +40,7 @@ const ZOOM_ANIMATION_DURATION = 300;
 const NAVIGATE_COOLDOWN_MS = 150;
 
 function App() {
-  const { loadDocument, loadDocumentWithAnnotations, loadDocumentWithLinks, loadAllPageImages, undo, redo, pages, currentPage, setCurrentPage, tool, setTool, selectedStrokeIds, selectedTextIds, deleteSelectedStrokes, clearAllDrawings, getDocumentState, restoreDocumentState, clearDocument, activeProofreadingText, clearActiveProofreadingText } = useDrawingStore();
+  const { loadDocument, loadDocumentWithAnnotations, loadDocumentWithLinks, loadAllPageImages, undo, redo, pages, currentPage, setCurrentPage, tool, setTool, selectedStrokeIds, selectedTextIds, deleteSelectedStrokes, clearAllDrawings, getDocumentState, restoreDocumentState, activeProofreadingText, clearActiveProofreadingText } = useDrawingStore();
   const {
     activeDocumentId,
     syncFromDrawingStore,
@@ -67,6 +66,9 @@ function App() {
   const isNavigatingRef = useRef(false);
   const lastNavigateTimeRef = useRef(0);
   const zoomAnimationRef = useRef<number | null>(null);
+
+  // タブ切り替え時のレース条件防止用（非同期処理のキャンセルトークン）
+  const switchDocumentRequestIdRef = useRef(0);
 
   // スペースキーパン用の状態
   const previousToolRef = useRef<string | null>(null);
@@ -118,11 +120,16 @@ function App() {
         // 背景画像キャッシュをクリア（前のドキュメントの画像が表示されるのを防ぐ）
         backgroundImageCache.clear();
 
-        // アクティブなドキュメントがない場合は新規作成
-        let currentActiveId = useDocumentStore.getState().activeDocumentId;
-        if (!currentActiveId) {
-          currentActiveId = createNewDocument({ title: '新規ドキュメント' });
+        // アクティブなドキュメントにページがある場合は新規タブを作成
+        const existingDoc = useDocumentStore.getState().getActiveDocument();
+        if (existingDoc && existingDoc.pages.length > 0) {
+          // 既存ドキュメントにページがある場合は、新しいタブを作成
+          createNewDocument({ title: '新規ドキュメント' });
+        } else if (!useDocumentStore.getState().activeDocumentId) {
+          // アクティブなドキュメントがない場合は新規作成
+          createNewDocument({ title: '新規ドキュメント' });
         }
+        // 空のアクティブドキュメントがある場合はそれを使用（何もしない）
 
         try {
           setLoading(true, 'ファイルを読み込み中...');
@@ -156,18 +163,8 @@ function App() {
             }
 
             if (result.file_type === 'pdf' && result.pdf_data) {
-              // PDFデータをUint8Arrayに変換
-              const base64Data = result.pdf_data;
-              const binaryString = atob(base64Data);
-              const bytes = new Uint8Array(binaryString.length);
-              for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-              }
-              // Base64に再エンコード（チャンク分割で高速化）
-              const compressedBase64 = uint8ArrayToBase64(bytes);
-
               setLoading(true, 'PDFをレンダリング中...');
-              const pdfResult = await renderPdfToImages(compressedBase64, (progress) => {
+              const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
                 setProgress(30 + Math.floor(progress * 0.5)); // 30-80%をPDFレンダリングに使用
               });
 
@@ -310,18 +307,8 @@ function App() {
             }
 
             if (result.file_type === 'pdf' && result.pdf_data) {
-              // PDFデータをUint8Arrayに変換
-              const base64Data = result.pdf_data;
-              const binaryString = atob(base64Data);
-              const bytes = new Uint8Array(binaryString.length);
-              for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-              }
-              // Base64に再エンコード（チャンク分割で高速化）
-              const compressedBase64 = uint8ArrayToBase64(bytes);
-
               setLoading(true, 'PDFをレンダリング中...');
-              const pdfResult = await renderPdfToImages(compressedBase64, (progress) => {
+              const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
                 setProgress(30 + Math.floor(progress * 0.5));
               });
 
@@ -426,6 +413,9 @@ function App() {
 
   // ドキュメント切り替え時のハンドラー
   const handleSwitchDocument = useCallback(async (id: string) => {
+    // レース条件防止: 新しいリクエストIDを生成
+    const requestId = ++switchDocumentRequestIdRef.current;
+
     // 現在のドキュメント状態を保存（ドキュメントがまだ存在する場合のみ）
     const currentActiveId = useDocumentStore.getState().activeDocumentId;
     if (currentActiveId && useDocumentStore.getState().documents.has(currentActiveId)) {
@@ -439,9 +429,8 @@ function App() {
     // 新しいドキュメントの状態を復元
     const docState = getDocumentForDrawingStore(id);
     if (docState) {
-      // 背景画像キャッシュをクリア（restoreDocumentStateの前に実行することで、
-      // 古いキャッシュ画像が表示されるのを防ぐ）
-      backgroundImageCache.clear();
+      // 背景画像キャッシュをセットアップ（ドキュメントIDを設定し、異なるドキュメントなら自動クリア）
+      backgroundImageCache.setDocumentId(id);
 
       restoreDocumentState(docState);
 
@@ -449,36 +438,20 @@ function App() {
       if (docState.pages.length > 0) {
         await preloadAllBackgroundImages(
           (pageNumber) => docState.pages[pageNumber]?.backgroundImage || null,
-          docState.pages.length
+          docState.pages.length,
+          undefined,
+          id  // ドキュメントIDを渡す
         );
+
+        // レース条件チェック: 非同期処理中に別のタブに切り替えられた場合はキャッシュをクリア
+        if (switchDocumentRequestIdRef.current !== requestId) {
+          // 古いリクエストなので、このキャッシュは無効
+          // 新しいリクエストが既にキャッシュをクリアしているはずなので何もしない
+          return;
+        }
       }
     }
   }, [getDocumentState, syncFromDrawingStore, switchDocument, getDocumentForDrawingStore, restoreDocumentState]);
-
-  // 新規タブ作成のハンドラー
-  const handleCreateNewTab = useCallback(() => {
-    // 現在のドキュメント状態を保存（ドキュメントが存在する場合のみ）
-    const currentActiveId = useDocumentStore.getState().activeDocumentId;
-    if (currentActiveId && useDocumentStore.getState().documents.has(currentActiveId) && pages.length > 0) {
-      const currentState = getDocumentState();
-      syncFromDrawingStore(currentState);
-    }
-
-    // 新規ドキュメントを作成
-    const newDocId = createNewDocument({ title: '新規タブ' });
-
-    // 背景画像キャッシュをクリア（新規タブには背景画像がないため）
-    backgroundImageCache.clear();
-
-    // drawingStoreをクリアして新規状態にする
-    clearDocument();
-
-    // 新規ドキュメントの状態を取得して復元
-    const docState = getDocumentForDrawingStore(newDocId);
-    if (docState) {
-      restoreDocumentState(docState);
-    }
-  }, [pages.length, getDocumentState, syncFromDrawingStore, createNewDocument, clearDocument, getDocumentForDrawingStore, restoreDocumentState]);
 
   // タブを閉じる処理（Ctrl+W、タブ×ボタン共通）
   const performCloseDocument = useCallback((docId: string) => {
@@ -969,7 +942,6 @@ function App() {
       <HeaderBar />
       <TabBar
         onSwitchDocument={handleSwitchDocument}
-        onCreateNewTab={handleCreateNewTab}
         onSaveAndClose={handleSaveAndClose}
       />
       {pages.length === 0 ? (

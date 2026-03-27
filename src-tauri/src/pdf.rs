@@ -1,7 +1,58 @@
 use std::io::Cursor;
+use std::path::Path;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ::image::{DynamicImage, GenericImageView, ImageFormat, Rgba, RgbaImage};
 use printpdf::*;
+
+/// アトミックな書き込みを行う（一時ファイル→リネーム方式）
+/// ディスク容量不足等で書き込み失敗時も元ファイルを保護
+fn atomic_save_pdf(doc: PdfDocumentReference, save_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let path = Path::new(save_path);
+
+    // 一時ファイルパスを生成（同じディレクトリに作成）
+    let temp_path = path.with_extension("pdf.tmp");
+
+    // 一時ファイルに書き込み
+    {
+        let file = std::fs::File::create(&temp_path)
+            .map_err(|e| format!("Failed to create temp file: {}", e))?;
+        let mut writer = std::io::BufWriter::new(file);
+        doc.save(&mut writer)
+            .map_err(|e| format!("Failed to write PDF: {}", e))?;
+    }
+
+    // 書き込み成功後、元のファイルにリネーム
+    // Windowsでは上書きリネームができないため、既存ファイルを先に削除
+    if path.exists() {
+        // バックアップファイルを作成（リネーム失敗時の保険）
+        let backup_path = path.with_extension("pdf.bak");
+        if backup_path.exists() {
+            std::fs::remove_file(&backup_path).ok();
+        }
+        std::fs::rename(path, &backup_path)
+            .map_err(|e| format!("Failed to backup original file: {}", e))?;
+
+        // リネーム実行
+        match std::fs::rename(&temp_path, path) {
+            Ok(_) => {
+                // リネーム成功、バックアップを削除
+                std::fs::remove_file(&backup_path).ok();
+            }
+            Err(e) => {
+                // リネーム失敗、バックアップを復元
+                std::fs::rename(&backup_path, path).ok();
+                std::fs::remove_file(&temp_path).ok();
+                return Err(format!("Failed to rename temp file: {}", e).into());
+            }
+        }
+    } else {
+        // 新規ファイルの場合は単純にリネーム
+        std::fs::rename(&temp_path, path)
+            .map_err(|e| format!("Failed to rename temp file: {}", e))?;
+    }
+
+    Ok(())
+}
 
 use crate::commands::{PageData, SaveRequest, SaveRequestV2};
 
@@ -203,7 +254,7 @@ pub fn create_pdf_with_drawings(
         }
     }
 
-    doc.save(&mut std::io::BufWriter::new(std::fs::File::create(save_path)?))?;
+    atomic_save_pdf(doc, save_path)?;
     Ok(())
 }
 
@@ -381,7 +432,7 @@ pub fn create_pdf_with_overlays(
         }
     }
 
-    doc.save(&mut std::io::BufWriter::new(std::fs::File::create(save_path)?))?;
+    atomic_save_pdf(doc, save_path)?;
     Ok(())
 }
 

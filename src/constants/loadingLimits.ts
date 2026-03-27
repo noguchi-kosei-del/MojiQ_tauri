@@ -5,8 +5,8 @@
 
 /** ファイルサイズ閾値 */
 export const THRESHOLDS = {
-  /** PDF Canvas圧縮しきい値 (500MB) */
-  PDF_SIZE_LIMIT: 500 * 1024 * 1024,
+  /** PDF Canvas圧縮しきい値 (300MB) */
+  PDF_SIZE_LIMIT: 300 * 1024 * 1024,
   /** 画像圧縮しきい値 (300MB) */
   IMAGE_SIZE_LIMIT: 300 * 1024 * 1024,
   /** JPEG圧縮品質 (0.0-1.0) */
@@ -15,10 +15,10 @@ export const THRESHOLDS = {
 
 /** PDF制限 */
 export const PDF_LIMITS = {
-  /** 最大ページ数 */
-  MAX_PAGES: 500,
+  /** 最大ページ数（メモリ安全のため200に制限） */
+  MAX_PAGES: 200,
   /** 警告を出すページ数 */
-  WARNING_PAGES: 200,
+  WARNING_PAGES: 100,
   /** 単ページサイズ上限 (100MB) */
   SINGLE_PAGE_SIZE_LIMIT: 100 * 1024 * 1024,
 } as const;

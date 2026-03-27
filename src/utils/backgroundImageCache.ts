@@ -21,9 +21,14 @@ class BackgroundImageCacheManager {
   }
 
   /**
-   * 画像をキャッシュに保存
+   * 画像をキャッシュに保存（古いImageBitmapは解放）
    */
   set(pageNumber: number, image: CachedImage): void {
+    // 既存のエントリがあればImageBitmapを解放
+    const existing = this.cache.get(pageNumber);
+    if (existing && 'close' in existing && typeof existing.close === 'function') {
+      existing.close();
+    }
     this.cache.set(pageNumber, image);
   }
 
@@ -78,32 +83,42 @@ class BackgroundImageCacheManager {
    * ImageBitmapが使用可能な場合はそれを使用（GPU最適化）
    */
   async preloadImage(pageNumber: number, imageSource: string): Promise<void> {
-    try {
-      // ImageBitmapが使用可能な場合
-      if (typeof createImageBitmap === 'function') {
-        const response = await fetch(imageSource);
-        const blob = await response.blob();
-        const bitmap = await createImageBitmap(blob);
-        this.cache.set(pageNumber, bitmap);
-        return;
-      }
-    } catch (e) {
-      console.warn(`[MojiQ] ImageBitmap creation failed for page ${pageNumber}, falling back to Image:`, e);
+    console.log(`[Cache] preloadImage start: page ${pageNumber}, sourceLength: ${imageSource?.length || 0}`);
+
+    // まずHTMLImageElementで画像を読み込む（data:URLでも確実に動作）
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => {
+        console.log(`[Cache] Image loaded: page ${pageNumber}, size: ${image.width}x${image.height}`);
+        resolve(image);
+      };
+      image.onerror = () => reject(new Error(`Failed to load image for page ${pageNumber}`));
+      image.src = imageSource;
+    }).catch((e) => {
+      console.error(`Failed to decode image for page ${pageNumber}:`, e);
+      return null;
+    });
+
+    if (!img) {
+      console.log(`[Cache] preloadImage failed: page ${pageNumber}`);
+      return;
     }
 
-    // フォールバック: HTMLImageElement
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        this.cache.set(pageNumber, img);
-        resolve();
-      };
-      img.onerror = () => {
-        console.error(`Failed to decode image for page ${pageNumber}`);
-        resolve();
-      };
-      img.src = imageSource;
-    });
+    // ImageBitmapが使用可能な場合はそれを作成してキャッシュ
+    if (typeof createImageBitmap === 'function') {
+      try {
+        const bitmap = await createImageBitmap(img);
+        this.cache.set(pageNumber, bitmap);
+        console.log(`[Cache] ImageBitmap cached: page ${pageNumber}, cacheSize: ${this.cache.size}`);
+        return;
+      } catch (e) {
+        console.warn(`[MojiQ] ImageBitmap creation failed for page ${pageNumber}, using Image:`, e);
+      }
+    }
+
+    // フォールバック: HTMLImageElementをそのままキャッシュ
+    this.cache.set(pageNumber, img);
+    console.log(`[Cache] HTMLImageElement cached: page ${pageNumber}, cacheSize: ${this.cache.size}`);
   }
 
   /**
@@ -127,6 +142,8 @@ export async function preloadAllBackgroundImages(
   onProgress?: (current: number, total: number) => void,
   documentId?: string
 ): Promise<void> {
+  console.log(`[Cache] preloadAllBackgroundImages start: totalPages=${totalPages}, docId=${documentId || 'none'}`);
+
   // ドキュメントIDが指定されている場合は設定
   if (documentId) {
     backgroundImageCache.setDocumentId(documentId);
@@ -139,9 +156,13 @@ export async function preloadAllBackgroundImages(
     const imageSource = getPageImage(i);
     if (imageSource) {
       await backgroundImageCache.preloadImage(i, imageSource);
+    } else {
+      console.log(`[Cache] No image source for page ${i}`);
     }
     onProgress?.(i + 1, totalPages);
   }
+
+  console.log(`[Cache] preloadAllBackgroundImages complete: cacheSize=${backgroundImageCache.size}`);
 }
 
 /**

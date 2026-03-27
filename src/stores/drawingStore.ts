@@ -5,6 +5,13 @@ import { imageCache } from '../utils/imageCache';
 import { useDisplayScaleStore } from './displayScaleStore';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
+/**
+ * 深いコピー用ヘルパー
+ * JSON.parse/stringifyより高速で、より多くのデータ型をサポート
+ * 将来的にimmerの完全導入を検討する場合は、zustand/middleware/immerを使用
+ */
+const deepClone = <T>(obj: T): T => structuredClone(obj);
+
 const createDefaultLayer = (): Layer => ({
   id: `layer-${Date.now()}`,
   name: 'Layer 1',
@@ -839,13 +846,14 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
         });
       });
 
-    // Calculate bounds of selected strokes
+    // Calculate bounds of selected strokes（SetでO(1)検索）
     let bounds: SelectionBounds | null = null;
     if (selectedIds.length > 0) {
+      const selectedIdSet = new Set(selectedIds);
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       currentPageState.layers.forEach((layer) => {
         layer.strokes
-          .filter((s) => selectedIds.includes(s.id))
+          .filter((s) => selectedIdSet.has(s.id))
           .forEach((stroke) => {
             stroke.points.forEach((p) => {
               minX = Math.min(minX, p.x);
@@ -1138,13 +1146,14 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
         });
       });
 
-    // 選択された図形の範囲を計算
+    // 選択された図形の範囲を計算（SetでO(1)検索）
     let bounds: SelectionBounds | null = null;
     if (selectedIds.length > 0) {
+      const selectedIdSet = new Set(selectedIds);
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       currentPageState.layers.forEach((layer) => {
         layer.shapes
-          .filter((s) => selectedIds.includes(s.id))
+          .filter((s) => selectedIdSet.has(s.id))
           .forEach((shape) => {
             const shapeBounds = get().calculateShapeBounds(shape);
             if (shapeBounds) {
@@ -1269,7 +1278,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
   saveToHistory: () => {
     const state = get();
     const newHistoryEntry = {
-      pages: JSON.parse(JSON.stringify(state.pages)),
+      pages: deepClone(state.pages),
       currentPage: state.currentPage,
     };
 
@@ -1289,7 +1298,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     if (state.historyIndex > 0) {
       const prevState = state.history[state.historyIndex - 1];
       set({
-        pages: JSON.parse(JSON.stringify(prevState.pages)),
+        pages: deepClone(prevState.pages),
         currentPage: prevState.currentPage,
         historyIndex: state.historyIndex - 1,
       });
@@ -1301,7 +1310,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     if (state.historyIndex < state.history.length - 1) {
       const nextState = state.history[state.historyIndex + 1];
       set({
-        pages: JSON.parse(JSON.stringify(nextState.pages)),
+        pages: deepClone(nextState.pages),
         currentPage: nextState.currentPage,
         historyIndex: state.historyIndex + 1,
       });
@@ -1312,7 +1321,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     const state = get();
     // 現在の状態のみを履歴として保持
     const currentHistoryEntry: HistoryState = {
-      pages: JSON.parse(JSON.stringify(state.pages)),
+      pages: deepClone(state.pages),
       currentPage: state.currentPage,
     };
     set({
@@ -1951,13 +1960,14 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
         });
       });
 
-    // 選択されたテキストの範囲を計算
+    // 選択されたテキストの範囲を計算（SetでO(1)検索）
     let bounds: SelectionBounds | null = null;
     if (selectedIds.length > 0) {
+      const selectedIdSet = new Set(selectedIds);
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       currentPageState.layers.forEach((layer) => {
         layer.texts
-          .filter((t) => selectedIds.includes(t.id))
+          .filter((t) => selectedIdSet.has(t.id))
           .forEach((text) => {
             const textBounds = get().calculateTextBounds(text);
             minX = Math.min(minX, textBounds.x);

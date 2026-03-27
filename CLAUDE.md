@@ -584,3 +584,53 @@ MojiQ_3.0/
   - pdfRenderer（PDF注釈テキスト）
   - drawingExportImport（インポート時のフォールバック）
 - **デフォルトツール**: ペン → 選択ツール（起動時は選択ツール）
+
+### 2026-03-27
+#### 致命的バグ修正・パフォーマンス改善
+
+##### PDF保存時のアトミック書き込み
+- **データ損失防止**: 一時ファイル→リネーム方式で保存
+  - `src-tauri/src/pdf.rs` - `atomic_save_pdf()`関数追加
+  - ディスク容量不足時でも元ファイルを保護
+  - バックアップファイル（.pdf.bak）による安全な書き込み
+
+##### Web Worker化（PDF処理のメインスレッド分離）
+- **UIフリーズ防止**: 大容量Base64変換をWorkerに委譲
+  - `src/workers/pdfWorker.ts` - Base64⇔Uint8Array変換Worker
+  - `src/utils/pdfWorkerManager.ts` - Worker管理、リクエストID管理
+  - `src/utils/pdfRenderer.ts` - 75KB以上のデータを自動でWorker処理
+  - Transferable objectでゼロコピー転送
+
+##### 状態管理の最適化（structuredClone導入）
+- **パフォーマンス向上**: `JSON.parse(JSON.stringify())`を`structuredClone()`に置換
+  - `src/stores/drawingStore.ts` - 履歴管理の深いコピーを最適化
+  - 循環参照対応、より高速なクローン処理
+
+##### キャッシュ管理の統一
+- **統合インターフェース**: 3つのキャッシュを一元管理
+  - `src/utils/cacheManager.ts` - 新規作成
+  - `pageRenderCache`、`backgroundImageCache`、`imageCache`を統合
+  - `clearAll()` - 全キャッシュクリア
+  - `clearForDocument(id)` - ドキュメント単位クリア
+  - `clearByType(type)` - タイプ別クリア
+  - `getStats()` - 統計取得
+  - `reduceMemory()` - メモリ圧迫時の削減
+- **documentStore更新**: `cacheManager.clearForDocument()`を使用
+
+##### メモリリーク対策
+- **Canvas明示解放**: `releaseCanvas()`関数追加
+  - `src/utils/pdfRenderer.ts` - PDFレンダリング後にCanvas解放
+  - `src/utils/imageCompression.ts` - 圧縮処理後にCanvas解放
+- **ImageBitmap解放**: `close()`呼び出しの徹底
+  - `src/utils/backgroundImageCache.ts` - 上書き時に古いBitmapを解放
+- **ページ数制限見直し**: MAX_PAGES 500→200に引き下げ
+
+##### タブ切り替え時のレース条件修正
+- **リクエストID管理**: 古いリクエストを無視
+  - `src/App.tsx` - `switchDocumentRequestIdRef`でリクエスト追跡
+  - プリロード中のタブ切り替えでも安全に動作
+
+##### 一時ファイルクリーンアップ
+- **自動削除**: 1時間以上経過した印刷用一時ファイルを削除
+  - `src-tauri/src/commands.rs` - `cleanup_old_temp_files()`関数追加
+  - `print_pdf()`コマンド実行時に自動クリーンアップ

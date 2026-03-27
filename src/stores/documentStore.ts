@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { DocumentState, TabInfo, CreateDocumentOptions, DocumentFileType } from '../types/document';
 import { PageState, HistoryState, PdfPageInfo, PdfAnnotationText } from '../types';
 import { useZoomStore } from './zoomStore';
-import { pageRenderCache } from '../utils/pageRenderCache';
+import { cacheManager } from '../utils/cacheManager';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
 // メモリにフル保持するドキュメント数の上限
@@ -162,7 +162,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     }
 
     // キャッシュをクリア
-    pageRenderCache.clearForDocument(id);
+    cacheManager.clearForDocument(id);
 
     // ドキュメントを削除
     const newDocuments = new Map(state.documents);
@@ -409,7 +409,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
           }
 
           // キャッシュをクリア
-          pageRenderCache.clearForDocument(doc.id);
+          cacheManager.clearForDocument(doc.id);
 
           // ページの背景画像をクリア（メタデータは保持）
           const lightweightPages = doc.pages.map((page) => ({
