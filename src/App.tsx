@@ -62,6 +62,23 @@ function App() {
   const { mode } = useModeStore();
   const { isProofreadingPanelCollapsed } = useSidebarStore();
 
+  // モード切替アニメーション
+  const [modeTransition, setModeTransition] = useState<'mode-transition-to-proofreading' | 'mode-transition-to-instruction' | ''>('');
+  const prevModeRef = useRef(mode);
+
+  useEffect(() => {
+    if (prevModeRef.current !== mode && pages.length > 0) {
+      const transitionClass = mode === 'proofreading'
+        ? 'mode-transition-to-proofreading'
+        : 'mode-transition-to-instruction';
+      setModeTransition(transitionClass);
+      const timer = setTimeout(() => setModeTransition(''), 200);
+      prevModeRef.current = mode;
+      return () => clearTimeout(timer);
+    }
+    prevModeRef.current = mode;
+  }, [mode, pages.length]);
+
   // ページナビゲーション用の状態
   const isNavigatingRef = useRef(false);
   const lastNavigateTimeRef = useRef(0);
@@ -962,7 +979,7 @@ function App() {
   }, [handleFileDrop]);
 
   return (
-    <div className={`app ${isViewerMode ? 'viewer-mode' : ''} ${isFlipped ? 'workspace-flipped' : ''} ${mode === 'proofreading' ? 'proofreading-mode' : ''} ${mode === 'proofreading' && isProofreadingPanelCollapsed ? 'proofreading-panel-collapsed' : ''}`}>
+    <div className={`app ${isViewerMode ? 'viewer-mode' : ''} ${isFlipped ? 'workspace-flipped' : ''} ${mode === 'proofreading' ? 'proofreading-mode' : ''} ${mode === 'proofreading' && isProofreadingPanelCollapsed ? 'proofreading-panel-collapsed' : ''} ${modeTransition}`}>
       <LoadingOverlay />
       <ViewerModeOverlay onExit={handleExitViewerMode} />
       <HeaderBar />

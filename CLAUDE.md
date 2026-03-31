@@ -668,6 +668,13 @@ MojiQ_3.0/
 - ストローク・図形・テキスト・画像の全IDを収集し統合バウンディングボックスを計算
 - `src/stores/drawingStore.ts` - `selectAll()`関数追加
 
+#### モード切替スライドアニメーション（旧MojiQ ver_2.11より移植）
+- **指示入れ→校正チェック**: `slideInFromRight`（右から20pxスライド、0.2秒ease-out）
+- **校正チェック→指示入れ**: `slideInFromLeft`（左から20pxスライド、0.2秒ease-out）
+- PDF読み込み後のみ発動（ホーム画面では無効）
+- `src/App.css` - `@keyframes`定義、`.mode-transition-to-*`クラスで適用
+- `src/App.tsx` - `useEffect`でモード変化を検知、200ms後にクラス除去
+
 #### 四分アキスタンプ追加
 - **四分アキスタンプ**: `yonbunakiStamp`（テキストスタンプ「四分アキ」、サイズ14）
 - 引出線対応（ドラッグで引出線付き配置可能）
