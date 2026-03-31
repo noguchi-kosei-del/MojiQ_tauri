@@ -132,6 +132,39 @@ const MarkerIcon = () => (
   </svg>
 );
 
+// 校正記号ツールアイコン
+const SemicircleIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 12 A8 8 0 0 1 20 12"/>
+  </svg>
+);
+
+const ChevronIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="16 4 8 12 16 20"/>
+  </svg>
+);
+
+const LshapeIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 20 6 6 18 6"/>
+  </svg>
+);
+
+const ZshapeIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 6 6 12 18 12 18 18"/>
+  </svg>
+);
+
+const BracketIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 4 6 4"/>
+    <polyline points="6 5 18 5 18 19 6 19"/>
+    <polyline points="6 20 6 20"/>
+  </svg>
+);
+
 const PanIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/>
@@ -286,6 +319,45 @@ export const DrawingToolbar: React.FC = () => {
           >
             <PolylineIcon />
           </button>
+
+          {/* 校正記号グループ */}
+          <div className="tool-group">
+            <button
+              onClick={() => setTool('chevron')}
+              className={tool === 'chevron' ? 'active' : ''}
+              title="くの字 - Ctrl押下で∨形"
+            >
+              <ChevronIcon />
+            </button>
+            <button
+              onClick={() => setTool('lshape')}
+              className={tool === 'lshape' ? 'active' : ''}
+              title="L字（行移動）"
+            >
+              <LshapeIcon />
+            </button>
+            <button
+              onClick={() => setTool('zshape')}
+              className={tool === 'zshape' ? 'active' : ''}
+              title="Z字（改行）- Ctrl押下で方向切替"
+            >
+              <ZshapeIcon />
+            </button>
+            <button
+              onClick={() => setTool('bracket')}
+              className={tool === 'bracket' ? 'active' : ''}
+              title="コの字（全体移動）"
+            >
+              <BracketIcon />
+            </button>
+            <button
+              onClick={() => setTool('semicircle')}
+              className={tool === 'semicircle' ? 'active' : ''}
+              title="半円"
+            >
+              <SemicircleIcon />
+            </button>
+          </div>
 
           <button
             onClick={() => setTool('image')}

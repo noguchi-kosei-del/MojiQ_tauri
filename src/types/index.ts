@@ -6,7 +6,7 @@ export interface Point {
   pressure?: number;
 }
 
-export type ShapeType = 'rect' | 'ellipse' | 'line' | 'rectAnnotated' | 'ellipseAnnotated' | 'lineAnnotated' | 'arrow' | 'doubleArrow' | 'polyline' | 'stamp' | 'labeledRect';
+export type ShapeType = 'rect' | 'ellipse' | 'line' | 'rectAnnotated' | 'ellipseAnnotated' | 'lineAnnotated' | 'arrow' | 'doubleArrow' | 'polyline' | 'stamp' | 'labeledRect' | 'semicircle' | 'chevron' | 'lshape' | 'zshape' | 'bracket';
 
 // スタンプの種類
 export type StampType =
@@ -17,6 +17,7 @@ export type StampType =
   | 'torumamaStamp'   // トルママスタンプ
   | 'zenkakuakiStamp' // 全角アキスタンプ
   | 'hankakuakiStamp' // 半角アキスタンプ
+  | 'yonbunakiStamp'  // 四分アキスタンプ
   | 'kaigyouStamp'    // 改行スタンプ
   | 'komojiStamp'     // 小文字スタンプ（○に小）
   | 'tojiruStamp'     // とじるスタンプ
@@ -37,6 +38,11 @@ export interface TextElement {
   layerId: string;
   // PDF注釈由来の場合、注釈タイプを保持
   pdfAnnotationSource?: PdfAnnotationSourceType;
+  // 引出線（校正チェックテキスト用）
+  leaderLine?: {
+    start: Point;
+    end: Point;
+  };
 }
 
 // アノテーション（引出線 + テキスト指示）
@@ -80,6 +86,13 @@ export interface Shape {
     start: Point;
     end: Point;
   };
+  // 回転（ラジアン）
+  rotation?: number;
+  // 校正記号ツール用プロパティ
+  orientation?: 'vertical' | 'horizontal';  // 半円・くの字・コの字の方向
+  direction?: 0 | 1 | 2 | 3;               // L字の方向（0:右下, 1:左下, 2:右上, 3:左上）
+  flipped?: boolean;                         // コの字の反転
+  rotated?: boolean;                         // Z字の方向（true:横→縦→横, false:縦→横→縦）
 }
 
 export interface Stroke {
@@ -99,6 +112,7 @@ export interface ImageElement {
   endPos: Point;
   imageData: string;  // Base64 Data URL
   layerId: string;
+  rotation?: number;  // 回転（ラジアン）
 }
 
 export interface Layer {
@@ -189,7 +203,7 @@ export interface DrawingState {
   pages: PageState[];
   currentPage: number;
   currentLayerId: string;
-  tool: 'pen' | 'eraser' | 'select' | 'rect' | 'ellipse' | 'line' | 'rectAnnotated' | 'ellipseAnnotated' | 'lineAnnotated' | 'marker' | 'pan' | 'text' | 'arrow' | 'doubleArrow' | 'polyline' | 'image' | 'stamp' | 'labeledRect';
+  tool: 'pen' | 'eraser' | 'select' | 'rect' | 'ellipse' | 'line' | 'rectAnnotated' | 'ellipseAnnotated' | 'lineAnnotated' | 'marker' | 'pan' | 'text' | 'arrow' | 'doubleArrow' | 'polyline' | 'image' | 'stamp' | 'labeledRect' | 'semicircle' | 'chevron' | 'lshape' | 'zshape' | 'bracket';
   color: string;
   strokeWidth: number;
   history: HistoryState[];
@@ -213,7 +227,7 @@ export interface HistoryState {
   currentPage: number;
 }
 
-export type ToolType = 'pen' | 'eraser' | 'select' | 'rect' | 'ellipse' | 'line' | 'rectAnnotated' | 'ellipseAnnotated' | 'lineAnnotated' | 'marker' | 'pan' | 'text' | 'arrow' | 'doubleArrow' | 'polyline' | 'image' | 'stamp' | 'labeledRect';
+export type ToolType = 'pen' | 'eraser' | 'select' | 'rect' | 'ellipse' | 'line' | 'rectAnnotated' | 'ellipseAnnotated' | 'lineAnnotated' | 'marker' | 'pan' | 'text' | 'arrow' | 'doubleArrow' | 'polyline' | 'image' | 'stamp' | 'labeledRect' | 'semicircle' | 'chevron' | 'lshape' | 'zshape' | 'bracket';
 
 // ===== 校正チェック機能 =====
 

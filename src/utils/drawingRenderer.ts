@@ -141,6 +141,7 @@ function drawStamp(ctx: CanvasRenderingContext2D, x: number, y: number, stampTyp
       torumamaStamp: 'トルママ',
       zenkakuakiStamp: '全角アキ',
       hankakuakiStamp: '半角アキ',
+      yonbunakiStamp: '四分アキ',
       kaigyouStamp: '改行',
       tojiruStamp: 'とじる',
       hirakuStamp: 'ひらく',
@@ -331,13 +332,22 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
     return;
   }
 
+  // 回転変換を適用
+  if (shape.rotation) {
+    const cx = (startPos.x + endPos.x) / 2;
+    const cy = (startPos.y + endPos.y) / 2;
+    ctx.translate(cx, cy);
+    ctx.rotate(shape.rotation);
+    ctx.translate(-cx, -cy);
+  }
+
   ctx.beginPath();
   ctx.strokeStyle = shape.color;
   ctx.lineWidth = shape.width;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  const baseType = type.replace('Annotated', '') as 'rect' | 'ellipse' | 'line' | 'arrow' | 'doubleArrow' | 'polyline';
+  const baseType = type.replace('Annotated', '') as 'rect' | 'ellipse' | 'line' | 'arrow' | 'doubleArrow' | 'polyline' | 'semicircle' | 'chevron' | 'lshape' | 'zshape' | 'bracket';
 
   if (baseType === 'rect') {
     const w = endPos.x - startPos.x;
@@ -454,6 +464,153 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
       ctx.fillStyle = shape.color;
       ctx.fillText(label, labelX, labelY);
     }
+  } else if (baseType === 'semicircle') {
+    // 半円ツール
+    const w = Math.abs(endPos.x - startPos.x);
+    const h = Math.abs(endPos.y - startPos.y);
+    const cx = startPos.x + (endPos.x - startPos.x) / 2;
+    const cy = startPos.y + (endPos.y - startPos.y) / 2;
+    const orientation = shape.orientation || (h > w ? 'vertical' : 'horizontal');
+    if (orientation === 'vertical') {
+      ctx.ellipse(cx, cy, w / 2, h / 2, 0, -0.5 * Math.PI, 0.5 * Math.PI);
+    } else {
+      ctx.ellipse(cx, cy, w / 2, h / 2, 0, Math.PI, 2 * Math.PI);
+    }
+    ctx.stroke();
+  } else if (baseType === 'chevron') {
+    // くの字ツール
+    const topY = Math.min(startPos.y, endPos.y);
+    const bottomY = Math.max(startPos.y, endPos.y);
+    const leftX = Math.min(startPos.x, endPos.x);
+    const rightX = Math.max(startPos.x, endPos.x);
+    const midY = (topY + bottomY) / 2;
+    const midX = (leftX + rightX) / 2;
+    const orientation = shape.orientation || 'vertical';
+    if (orientation === 'vertical') {
+      ctx.moveTo(rightX, topY);
+      ctx.lineTo(leftX, midY);
+      ctx.lineTo(rightX, bottomY);
+    } else {
+      ctx.moveTo(leftX, topY);
+      ctx.lineTo(midX, bottomY);
+      ctx.lineTo(rightX, topY);
+    }
+    ctx.stroke();
+  } else if (baseType === 'lshape') {
+    // L字ツール
+    const topY = Math.min(startPos.y, endPos.y);
+    const bottomY = Math.max(startPos.y, endPos.y);
+    const leftX = Math.min(startPos.x, endPos.x);
+    const rightX = Math.max(startPos.x, endPos.x);
+    const direction = shape.direction ?? 0;
+    if (direction === 0) {
+      ctx.moveTo(leftX, bottomY);
+      ctx.lineTo(leftX, topY);
+      ctx.lineTo(rightX, topY);
+    } else if (direction === 1) {
+      ctx.moveTo(rightX, bottomY);
+      ctx.lineTo(rightX, topY);
+      ctx.lineTo(leftX, topY);
+    } else if (direction === 2) {
+      ctx.moveTo(leftX, topY);
+      ctx.lineTo(leftX, bottomY);
+      ctx.lineTo(rightX, bottomY);
+    } else {
+      ctx.moveTo(rightX, topY);
+      ctx.lineTo(rightX, bottomY);
+      ctx.lineTo(leftX, bottomY);
+    }
+    ctx.stroke();
+  } else if (baseType === 'zshape') {
+    // Z字ツール
+    const rotated = shape.rotated === true;
+    if (rotated) {
+      const midX = startPos.x + (endPos.x - startPos.x) / 2;
+      ctx.moveTo(startPos.x, startPos.y);
+      ctx.lineTo(midX, startPos.y);
+      ctx.lineTo(midX, endPos.y);
+      ctx.lineTo(endPos.x, endPos.y);
+    } else {
+      const midY = startPos.y + (endPos.y - startPos.y) / 2;
+      ctx.moveTo(startPos.x, startPos.y);
+      ctx.lineTo(startPos.x, midY);
+      ctx.lineTo(endPos.x, midY);
+      ctx.lineTo(endPos.x, endPos.y);
+    }
+    ctx.stroke();
+  } else if (baseType === 'bracket') {
+    // コの字ツール
+    const w = Math.abs(endPos.x - startPos.x);
+    const h = Math.abs(endPos.y - startPos.y);
+    const topY = Math.min(startPos.y, endPos.y);
+    const bottomY = Math.max(startPos.y, endPos.y);
+    const leftX = Math.min(startPos.x, endPos.x);
+    const rightX = Math.max(startPos.x, endPos.x);
+    const serifSize = Math.min(w, h) * 0.15;
+    const orientation = shape.orientation || (h > w ? 'vertical' : 'horizontal');
+    const flipped = shape.flipped === true;
+
+    if (orientation === 'vertical') {
+      if (!flipped) {
+        ctx.moveTo(leftX, topY);
+        ctx.lineTo(rightX, topY);
+        ctx.lineTo(rightX, bottomY);
+        ctx.lineTo(leftX, bottomY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(leftX, topY);
+        ctx.lineTo(leftX, topY - serifSize);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(leftX, bottomY);
+        ctx.lineTo(leftX, bottomY + serifSize);
+        ctx.stroke();
+      } else {
+        ctx.moveTo(rightX, topY);
+        ctx.lineTo(leftX, topY);
+        ctx.lineTo(leftX, bottomY);
+        ctx.lineTo(rightX, bottomY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(rightX, topY);
+        ctx.lineTo(rightX, topY - serifSize);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(rightX, bottomY);
+        ctx.lineTo(rightX, bottomY + serifSize);
+        ctx.stroke();
+      }
+    } else {
+      if (flipped) {
+        ctx.moveTo(leftX, topY);
+        ctx.lineTo(leftX, bottomY);
+        ctx.lineTo(rightX, bottomY);
+        ctx.lineTo(rightX, topY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(leftX, topY);
+        ctx.lineTo(leftX - serifSize, topY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(rightX, topY);
+        ctx.lineTo(rightX + serifSize, topY);
+        ctx.stroke();
+      } else {
+        ctx.moveTo(leftX, bottomY);
+        ctx.lineTo(leftX, topY);
+        ctx.lineTo(rightX, topY);
+        ctx.lineTo(rightX, bottomY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(leftX, bottomY);
+        ctx.lineTo(leftX - serifSize, bottomY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(rightX, bottomY);
+        ctx.lineTo(rightX + serifSize, bottomY);
+        ctx.stroke();
+      }
+    }
   }
 
   ctx.restore();
@@ -549,6 +706,16 @@ function drawImageSync(ctx: CanvasRenderingContext2D, imageElement: ImageElement
   const { startPos, endPos } = imageElement;
 
   ctx.save();
+
+  // 回転変換を適用
+  if (imageElement.rotation) {
+    const cx = (startPos.x + endPos.x) / 2;
+    const cy = (startPos.y + endPos.y) / 2;
+    ctx.translate(cx, cy);
+    ctx.rotate(imageElement.rotation);
+    ctx.translate(-cx, -cy);
+  }
+
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 

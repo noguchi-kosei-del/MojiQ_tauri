@@ -634,3 +634,41 @@ MojiQ_3.0/
 - **自動削除**: 1時間以上経過した印刷用一時ファイルを削除
   - `src-tauri/src/commands.rs` - `cleanup_old_temp_files()`関数追加
   - `print_pdf()`コマンド実行時に自動クリーンアップ
+
+### 2026-03-31
+#### 校正記号ツール5種の移植（旧MojiQ ver_2.11より移植）
+- **くの字ツール (chevron)**: ＜形の校正記号、Ctrl押下で∨方向に切替
+- **L字ツール (lshape)**: L字型折れ線、ドラッグ方向で4方向自動判定（└ ┘ ┌ ┐）
+- **Z字ツール (zshape)**: クランク形状（縦→横→縦）、Ctrl押下で横→縦→横に切替
+- **コの字ツール (bracket)**: 全体移動指示の校正記号、セリフ付き、縦横自動判定
+- **半円ツール (semicircle)**: 半円描画、縦横比で方向自動判定
+- 各ツールの描画・プレビュー・ヒットテスト・PDF保存レンダリングを実装
+- `DrawingToolbar`に「校正記号グループ」としてボタン追加
+- `src/types/index.ts` - `ShapeType`に5種追加、`Shape`に`orientation`/`direction`/`flipped`/`rotated`プロパティ追加
+
+#### コピー＆ペースト機能（旧MojiQ ver_2.11より移植）
+- **Ctrl+C**: 選択中オブジェクト（ストローク・図形・テキスト・画像）をコピー
+- **Ctrl+X**: カット（コピー後に削除、貼り付けは1回限り）
+- **Ctrl+V**: 貼り付け（コピー時は20pxオフセット、カット時は元位置）
+- アノテーション・引出線・フォントラベル・折れ線pointsの座標もオフセット適用
+- 貼り付け後に新オブジェクトを自動選択
+- `src/stores/drawingStore.ts` - `copySelected()`/`cutSelected()`/`pasteClipboard()`/`hasClipboard()`追加
+
+#### オブジェクト回転機能（旧MojiQ ver_2.11より移植）
+- **回転ハンドル**: 選択ボックス上辺中央から25px上に緑色の円（半径6px）
+- **自由回転**: ドラッグで`atan2`による角度計算
+- **15°スナップ**: Shift押下で15°単位にスナップ（`Math.round(angle / (π/12)) * (π/12)`）
+- 図形（Shape）・画像（ImageElement）の両方に`rotation`プロパティ追加
+- Canvas描画時に`ctx.translate → ctx.rotate → ctx.translate`変換を適用
+- PDF保存用レンダラー（`drawingRenderer.ts`）にも同じ回転変換を適用
+- Undo/Redo対応（回転終了時に履歴保存）
+
+#### 全選択機能（Ctrl+A）
+- **Ctrl+A**: 現在ページの表示レイヤーの全オブジェクトを一括選択
+- ストローク・図形・テキスト・画像の全IDを収集し統合バウンディングボックスを計算
+- `src/stores/drawingStore.ts` - `selectAll()`関数追加
+
+#### 四分アキスタンプ追加
+- **四分アキスタンプ**: `yonbunakiStamp`（テキストスタンプ「四分アキ」、サイズ14）
+- 引出線対応（ドラッグで引出線付き配置可能）
+- `RightToolbar`・`ProofreadingToolPanel`のスタンプ一覧に追加

@@ -40,7 +40,7 @@ const ZOOM_ANIMATION_DURATION = 300;
 const NAVIGATE_COOLDOWN_MS = 150;
 
 function App() {
-  const { loadDocument, loadDocumentWithAnnotations, loadDocumentWithLinks, loadAllPageImages, undo, redo, pages, currentPage, setCurrentPage, tool, setTool, selectedStrokeIds, selectedTextIds, deleteSelectedStrokes, clearAllDrawings, getDocumentState, restoreDocumentState, activeProofreadingText, clearActiveProofreadingText } = useDrawingStore();
+  const { loadDocument, loadDocumentWithAnnotations, loadDocumentWithLinks, loadAllPageImages, undo, redo, pages, currentPage, setCurrentPage, tool, setTool, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedImageIds, deleteSelectedStrokes, clearAllDrawings, getDocumentState, restoreDocumentState, activeProofreadingText, clearActiveProofreadingText, copySelected, cutSelected, pasteClipboard, hasClipboard, selectAll } = useDrawingStore();
   const {
     activeDocumentId,
     syncFromDrawingStore,
@@ -781,6 +781,32 @@ function App() {
           e.preventDefault();
           redo();
         }
+        // Copy: Ctrl+C
+        else if (e.key === 'c') {
+          if (selectedStrokeIds.length > 0 || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedImageIds.length > 0) {
+            e.preventDefault();
+            copySelected();
+          }
+        }
+        // Cut: Ctrl+X
+        else if (e.key === 'x') {
+          if (selectedStrokeIds.length > 0 || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedImageIds.length > 0) {
+            e.preventDefault();
+            cutSelected();
+          }
+        }
+        // Paste: Ctrl+V
+        else if (e.key === 'v') {
+          if (hasClipboard()) {
+            e.preventDefault();
+            pasteClipboard();
+          }
+        }
+        // Select All: Ctrl+A
+        else if (e.key === 'a') {
+          e.preventDefault();
+          selectAll();
+        }
         // Ctrl+T: コメントテキスト表示/非表示
         else if (e.key === 't') {
           e.preventDefault();
@@ -898,7 +924,7 @@ function App() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [undo, redo, resetZoom, tool, setTool, selectedStrokeIds, selectedTextIds, deleteSelectedStrokes, pages, currentPage, setCurrentPage, isViewerMode, handleEnterViewerMode, handleExitViewerMode, navigatePageInViewerMode, clearAllDrawings, activeDocumentId, getDocumentState, syncFromDrawingStore, closeDocument, getTabInfoList, switchDocument, getDocumentForDrawingStore, restoreDocumentState, isSpreadView, nextSpread, prevSpread, bindingDirection, toggleCommentVisibility, handleSwitchDocument]);
+  }, [undo, redo, resetZoom, tool, setTool, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedImageIds, deleteSelectedStrokes, pages, currentPage, setCurrentPage, isViewerMode, handleEnterViewerMode, handleExitViewerMode, navigatePageInViewerMode, clearAllDrawings, activeDocumentId, getDocumentState, syncFromDrawingStore, closeDocument, getTabInfoList, switchDocument, getDocumentForDrawingStore, restoreDocumentState, isSpreadView, nextSpread, prevSpread, bindingDirection, toggleCommentVisibility, handleSwitchDocument, copySelected, cutSelected, pasteClipboard, hasClipboard, selectAll]);
 
   // ホイールスクロールでページ送り（閲覧モード時）
   useEffect(() => {

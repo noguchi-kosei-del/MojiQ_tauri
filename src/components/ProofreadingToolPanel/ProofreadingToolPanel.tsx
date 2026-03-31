@@ -10,6 +10,7 @@ export type ProofreadingStampType =
   | 'torumama'       // トルママ
   | 'zenkakuaki'     // 全角アキ
   | 'hankakuaki'     // 半角アキ
+  | 'yonbunaki'      // 四分アキ
   | 'kaigyou'        // 改行
   | 'tojiru'         // とじる
   | 'hiraku'         // ひらく
@@ -35,6 +36,7 @@ const stampTypeMapping: Record<ProofreadingStampType, StampType | null> = {
   torumama: 'torumamaStamp',
   zenkakuaki: 'zenkakuakiStamp',
   hankakuaki: 'hankakuakiStamp',
+  yonbunaki: 'yonbunakiStamp',
   kaigyou: 'kaigyouStamp',
   tojiru: 'tojiruStamp',
   hiraku: 'hirakuStamp',
@@ -103,6 +105,7 @@ export const ProofreadingToolPanel: React.FC<ProofreadingToolPanelProps> = ({
     torumama: 'トルママ',
     zenkakuaki: '全角アキ',
     hankakuaki: '半角アキ',
+    yonbunaki: '四分アキ',
     kaigyou: '改行',
     tojiru: 'とじる',
     hiraku: 'ひらく',
@@ -216,7 +219,7 @@ export const ProofreadingToolPanel: React.FC<ProofreadingToolPanelProps> = ({
           <div className="proofreading-section">
             <div className="proofreading-section-label">校正指示ツール</div>
             <div className="proofreading-stamp-grid">
-              {(['toru', 'torutsume', 'torumama', 'zenkakuaki', 'hankakuaki', 'kaigyou', 'tojiru', 'hiraku', 'komoji', 'jikan'] as ProofreadingStampType[]).map((stamp) => {
+              {(['toru', 'torutsume', 'torumama', 'zenkakuaki', 'hankakuaki', 'yonbunaki', 'kaigyou', 'tojiru', 'hiraku', 'komoji', 'jikan'] as ProofreadingStampType[]).map((stamp) => {
                 // 長い名前は2行に分割
                 const labelLines: Record<string, [string, string] | null> = {
                   torutsume: ['トル', 'ツメ'],

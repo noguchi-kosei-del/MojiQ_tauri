@@ -175,12 +175,34 @@ interface DrawingStore extends DrawingState {
   addDoneStampToPage: (pageIndex: number, point: Point) => string | null;
   removeShapeById: (pageIndex: number, shapeId: string) => void;
 
+  // Select all
+  selectAll: () => void;
+
+  // Rotation operations
+  rotateSelected: (rotation: number) => void;
+
+  // Clipboard operations
+  copySelected: () => void;
+  cutSelected: () => void;
+  pasteClipboard: () => void;
+  hasClipboard: () => boolean;
+
   // 校正チェック直接描画用
   activeProofreadingText: string | null;
   proofreadingTextColor: string | null;
   setActiveProofreadingText: (text: string | null, color: string | null) => void;
   clearActiveProofreadingText: () => void;
 }
+
+// クリップボード（モジュールレベル、コピー/カット/ペースト用）
+interface ClipboardData {
+  strokes: Stroke[];
+  shapes: Shape[];
+  texts: TextElement[];
+  images: ImageElement[];
+  isCut: boolean;
+}
+let clipboard: ClipboardData | null = null;
 
 // テキスト測定用のオフスクリーンCanvas（パフォーマンス最適化のためキャッシュ）
 let measureCanvas: HTMLCanvasElement | null = null;
@@ -1009,7 +1031,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
 
     for (const shape of allShapes) {
       const { startPos, endPos, type } = shape;
-      const baseType = type.replace('Annotated', '') as 'rect' | 'ellipse' | 'line' | 'arrow' | 'doubleArrow' | 'polyline';
+      const baseType = type.replace('Annotated', '') as 'rect' | 'ellipse' | 'line' | 'arrow' | 'doubleArrow' | 'polyline' | 'semicircle' | 'chevron' | 'lshape' | 'zshape' | 'bracket';
       const minX = Math.min(startPos.x, endPos.x);
       const maxX = Math.max(startPos.x, endPos.x);
       const minY = Math.min(startPos.y, endPos.y);
@@ -1063,6 +1085,108 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
                 isHit = true;
                 break;
               }
+            }
+          }
+        }
+      } else if (baseType === 'semicircle') {
+        // 半円のヒットテスト（楕円弧の周上）
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        const rx = (maxX - minX) / 2;
+        const ry = (maxY - minY) / 2;
+        if (rx > 0 && ry > 0) {
+          const normalizedX = (point.x - cx) / rx;
+          const normalizedY = (point.y - cy) / ry;
+          const dist = Math.sqrt(normalizedX * normalizedX + normalizedY * normalizedY);
+          const onArc = Math.abs(dist - 1) < tolerance / Math.min(rx, ry);
+          const orientation = shape.orientation || (Math.abs(endPos.y - startPos.y) > Math.abs(endPos.x - startPos.x) ? 'vertical' : 'horizontal');
+          if (onArc) {
+            if (orientation === 'vertical') {
+              isHit = point.x >= cx - tolerance;
+            } else {
+              isHit = point.y <= cy + tolerance;
+            }
+          }
+        }
+      } else if (baseType === 'chevron' || baseType === 'lshape' || baseType === 'zshape' || baseType === 'bracket') {
+        // 線分ベースのヒットテスト（各校正記号の構成線分をチェック）
+        const segments: [Point, Point][] = [];
+        const topY2 = minY, bottomY2 = maxY, leftX2 = minX, rightX2 = maxX;
+
+        if (baseType === 'chevron') {
+          const midY2 = (topY2 + bottomY2) / 2;
+          const midX2 = (leftX2 + rightX2) / 2;
+          const orientation = shape.orientation || 'vertical';
+          if (orientation === 'vertical') {
+            segments.push([{x: rightX2, y: topY2}, {x: leftX2, y: midY2}]);
+            segments.push([{x: leftX2, y: midY2}, {x: rightX2, y: bottomY2}]);
+          } else {
+            segments.push([{x: leftX2, y: topY2}, {x: midX2, y: bottomY2}]);
+            segments.push([{x: midX2, y: bottomY2}, {x: rightX2, y: topY2}]);
+          }
+        } else if (baseType === 'lshape') {
+          const direction = shape.direction ?? 0;
+          if (direction === 0) {
+            segments.push([{x: leftX2, y: bottomY2}, {x: leftX2, y: topY2}]);
+            segments.push([{x: leftX2, y: topY2}, {x: rightX2, y: topY2}]);
+          } else if (direction === 1) {
+            segments.push([{x: rightX2, y: bottomY2}, {x: rightX2, y: topY2}]);
+            segments.push([{x: rightX2, y: topY2}, {x: leftX2, y: topY2}]);
+          } else if (direction === 2) {
+            segments.push([{x: leftX2, y: topY2}, {x: leftX2, y: bottomY2}]);
+            segments.push([{x: leftX2, y: bottomY2}, {x: rightX2, y: bottomY2}]);
+          } else {
+            segments.push([{x: rightX2, y: topY2}, {x: rightX2, y: bottomY2}]);
+            segments.push([{x: rightX2, y: bottomY2}, {x: leftX2, y: bottomY2}]);
+          }
+        } else if (baseType === 'zshape') {
+          const rotated = shape.rotated === true;
+          if (rotated) {
+            const midX2 = startPos.x + (endPos.x - startPos.x) / 2;
+            segments.push([{x: startPos.x, y: startPos.y}, {x: midX2, y: startPos.y}]);
+            segments.push([{x: midX2, y: startPos.y}, {x: midX2, y: endPos.y}]);
+            segments.push([{x: midX2, y: endPos.y}, {x: endPos.x, y: endPos.y}]);
+          } else {
+            const midY2b = startPos.y + (endPos.y - startPos.y) / 2;
+            segments.push([{x: startPos.x, y: startPos.y}, {x: startPos.x, y: midY2b}]);
+            segments.push([{x: startPos.x, y: midY2b}, {x: endPos.x, y: midY2b}]);
+            segments.push([{x: endPos.x, y: midY2b}, {x: endPos.x, y: endPos.y}]);
+          }
+        } else if (baseType === 'bracket') {
+          const orientation = shape.orientation || (Math.abs(endPos.y - startPos.y) > Math.abs(endPos.x - startPos.x) ? 'vertical' : 'horizontal');
+          const flipped = shape.flipped === true;
+          if (orientation === 'vertical') {
+            if (!flipped) {
+              segments.push([{x: leftX2, y: topY2}, {x: rightX2, y: topY2}]);
+              segments.push([{x: rightX2, y: topY2}, {x: rightX2, y: bottomY2}]);
+              segments.push([{x: rightX2, y: bottomY2}, {x: leftX2, y: bottomY2}]);
+            } else {
+              segments.push([{x: rightX2, y: topY2}, {x: leftX2, y: topY2}]);
+              segments.push([{x: leftX2, y: topY2}, {x: leftX2, y: bottomY2}]);
+              segments.push([{x: leftX2, y: bottomY2}, {x: rightX2, y: bottomY2}]);
+            }
+          } else {
+            if (flipped) {
+              segments.push([{x: leftX2, y: topY2}, {x: leftX2, y: bottomY2}]);
+              segments.push([{x: leftX2, y: bottomY2}, {x: rightX2, y: bottomY2}]);
+              segments.push([{x: rightX2, y: bottomY2}, {x: rightX2, y: topY2}]);
+            } else {
+              segments.push([{x: leftX2, y: bottomY2}, {x: leftX2, y: topY2}]);
+              segments.push([{x: leftX2, y: topY2}, {x: rightX2, y: topY2}]);
+              segments.push([{x: rightX2, y: topY2}, {x: rightX2, y: bottomY2}]);
+            }
+          }
+        }
+
+        for (const [p1, p2] of segments) {
+          const segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+          if (segLen > 0) {
+            const t = Math.max(0, Math.min(1, ((point.x - p1.x) * (p2.x - p1.x) + (point.y - p1.y) * (p2.y - p1.y)) / (segLen * segLen)));
+            const projX = p1.x + t * (p2.x - p1.x);
+            const projY = p1.y + t * (p2.y - p1.y);
+            if (Math.hypot(point.x - projX, point.y - projY) < tolerance) {
+              isHit = true;
+              break;
             }
           }
         }
@@ -2423,6 +2547,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       torumamaStamp: 14,
       zenkakuakiStamp: 14,
       hankakuakiStamp: 14,
+      yonbunakiStamp: 14,
       kaigyouStamp: 14,
       tojiruStamp: 14,
       hirakuStamp: 14,
@@ -2533,5 +2658,342 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       activeProofreadingText: null,
       proofreadingTextColor: null,
     });
+  },
+
+  // === Select all ===
+
+  selectAll: () => {
+    const state = get();
+    const currentPageState = state.pages[state.currentPage];
+    if (!currentPageState) return;
+
+    const visibleLayers = currentPageState.layers.filter(l => l.visible);
+    const allStrokeIds: string[] = [];
+    const allShapeIds: string[] = [];
+    const allTextIds: string[] = [];
+    const allImageIds: string[] = [];
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+    for (const layer of visibleLayers) {
+      for (const stroke of layer.strokes) {
+        allStrokeIds.push(stroke.id);
+        for (const p of stroke.points) {
+          minX = Math.min(minX, p.x);
+          minY = Math.min(minY, p.y);
+          maxX = Math.max(maxX, p.x);
+          maxY = Math.max(maxY, p.y);
+        }
+      }
+      for (const shape of layer.shapes) {
+        allShapeIds.push(shape.id);
+        const bounds = state.calculateShapeBounds(shape);
+        if (bounds) {
+          minX = Math.min(minX, bounds.x);
+          minY = Math.min(minY, bounds.y);
+          maxX = Math.max(maxX, bounds.x + bounds.width);
+          maxY = Math.max(maxY, bounds.y + bounds.height);
+        }
+      }
+      for (const text of layer.texts) {
+        allTextIds.push(text.id);
+        const bounds = state.calculateTextBounds(text);
+        minX = Math.min(minX, bounds.x);
+        minY = Math.min(minY, bounds.y);
+        maxX = Math.max(maxX, bounds.x + bounds.width);
+        maxY = Math.max(maxY, bounds.y + bounds.height);
+      }
+      for (const image of layer.images) {
+        allImageIds.push(image.id);
+        minX = Math.min(minX, Math.min(image.startPos.x, image.endPos.x));
+        minY = Math.min(minY, Math.min(image.startPos.y, image.endPos.y));
+        maxX = Math.max(maxX, Math.max(image.startPos.x, image.endPos.x));
+        maxY = Math.max(maxY, Math.max(image.startPos.y, image.endPos.y));
+      }
+    }
+
+    if (allStrokeIds.length === 0 && allShapeIds.length === 0 && allTextIds.length === 0 && allImageIds.length === 0) return;
+
+    const selectionBounds = minX < Infinity
+      ? { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+      : null;
+
+    set({
+      selectedStrokeIds: allStrokeIds,
+      selectedShapeIds: allShapeIds,
+      selectedTextIds: allTextIds,
+      selectedImageIds: allImageIds,
+      selectedAnnotationShapeId: null,
+      selectionBounds,
+    });
+  },
+
+  // === Rotation operations ===
+
+  rotateSelected: (rotation: number) => {
+    const state = get();
+    const currentPageState = state.pages[state.currentPage];
+    if (!currentPageState) return;
+
+    const hasShapes = state.selectedShapeIds.length > 0;
+    const hasImages = state.selectedImageIds.length > 0;
+    if (!hasShapes && !hasImages) return;
+
+    const updatedLayers = currentPageState.layers.map((layer) => ({
+      ...layer,
+      shapes: layer.shapes.map((shape) => {
+        if (state.selectedShapeIds.includes(shape.id)) {
+          return { ...shape, rotation };
+        }
+        return shape;
+      }),
+      images: layer.images.map((image) => {
+        if (state.selectedImageIds.includes(image.id)) {
+          return { ...image, rotation };
+        }
+        return image;
+      }),
+    }));
+
+    const updatedPages = [...state.pages];
+    updatedPages[state.currentPage] = {
+      ...currentPageState,
+      layers: updatedLayers,
+    };
+
+    set({ pages: updatedPages });
+  },
+
+  // === Clipboard operations ===
+
+  copySelected: () => {
+    const state = get();
+    const strokes = state.getSelectedStrokes();
+    const shapes = state.getSelectedShapes();
+    const texts = state.getSelectedTexts();
+    const images = state.getSelectedImages();
+
+    if (strokes.length === 0 && shapes.length === 0 && texts.length === 0 && images.length === 0) return;
+
+    clipboard = {
+      strokes: deepClone(strokes),
+      shapes: deepClone(shapes),
+      texts: deepClone(texts),
+      images: deepClone(images),
+      isCut: false,
+    };
+  },
+
+  cutSelected: () => {
+    const state = get();
+    // まずコピー
+    state.copySelected();
+    if (clipboard) {
+      clipboard.isCut = true;
+    }
+    // 選択中のオブジェクトを削除
+    state.deleteSelectedStrokes();
+  },
+
+  pasteClipboard: () => {
+    if (!clipboard || (clipboard.strokes.length === 0 && clipboard.shapes.length === 0 && clipboard.texts.length === 0 && clipboard.images.length === 0)) return;
+
+    const state = get();
+    const currentPageState = state.pages[state.currentPage];
+    if (!currentPageState) return;
+
+    const offset = clipboard.isCut ? 0 : 20;
+    const newStrokeIds: string[] = [];
+    const newShapeIds: string[] = [];
+    const newTextIds: string[] = [];
+    const newImageIds: string[] = [];
+
+    let updatedLayers = currentPageState.layers;
+
+    // ストロークを貼り付け
+    for (const stroke of clipboard.strokes) {
+      const newId = `stroke-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const newStroke: Stroke = {
+        ...deepClone(stroke),
+        id: newId,
+        layerId: state.currentLayerId,
+        points: stroke.points.map(p => ({ ...p, x: p.x + offset, y: p.y + offset })),
+      };
+      newStrokeIds.push(newId);
+      updatedLayers = updatedLayers.map(layer =>
+        layer.id === state.currentLayerId
+          ? { ...layer, strokes: [...layer.strokes, newStroke] }
+          : layer
+      );
+    }
+
+    // 図形を貼り付け
+    for (const shape of clipboard.shapes) {
+      const newId = `shape-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const newShape: Shape = {
+        ...deepClone(shape),
+        id: newId,
+        layerId: state.currentLayerId,
+        startPos: { x: shape.startPos.x + offset, y: shape.startPos.y + offset },
+        endPos: { x: shape.endPos.x + offset, y: shape.endPos.y + offset },
+      };
+      // 折れ線のpoints
+      if (newShape.points) {
+        newShape.points = newShape.points.map(p => ({ ...p, x: p.x + offset, y: p.y + offset }));
+      }
+      // アノテーション
+      if (newShape.annotation) {
+        newShape.annotation = {
+          ...newShape.annotation,
+          x: newShape.annotation.x + offset,
+          y: newShape.annotation.y + offset,
+          leaderLine: {
+            start: { x: newShape.annotation.leaderLine.start.x + offset, y: newShape.annotation.leaderLine.start.y + offset },
+            end: { x: newShape.annotation.leaderLine.end.x + offset, y: newShape.annotation.leaderLine.end.y + offset },
+          },
+        };
+      }
+      // 引出線
+      if (newShape.leaderLine) {
+        newShape.leaderLine = {
+          start: { x: newShape.leaderLine.start.x + offset, y: newShape.leaderLine.start.y + offset },
+          end: { x: newShape.leaderLine.end.x + offset, y: newShape.leaderLine.end.y + offset },
+        };
+      }
+      // フォントラベル位置
+      if (newShape.fontLabel) {
+        newShape.fontLabel = {
+          ...newShape.fontLabel,
+          textX: newShape.fontLabel.textX + offset,
+          textY: newShape.fontLabel.textY + offset,
+        };
+      }
+      newShapeIds.push(newId);
+      updatedLayers = updatedLayers.map(layer =>
+        layer.id === state.currentLayerId
+          ? { ...layer, shapes: [...layer.shapes, newShape] }
+          : layer
+      );
+    }
+
+    // テキストを貼り付け
+    for (const text of clipboard.texts) {
+      const newId = `text-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const newText: TextElement = {
+        ...deepClone(text),
+        id: newId,
+        layerId: state.currentLayerId,
+        x: text.x + offset,
+        y: text.y + offset,
+      };
+      if (newText.leaderLine) {
+        newText.leaderLine = {
+          start: { x: newText.leaderLine.start.x + offset, y: newText.leaderLine.start.y + offset },
+          end: { x: newText.leaderLine.end.x + offset, y: newText.leaderLine.end.y + offset },
+        };
+      }
+      newTextIds.push(newId);
+      updatedLayers = updatedLayers.map(layer =>
+        layer.id === state.currentLayerId
+          ? { ...layer, texts: [...layer.texts, newText] }
+          : layer
+      );
+    }
+
+    // 画像を貼り付け
+    for (const image of clipboard.images) {
+      const newId = `image-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const newImage: ImageElement = {
+        ...deepClone(image),
+        id: newId,
+        layerId: state.currentLayerId,
+        startPos: { x: image.startPos.x + offset, y: image.startPos.y + offset },
+        endPos: { x: image.endPos.x + offset, y: image.endPos.y + offset },
+      };
+      newImageIds.push(newId);
+      updatedLayers = updatedLayers.map(layer =>
+        layer.id === state.currentLayerId
+          ? { ...layer, images: [...layer.images, newImage] }
+          : layer
+      );
+    }
+
+    // ページを更新
+    const updatedPages = [...state.pages];
+    updatedPages[state.currentPage] = {
+      ...currentPageState,
+      layers: updatedLayers,
+    };
+
+    // 貼り付けたオブジェクトを選択状態にする
+    set({
+      pages: updatedPages,
+      selectedStrokeIds: newStrokeIds,
+      selectedShapeIds: newShapeIds,
+      selectedTextIds: newTextIds,
+      selectedImageIds: newImageIds,
+      selectedAnnotationShapeId: null,
+      selectionBounds: null, // recalculated below
+    });
+
+    // 選択範囲を再計算
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const newState = get();
+    const newPageState = newState.pages[newState.currentPage];
+    if (newPageState) {
+      newPageState.layers.forEach(layer => {
+        layer.strokes.filter(s => newStrokeIds.includes(s.id)).forEach(s => {
+          s.points.forEach(p => {
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x);
+            maxY = Math.max(maxY, p.y);
+          });
+        });
+        layer.shapes.filter(s => newShapeIds.includes(s.id)).forEach(s => {
+          const bounds = newState.calculateShapeBounds(s);
+          if (bounds) {
+            minX = Math.min(minX, bounds.x);
+            minY = Math.min(minY, bounds.y);
+            maxX = Math.max(maxX, bounds.x + bounds.width);
+            maxY = Math.max(maxY, bounds.y + bounds.height);
+          }
+        });
+        layer.texts.filter(t => newTextIds.includes(t.id)).forEach(t => {
+          const bounds = newState.calculateTextBounds(t);
+          minX = Math.min(minX, bounds.x);
+          minY = Math.min(minY, bounds.y);
+          maxX = Math.max(maxX, bounds.x + bounds.width);
+          maxY = Math.max(maxY, bounds.y + bounds.height);
+        });
+        layer.images.filter(img => newImageIds.includes(img.id)).forEach(img => {
+          const bounds = newState.calculateImageBounds(img);
+          minX = Math.min(minX, bounds.x);
+          minY = Math.min(minY, bounds.y);
+          maxX = Math.max(maxX, bounds.x + bounds.width);
+          maxY = Math.max(maxY, bounds.y + bounds.height);
+        });
+      });
+    }
+
+    if (minX !== Infinity) {
+      set({ selectionBounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY } });
+    }
+
+    get().saveToHistory();
+
+    // カット操作の場合はクリップボードをクリア（1回限り）
+    if (clipboard?.isCut) {
+      clipboard = null;
+    }
+  },
+
+  hasClipboard: () => {
+    return clipboard !== null && (
+      clipboard.strokes.length > 0 ||
+      clipboard.shapes.length > 0 ||
+      clipboard.texts.length > 0 ||
+      clipboard.images.length > 0
+    );
   },
 }));

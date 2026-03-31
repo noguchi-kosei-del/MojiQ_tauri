@@ -44,6 +44,11 @@ export const useCanvas = () => {
   const [showImageInput, setShowImageInput] = useState(false);
   const [isDraggingFontLabel, setIsDraggingFontLabel] = useState(false);
   const [selectedFontLabelShapeId, setSelectedFontLabelShapeId] = useState<string | null>(null);
+  // 回転用state
+  const [isRotating, setIsRotating] = useState(false);
+  const rotationCenterRef = useRef<Point | null>(null);
+  const rotationStartAngleRef = useRef<number>(0);
+  const originalRotationRef = useRef<number>(0);
   // labeledRect（小文字指定）用state
   const [labeledRectPhase, setLabeledRectPhase] = useState<0 | 1 | 2>(0); // 0=通常, 1=引出線描画中, 2=枠線描画中
   const [showLabelInputModal, setShowLabelInputModal] = useState(false);
@@ -71,6 +76,7 @@ export const useCanvas = () => {
   const dragStartRef = useRef<Point | null>(null);
   const lastDragPointRef = useRef<Point | null>(null);
   const shapeStartRef = useRef<Point | null>(null);
+  const ctrlKeyRef = useRef(false);
   const currentShapeEndRef = useRef<Point | null>(null);
   const pendingAnnotatedShapeRef = useRef<PendingAnnotatedShape | null>(null);
   const leaderStartRef = useRef<Point | null>(null);
@@ -415,6 +421,7 @@ export const useCanvas = () => {
           torumamaStamp: 'トルママ',
           zenkakuakiStamp: '全角アキ',
           hankakuakiStamp: '半角アキ',
+          yonbunakiStamp: '四分アキ',
           kaigyouStamp: '改行',
           tojiruStamp: 'とじる',
           hirakuStamp: 'ひらく',
@@ -445,10 +452,20 @@ export const useCanvas = () => {
   );
 
   const drawShape = useCallback(
-    (ctx: CanvasRenderingContext2D, shape: Shape | { type: ShapeType; startPos: Point; endPos: Point; color: string; width: number; annotation?: Annotation; points?: Point[]; stampType?: StampType; size?: number }, isSelected = false) => {
+    (ctx: CanvasRenderingContext2D, shape: Shape | { type: ShapeType; startPos: Point; endPos: Point; color: string; width: number; annotation?: Annotation; points?: Point[]; stampType?: StampType; size?: number; rotation?: number }, isSelected = false) => {
       ctx.save();
 
       const { startPos, endPos, type } = shape;
+
+      // 回転変換を適用
+      const rotation = 'rotation' in shape ? shape.rotation : undefined;
+      if (rotation) {
+        const cx = (startPos.x + endPos.x) / 2;
+        const cy = (startPos.y + endPos.y) / 2;
+        ctx.translate(cx, cy);
+        ctx.rotate(rotation);
+        ctx.translate(-cx, -cy);
+      }
 
       // スケーリングされた線幅
       const scaledWidth = shape.width * currentRenderScaleRef.current;
@@ -487,7 +504,7 @@ export const useCanvas = () => {
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
-      const baseType = type.replace('Annotated', '') as 'rect' | 'ellipse' | 'line' | 'arrow' | 'doubleArrow' | 'polyline';
+      const baseType = type.replace('Annotated', '') as 'rect' | 'ellipse' | 'line' | 'arrow' | 'doubleArrow' | 'polyline' | 'semicircle' | 'chevron' | 'lshape' | 'zshape' | 'bracket';
 
       if (baseType === 'rect') {
         const w = endPos.x - startPos.x;
@@ -608,6 +625,169 @@ export const useCanvas = () => {
           // テキスト本体を描画
           ctx.fillStyle = isSelected ? '#0078d4' : shape.color;
           ctx.fillText(label, labelX, labelY);
+        }
+      } else if (baseType === 'semicircle') {
+        // 半円ツール
+        const w = Math.abs(endPos.x - startPos.x);
+        const h = Math.abs(endPos.y - startPos.y);
+        const cx = startPos.x + (endPos.x - startPos.x) / 2;
+        const cy = startPos.y + (endPos.y - startPos.y) / 2;
+        const orientation = 'orientation' in shape && shape.orientation ? shape.orientation : (h > w ? 'vertical' : 'horizontal');
+        if (orientation === 'vertical') {
+          ctx.ellipse(cx, cy, w / 2, h / 2, 0, -0.5 * Math.PI, 0.5 * Math.PI);
+        } else {
+          ctx.ellipse(cx, cy, w / 2, h / 2, 0, Math.PI, 2 * Math.PI);
+        }
+        ctx.stroke();
+      } else if (baseType === 'chevron') {
+        // くの字ツール（＜形 / ∨形）
+        const topY = Math.min(startPos.y, endPos.y);
+        const bottomY = Math.max(startPos.y, endPos.y);
+        const leftX = Math.min(startPos.x, endPos.x);
+        const rightX = Math.max(startPos.x, endPos.x);
+        const midY = (topY + bottomY) / 2;
+        const midX = (leftX + rightX) / 2;
+        const orientation = 'orientation' in shape && shape.orientation ? shape.orientation : 'vertical';
+        if (orientation === 'vertical') {
+          // ＜形（頂点が左）
+          ctx.moveTo(rightX, topY);
+          ctx.lineTo(leftX, midY);
+          ctx.lineTo(rightX, bottomY);
+        } else {
+          // ∨形（頂点が下）
+          ctx.moveTo(leftX, topY);
+          ctx.lineTo(midX, bottomY);
+          ctx.lineTo(rightX, topY);
+        }
+        ctx.stroke();
+      } else if (baseType === 'lshape') {
+        // L字ツール（4方向）
+        const topY = Math.min(startPos.y, endPos.y);
+        const bottomY = Math.max(startPos.y, endPos.y);
+        const leftX = Math.min(startPos.x, endPos.x);
+        const rightX = Math.max(startPos.x, endPos.x);
+        const direction = 'direction' in shape && shape.direction !== undefined ? shape.direction : 0;
+        if (direction === 0) {
+          // 右下ドラッグ: └形
+          ctx.moveTo(leftX, bottomY);
+          ctx.lineTo(leftX, topY);
+          ctx.lineTo(rightX, topY);
+        } else if (direction === 1) {
+          // 左下ドラッグ: ┘形
+          ctx.moveTo(rightX, bottomY);
+          ctx.lineTo(rightX, topY);
+          ctx.lineTo(leftX, topY);
+        } else if (direction === 2) {
+          // 右上ドラッグ: ┌形
+          ctx.moveTo(leftX, topY);
+          ctx.lineTo(leftX, bottomY);
+          ctx.lineTo(rightX, bottomY);
+        } else {
+          // 左上ドラッグ: ┐形
+          ctx.moveTo(rightX, topY);
+          ctx.lineTo(rightX, bottomY);
+          ctx.lineTo(leftX, bottomY);
+        }
+        ctx.stroke();
+      } else if (baseType === 'zshape') {
+        // Z字ツール（クランク形状）
+        const rotated = 'rotated' in shape && shape.rotated === true;
+        if (rotated) {
+          // 横→縦→横
+          const midX = startPos.x + (endPos.x - startPos.x) / 2;
+          ctx.moveTo(startPos.x, startPos.y);
+          ctx.lineTo(midX, startPos.y);
+          ctx.lineTo(midX, endPos.y);
+          ctx.lineTo(endPos.x, endPos.y);
+        } else {
+          // 縦→横→縦
+          const midY = startPos.y + (endPos.y - startPos.y) / 2;
+          ctx.moveTo(startPos.x, startPos.y);
+          ctx.lineTo(startPos.x, midY);
+          ctx.lineTo(endPos.x, midY);
+          ctx.lineTo(endPos.x, endPos.y);
+        }
+        ctx.stroke();
+      } else if (baseType === 'bracket') {
+        // コの字ツール（全体移動指示）
+        const w = Math.abs(endPos.x - startPos.x);
+        const h = Math.abs(endPos.y - startPos.y);
+        const topY = Math.min(startPos.y, endPos.y);
+        const bottomY = Math.max(startPos.y, endPos.y);
+        const leftX = Math.min(startPos.x, endPos.x);
+        const rightX = Math.max(startPos.x, endPos.x);
+        const serifSize = Math.min(w, h) * 0.15;
+        const orientation = 'orientation' in shape && shape.orientation ? shape.orientation : (h > w ? 'vertical' : 'horizontal');
+        const flipped = 'flipped' in shape && shape.flipped === true;
+
+        if (orientation === 'vertical') {
+          if (!flipped) {
+            // ⊐形（開口部が左）
+            ctx.moveTo(leftX, topY);
+            ctx.lineTo(rightX, topY);
+            ctx.lineTo(rightX, bottomY);
+            ctx.lineTo(leftX, bottomY);
+            ctx.stroke();
+            // セリフ
+            ctx.beginPath();
+            ctx.moveTo(leftX, topY);
+            ctx.lineTo(leftX, topY - serifSize);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(leftX, bottomY);
+            ctx.lineTo(leftX, bottomY + serifSize);
+            ctx.stroke();
+          } else {
+            // ⊏形（開口部が右）
+            ctx.moveTo(rightX, topY);
+            ctx.lineTo(leftX, topY);
+            ctx.lineTo(leftX, bottomY);
+            ctx.lineTo(rightX, bottomY);
+            ctx.stroke();
+            // セリフ
+            ctx.beginPath();
+            ctx.moveTo(rightX, topY);
+            ctx.lineTo(rightX, topY - serifSize);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(rightX, bottomY);
+            ctx.lineTo(rightX, bottomY + serifSize);
+            ctx.stroke();
+          }
+        } else {
+          if (flipped) {
+            // ⊔形（開口部が上）
+            ctx.moveTo(leftX, topY);
+            ctx.lineTo(leftX, bottomY);
+            ctx.lineTo(rightX, bottomY);
+            ctx.lineTo(rightX, topY);
+            ctx.stroke();
+            // セリフ
+            ctx.beginPath();
+            ctx.moveTo(leftX, topY);
+            ctx.lineTo(leftX - serifSize, topY);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(rightX, topY);
+            ctx.lineTo(rightX + serifSize, topY);
+            ctx.stroke();
+          } else {
+            // ⊓形（開口部が下）
+            ctx.moveTo(leftX, bottomY);
+            ctx.lineTo(leftX, topY);
+            ctx.lineTo(rightX, topY);
+            ctx.lineTo(rightX, bottomY);
+            ctx.stroke();
+            // セリフ
+            ctx.beginPath();
+            ctx.moveTo(leftX, bottomY);
+            ctx.lineTo(leftX - serifSize, bottomY);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(rightX, bottomY);
+            ctx.lineTo(rightX + serifSize, bottomY);
+            ctx.stroke();
+          }
         }
       }
 
@@ -847,6 +1027,16 @@ export const useCanvas = () => {
       if (!img.complete) return;
 
       ctx.save();
+
+      // 回転変換を適用
+      if (imageElement.rotation) {
+        const cx = (startPos.x + endPos.x) / 2;
+        const cy = (startPos.y + endPos.y) / 2;
+        ctx.translate(cx, cy);
+        ctx.rotate(imageElement.rotation);
+        ctx.translate(-cx, -cy);
+      }
+
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
 
@@ -1033,6 +1223,31 @@ export const useCanvas = () => {
     corners.forEach(corner => {
       ctx.fillRect(corner.x - handleSize / 2, corner.y - handleSize / 2, handleSize, handleSize);
     });
+
+    // 回転ハンドルを描画（上辺中央から25px上）
+    const rotHandleDistance = 25;
+    const rotHandleRadius = 6;
+    const topMidX = x + width / 2;
+    const topMidY = y;
+    const rotHandleX = topMidX;
+    const rotHandleY = topMidY - rotHandleDistance;
+
+    // 接続線
+    ctx.beginPath();
+    ctx.strokeStyle = '#4CAF50';
+    ctx.lineWidth = 1;
+    ctx.moveTo(topMidX, topMidY);
+    ctx.lineTo(rotHandleX, rotHandleY);
+    ctx.stroke();
+
+    // 回転ハンドル（緑色の円）
+    ctx.beginPath();
+    ctx.arc(rotHandleX, rotHandleY, rotHandleRadius, 0, 2 * Math.PI);
+    ctx.fillStyle = '#4CAF50';
+    ctx.fill();
+    ctx.strokeStyle = '#2E7D32';
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }, []);
 
   const clearSelectionCanvas = useCallback(() => {
@@ -1596,6 +1811,36 @@ export const useCanvas = () => {
         };
       }
 
+      // 校正記号ツールのプレビュー用プロパティを計算
+      let previewOrientation: 'vertical' | 'horizontal' | undefined;
+      let previewDirection: 0 | 1 | 2 | 3 | undefined;
+      let previewFlipped: boolean | undefined;
+      let previewRotated: boolean | undefined;
+
+      if (tool === 'semicircle') {
+        const pw = Math.abs(currentShapeEndRef.current.x - shapeStartRef.current.x);
+        const ph = Math.abs(currentShapeEndRef.current.y - shapeStartRef.current.y);
+        previewOrientation = ph > pw ? 'vertical' : 'horizontal';
+      } else if (tool === 'chevron') {
+        previewOrientation = ctrlKeyRef.current ? 'horizontal' : 'vertical';
+      } else if (tool === 'lshape') {
+        const dx = currentShapeEndRef.current.x - shapeStartRef.current.x;
+        const dy = currentShapeEndRef.current.y - shapeStartRef.current.y;
+        if (dx >= 0 && dy >= 0) previewDirection = 0;
+        else if (dx < 0 && dy >= 0) previewDirection = 1;
+        else if (dx >= 0 && dy < 0) previewDirection = 2;
+        else previewDirection = 3;
+      } else if (tool === 'zshape') {
+        previewRotated = ctrlKeyRef.current;
+      } else if (tool === 'bracket') {
+        const pw = Math.abs(currentShapeEndRef.current.x - shapeStartRef.current.x);
+        const ph = Math.abs(currentShapeEndRef.current.y - shapeStartRef.current.y);
+        const dx = currentShapeEndRef.current.x - shapeStartRef.current.x;
+        const dy = currentShapeEndRef.current.y - shapeStartRef.current.y;
+        previewOrientation = ph > pw ? 'vertical' : 'horizontal';
+        previewFlipped = previewOrientation === 'vertical' ? dx < 0 : dy >= 0;
+      }
+
       drawShape(ctx, {
         type: tool as ShapeType,
         startPos: shapeStartRef.current,
@@ -1604,6 +1849,10 @@ export const useCanvas = () => {
         width: strokeWidth,
         fontLabel: previewFontLabel,
         label: tool === 'labeledRect' ? '小' : undefined,
+        orientation: previewOrientation,
+        direction: previewDirection,
+        flipped: previewFlipped,
+        rotated: previewRotated,
       });
     }
 
@@ -1749,6 +1998,7 @@ export const useCanvas = () => {
           torumamaStamp: 14,
           zenkakuakiStamp: 14,
           hankakuakiStamp: 14,
+          yonbunakiStamp: 14,
           kaigyouStamp: 14,
           tojiruStamp: 14,
           hirakuStamp: 14,
@@ -2218,6 +2468,36 @@ export const useCanvas = () => {
           return;
         }
 
+        // 回転ハンドルのヒットテスト
+        if (selectionBounds) {
+          const padding = 5;
+          const bx = selectionBounds.x - padding;
+          const by = selectionBounds.y - padding;
+          const bw = selectionBounds.width + padding * 2;
+          const rotHandleX = bx + bw / 2;
+          const rotHandleY = by - 25;
+          const distToRotHandle = Math.hypot(point.x - rotHandleX, point.y - rotHandleY);
+          if (distToRotHandle <= 9) { // 6px radius + 3px tolerance
+            setIsRotating(true);
+            const cx = selectionBounds.x + selectionBounds.width / 2;
+            const cy = selectionBounds.y + selectionBounds.height / 2;
+            rotationCenterRef.current = { x: cx, y: cy };
+            rotationStartAngleRef.current = Math.atan2(point.y - cy, point.x - cx);
+            // 現在の回転角度を取得
+            const state = useDrawingStore.getState();
+            let currentRotation = 0;
+            if (state.selectedShapeIds.length > 0) {
+              const shapes = state.getSelectedShapes();
+              if (shapes.length > 0) currentRotation = shapes[0].rotation || 0;
+            } else if (state.selectedImageIds.length > 0) {
+              const images = state.getSelectedImages();
+              if (images.length > 0) currentRotation = images[0].rotation || 0;
+            }
+            originalRotationRef.current = currentRotation;
+            return;
+          }
+        }
+
         // Check if clicking on existing selection (strokes, shapes, texts, or images)
         if (selectionBounds && isPointInSelectionBounds(point, selectionBounds)) {
           const state = useDrawingStore.getState();
@@ -2264,7 +2544,7 @@ export const useCanvas = () => {
         pendingTextPosRef.current = point;
         setEditingTextId(null);
         setShowTextModal(true);
-      } else if (tool === 'rect' || tool === 'ellipse' || tool === 'line' || tool === 'arrow' || tool === 'doubleArrow') {
+      } else if (tool === 'rect' || tool === 'ellipse' || tool === 'line' || tool === 'arrow' || tool === 'doubleArrow' || tool === 'semicircle' || tool === 'chevron' || tool === 'lshape' || tool === 'zshape' || tool === 'bracket') {
         // Start drawing shape
         setIsDrawingShape(true);
         shapeStartRef.current = point;
@@ -2333,7 +2613,7 @@ export const useCanvas = () => {
           // 引出線対応スタンプかチェック
           const leaderLineStamps: StampType[] = [
             'toruStamp', 'torutsumeStamp', 'torumamaStamp',
-            'zenkakuakiStamp', 'hankakuakiStamp', 'kaigyouStamp',
+            'zenkakuakiStamp', 'hankakuakiStamp', 'yonbunakiStamp', 'kaigyouStamp',
             'tojiruStamp', 'hirakuStamp'
           ];
           if (leaderLineStamps.includes(currentStampType)) {
@@ -2498,7 +2778,24 @@ export const useCanvas = () => {
           }
         }
 
-        if (isSelecting && selectionStartRef.current) {
+        if (isRotating && rotationCenterRef.current) {
+          // 回転ドラッグ中
+          const cx = rotationCenterRef.current.x;
+          const cy = rotationCenterRef.current.y;
+          const currentAngle = Math.atan2(point.y - cy, point.x - cx);
+          const deltaAngle = currentAngle - rotationStartAngleRef.current;
+          let newRotation = originalRotationRef.current + deltaAngle;
+
+          // Shift押下で15°スナップ
+          if (e.shiftKey) {
+            const snapAngle = Math.PI / 12; // 15°
+            newRotation = Math.round(newRotation / snapAngle) * snapAngle;
+          }
+
+          useDrawingStore.getState().rotateSelected(newRotation);
+          redrawCanvas();
+          return;
+        } else if (isSelecting && selectionStartRef.current) {
           drawSelectionRect(selectionStartRef.current, point);
         } else if (isDraggingText && lastDragPointRef.current) {
           // テキストをドラッグ
@@ -2599,6 +2896,7 @@ export const useCanvas = () => {
         redrawCanvas();
       } else if (isDrawingShape && shapeStartRef.current) {
         // Update shape preview
+        ctrlKeyRef.current = e.ctrlKey;
         // For line/arrow tools, snap to 45-degree angles when Shift is pressed
         if ((tool === 'line' || tool === 'lineAnnotated' || tool === 'arrow' || tool === 'doubleArrow') && e.shiftKey) {
           currentShapeEndRef.current = snapLineEndpoint(shapeStartRef.current, point);
@@ -2631,7 +2929,7 @@ export const useCanvas = () => {
         }
       }
     },
-    [isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, isDrawingStampLeader, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, selectedFontLabelShapeId, isSelecting, annotationState, labeledRectPhase, getPointerPosition, tool, eraseAt, strokeWidth, redrawCanvas, drawSelectionRect, moveSelectedStrokes, moveSelectedShapes, moveSelectedImages, moveSelectedTexts, moveAnnotationOnly, moveLeaderEnd, snapLineEndpoint, getLeaderStartPos, selectAnnotationAtPoint, getAllShapes, updateShape, isCalibrating, isResizingGrid, resizingCorner, isDraggingGrid, isDrawingGrid]
+    [isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, isDrawingStampLeader, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, selectedFontLabelShapeId, isSelecting, isRotating, annotationState, labeledRectPhase, getPointerPosition, tool, eraseAt, strokeWidth, redrawCanvas, drawSelectionRect, moveSelectedStrokes, moveSelectedShapes, moveSelectedImages, moveSelectedTexts, moveAnnotationOnly, moveLeaderEnd, snapLineEndpoint, getLeaderStartPos, selectAnnotationAtPoint, getAllShapes, updateShape, isCalibrating, isResizingGrid, resizingCorner, isDraggingGrid, isDrawingGrid]
   );
 
   const handlePointerUp = useCallback(
@@ -2828,6 +3126,14 @@ export const useCanvas = () => {
           clearSelectionCanvas();
           setIsSelecting(false);
           selectionStartRef.current = null;
+        }
+
+        if (isRotating) {
+          // 回転終了: 履歴に保存
+          const { saveToHistory } = useDrawingStore.getState();
+          saveToHistory();
+          setIsRotating(false);
+          rotationCenterRef.current = null;
         }
 
         if (isDragging) {
@@ -3030,6 +3336,32 @@ export const useCanvas = () => {
             };
           }
 
+          // 校正記号ツールの追加プロパティを計算
+          let shapeOrientation: 'vertical' | 'horizontal' | undefined;
+          let shapeDirection: 0 | 1 | 2 | 3 | undefined;
+          let shapeFlipped: boolean | undefined;
+          let shapeRotated: boolean | undefined;
+
+          if (tool === 'semicircle') {
+            shapeOrientation = h > w ? 'vertical' : 'horizontal';
+          } else if (tool === 'chevron') {
+            shapeOrientation = e.ctrlKey ? 'horizontal' : 'vertical';
+          } else if (tool === 'lshape') {
+            const dx = endPoint.x - startPoint.x;
+            const dy = endPoint.y - startPoint.y;
+            if (dx >= 0 && dy >= 0) shapeDirection = 0;
+            else if (dx < 0 && dy >= 0) shapeDirection = 1;
+            else if (dx >= 0 && dy < 0) shapeDirection = 2;
+            else shapeDirection = 3;
+          } else if (tool === 'zshape') {
+            shapeRotated = e.ctrlKey;
+          } else if (tool === 'bracket') {
+            const dx = endPoint.x - startPoint.x;
+            const dy = endPoint.y - startPoint.y;
+            shapeOrientation = h > w ? 'vertical' : 'horizontal';
+            shapeFlipped = shapeOrientation === 'vertical' ? dx < 0 : dy >= 0;
+          }
+
           // 図形を追加
           const shapeId = `shape-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
           addShape({
@@ -3040,6 +3372,10 @@ export const useCanvas = () => {
             width: strokeWidth,
             fontLabel,
             label: tool === 'labeledRect' ? '小' : undefined,
+            orientation: shapeOrientation,
+            direction: shapeDirection,
+            flipped: shapeFlipped,
+            rotated: shapeRotated,
           });
 
           if (isAnnotated) {
@@ -3092,7 +3428,7 @@ export const useCanvas = () => {
 
       redrawCanvas();
     },
-    [tool, isDrawing, isDrawingShape, isDrawingImage, isDrawingStampLeader, annotationState, labeledRectPhase, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, isSelecting, addStroke, addShape, addImage, addStamp, color, strokeWidth, redrawCanvas, getPointerPosition, selectStrokesInRect, selectStrokeAtPoint, selectShapeAtPoint, selectShapesInRect, clearSelectionCanvas, snapLineEndpoint, getLeaderStartPos, isCalibrating, isResizingGrid, isDrawingGrid, isDraggingGrid]
+    [tool, isDrawing, isDrawingShape, isDrawingImage, isDrawingStampLeader, annotationState, labeledRectPhase, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, isSelecting, isRotating, addStroke, addShape, addImage, addStamp, color, strokeWidth, redrawCanvas, getPointerPosition, selectStrokesInRect, selectStrokeAtPoint, selectShapeAtPoint, selectShapesInRect, clearSelectionCanvas, snapLineEndpoint, getLeaderStartPos, isCalibrating, isResizingGrid, isDrawingGrid, isDraggingGrid]
   );
 
   useEffect(() => {

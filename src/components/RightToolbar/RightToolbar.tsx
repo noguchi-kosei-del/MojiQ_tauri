@@ -416,6 +416,7 @@ export const RightToolbar: React.FC = () => {
                       { id: 'torumama', label: 'トルママ', stamp: 'torumamaStamp' },
                       { id: 'zenkakuaki', label: '全角アキ', stamp: 'zenkakuakiStamp' },
                       { id: 'hankakuaki', label: '半角アキ', stamp: 'hankakuakiStamp' },
+                      { id: 'yonbunaki', label: '四分アキ', stamp: 'yonbunakiStamp' },
                       { id: 'kaigyou', label: '改行', stamp: 'kaigyouStamp' },
                       { id: 'tojiru', label: 'とじる', stamp: 'tojiruStamp' },
                       { id: 'hiraku', label: 'ひらく', stamp: 'hirakuStamp' },
