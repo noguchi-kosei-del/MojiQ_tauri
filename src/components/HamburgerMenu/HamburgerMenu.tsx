@@ -2,6 +2,7 @@ import React, { useCallback, useEffect } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useDrawingStore } from '../../stores/drawingStore';
+import { useDocumentStore } from '../../stores/documentStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { ask } from '@tauri-apps/plugin-dialog';
 import './HamburgerMenu.css';
@@ -93,6 +94,7 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ isOpen, onToggle }
   const { theme, toggleTheme } = useThemeStore();
   const { isFlipped, toggleFlipped } = useWorkspaceStore();
   const { pages, clearDocument } = useDrawingStore();
+  const { tabOrder, closeDocument } = useDocumentStore();
   const { openModal: openSettingsModal } = useSettingsStore();
 
   const handleOpenSettings = useCallback(() => {
@@ -126,11 +128,13 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ isOpen, onToggle }
         kind: 'warning',
       });
       if (confirmed) {
+        // すべてのドキュメントタブを閉じる
+        [...tabOrder].forEach(id => closeDocument(id, true));
         clearDocument();
         onToggle(); // メニューを閉じる
       }
     }
-  }, [pages.length, clearDocument, onToggle]);
+  }, [pages.length, tabOrder, closeDocument, clearDocument, onToggle]);
 
   return (
     <>

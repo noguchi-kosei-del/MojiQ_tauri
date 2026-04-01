@@ -762,3 +762,10 @@ MojiQ_3.0/
   - `src/components/Canvas/DrawingCanvas.css` - 半透明（opacity: 0.35）オーバーレイ、ダークモード対応
   - `src/App.tsx` - Ctrl+Tでテキストレイヤー＋コメントテキスト同時トグル
   - `src/stores/documentStore.ts` - ドキュメント閉じ時にテキストレイヤーキャッシュクリア
+
+#### ホーム画面遷移時のタブリセット修正
+- **バグ**: ハンバーガーメニュー「ホームに戻る」で描画状態はクリアされるが、ドキュメントタブが残り続けていた
+- **原因**: `handleGoHome`が`drawingStore.clearDocument()`のみ呼び出し、`documentStore`のタブを閉じていなかった
+- **修正**: `src/components/HamburgerMenu/HamburgerMenu.tsx`
+  - ホーム画面遷移時に`[...tabOrder].forEach(id => closeDocument(id, true))`で全タブを強制クローズ
+  - PDFリソース解放・キャッシュクリアも正しく実行される
