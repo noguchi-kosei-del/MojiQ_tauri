@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useProofreadingCheckStore } from '../../stores/proofreadingCheckStore';
 import { useThemeStore } from '../../stores/themeStore';
 import { useDrawingStore } from '../../stores/drawingStore';
@@ -17,14 +17,15 @@ const GRADIENT_COLORS = [
   '#ff00ff', '#ff0080',
 ];
 
-// Comment item for PDF annotations
+// Comment item for PDF annotations and MojiQ texts
 interface CommentItem {
   pageIndex: number;  // 0-based page index
   pageDisplay: string;  // Display string like "1P"
   text: string;
-  type: string;
-  x: number;  // PDF注釈のx座標
-  y: number;  // PDF注釈のy座標
+  type: string;  // 'Text', 'FreeText', 'MojiQ', 'Annotation' など
+  source: 'pdf' | 'text' | 'annotation';  // コメントのソース種別
+  x: number;  // 座標
+  y: number;  // 座標
 }
 
 // Parse page string and extract page number
@@ -144,6 +145,7 @@ interface CategoryItemsProps {
   collapsedCategories: Set<string>;
   toggleCategory: (category: string) => void;
   handlePageClick: (pageStr?: string) => void;
+  onContentClick?: (content: string, checkKind?: 'correctness' | 'proposal') => void;
   prefix?: string;
   checkedItems?: Set<string>;
   onToggleCheck?: (itemId: string) => void;
@@ -155,6 +157,7 @@ const CategoryItems: React.FC<CategoryItemsProps> = ({
   collapsedCategories,
   toggleCategory,
   handlePageClick,
+  onContentClick,
   prefix = '',
   checkedItems,
   onToggleCheck,
@@ -228,7 +231,13 @@ const CategoryItems: React.FC<CategoryItemsProps> = ({
                             {formatPage(item.page)}
                           </td>
                           <td className="panel-excerpt">{item.excerpt || ''}</td>
-                          <td className="panel-content">{item.content || ''}</td>
+                          <td
+                            className={`panel-content ${item.content ? 'clickable' : ''}`}
+                            onClick={item.content ? (e) => { e.stopPropagation(); onContentClick?.(item.content!, item.checkKind); } : undefined}
+                            title={item.content ? 'クリックでテキスト描画モード' : undefined}
+                          >
+                            {item.content || ''}
+                          </td>
                           <td className="panel-item-status">
                             {isChecked && <span className="panel-item-checked-label">確認済み</span>}
                           </td>
@@ -258,21 +267,13 @@ export const ProofreadingPanel: React.FC = () => {
     error,
     openModal,
   } = useProofreadingCheckStore();
-  const { pages, setCurrentPage, pdfAnnotations, color, setColor, strokeWidth, setStrokeWidth, tool, setTool, currentStampType, setCurrentStampType, addDoneStampToPage, removeShapeById } = useDrawingStore();
+  const { pages, setCurrentPage, pdfAnnotations, color, setColor, strokeWidth, setStrokeWidth, tool, setTool, currentStampType, setCurrentStampType, addDoneStampToPage, removeShapeById, setActiveProofreadingText } = useDrawingStore();
   const { isProofreadingPanelCollapsed, toggleProofreadingPanel } = useSidebarStore();
-
-  // カラーピッカーref
-  const colorInputRef = useRef<HTMLInputElement>(null);
 
   // カラー選択
   const handleColorSelect = useCallback((newColor: string) => {
     setColor(newColor);
   }, [setColor]);
-
-  // カラーピッカーを開く
-  const handleOpenColorPicker = useCallback(() => {
-    colorInputRef.current?.click();
-  }, []);
 
   // 線の太さ変更（数値入力）
   const handleStrokeWidthChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -330,58 +331,97 @@ export const ProofreadingPanel: React.FC = () => {
   // Check if document is landscape (spread PDF)
   const isLandscape = useMemo(() => isLandscapeDocument(pages), [pages]);
 
-  // Flatten PDF annotations into comment items
+  // ページ表示文字列を計算するヘルパー関数
+  const getPageDisplay = useCallback((pageIndex: number, x: number, pageWidth: number): string => {
+    const pdfPageNum = pageIndex + 1;
+    if (isLandscape && pdfPageNum >= 2) {
+      const [startNombre, endNombre] = pdfPageToNombreRange(pdfPageNum, true);
+      if (pageWidth > 0 && x !== undefined) {
+        if (x < pageWidth / 2) {
+          return `${endNombre}P`;
+        } else {
+          return `${startNombre}P`;
+        }
+      } else {
+        return `${startNombre}-${endNombre}P`;
+      }
+    }
+    return `${pdfPageNum}P`;
+  }, [isLandscape]);
+
+  // Flatten PDF annotations and MojiQ texts into comment items
   const commentItems = useMemo((): CommentItem[] => {
     const items: CommentItem[] = [];
-    if (!pdfAnnotations) return items;
 
-    pdfAnnotations.forEach((pageAnnotations, pageIndex) => {
-      if (!pageAnnotations) return;
-      const pageData = pages[pageIndex];
-      const pageWidth = pageData?.width || 0;
+    // 1. PDF注釈を収集
+    if (pdfAnnotations) {
+      pdfAnnotations.forEach((pageAnnotations, pageIndex) => {
+        if (!pageAnnotations) return;
+        const pageData = pages[pageIndex];
+        const pageWidth = pageData?.width || 0;
 
-      pageAnnotations.forEach(annot => {
-        if (annot.text && annot.text.trim()) {
-          const pdfPageNum = pageIndex + 1; // 1-based PDF page number
-          let pageDisplay: string;
-
-          if (isLandscape && pdfPageNum >= 2) {
-            // Landscape spread: determine which page based on annotation x position
-            // PDF page 2 -> nombre 2-3, page 3 -> nombre 4-5, etc.
-            const [startNombre, endNombre] = pdfPageToNombreRange(pdfPageNum, true);
-
-            // Right-binding: left side = odd nombre (larger), right side = even nombre (smaller)
-            // Note: x < pageWidth/2 means physically LEFT side of the page
-            if (pageWidth > 0 && annot.x !== undefined) {
-              if (annot.x < pageWidth / 2) {
-                // Left side of spread (physically) = odd nombre (larger number)
-                pageDisplay = `${endNombre}P`;
-              } else {
-                // Right side of spread (physically) = even nombre (smaller number)
-                pageDisplay = `${startNombre}P`;
-              }
-            } else {
-              // Position unknown: show range
-              pageDisplay = `${startNombre}-${endNombre}P`;
-            }
-          } else {
-            pageDisplay = `${pdfPageNum}P`;
+        pageAnnotations.forEach(annot => {
+          if (annot.text && annot.text.trim()) {
+            items.push({
+              pageIndex,
+              pageDisplay: getPageDisplay(pageIndex, annot.x, pageWidth),
+              text: annot.text,
+              type: annot.pdfAnnotationSource || 'Text',
+              source: 'pdf',
+              x: annot.x,
+              y: annot.y,
+            });
           }
+        });
+      });
+    }
 
-          items.push({
-            pageIndex,
-            pageDisplay,
-            text: annot.text,
-            type: annot.pdfAnnotationSource || 'Text',
-            x: annot.x,
-            y: annot.y,
-          });
-        }
+    // 2. ユーザー入力のMojiQテキストを収集（PDF注釈由来でないもの）
+    pages.forEach((pageState, pageIndex) => {
+      if (!pageState?.layers) return;
+      const pageWidth = pageState.width || 0;
+
+      pageState.layers.forEach(layer => {
+        // テキスト要素を収集（PDF注釈由来でないもの）
+        layer.texts?.forEach(textEl => {
+          if (!textEl.pdfAnnotationSource && textEl.text && textEl.text.trim()) {
+            items.push({
+              pageIndex,
+              pageDisplay: getPageDisplay(pageIndex, textEl.x, pageWidth),
+              text: textEl.text,
+              type: 'MojiQ',
+              source: 'text',
+              x: textEl.x,
+              y: textEl.y,
+            });
+          }
+        });
+
+        // アノテーション付き図形のテキストを収集
+        layer.shapes?.forEach(shape => {
+          if (shape.annotation && shape.annotation.text && shape.annotation.text.trim()) {
+            items.push({
+              pageIndex,
+              pageDisplay: getPageDisplay(pageIndex, shape.annotation.x, pageWidth),
+              text: shape.annotation.text,
+              type: 'Annotation',
+              source: 'annotation',
+              x: shape.annotation.x,
+              y: shape.annotation.y,
+            });
+          }
+        });
       });
     });
 
+    // ページ順、Y座標順でソート
+    items.sort((a, b) => {
+      if (a.pageIndex !== b.pageIndex) return a.pageIndex - b.pageIndex;
+      return a.y - b.y;
+    });
+
     return items;
-  }, [pdfAnnotations, isLandscape, pages]);
+  }, [pdfAnnotations, pages, getPageDisplay]);
 
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
@@ -437,6 +477,19 @@ export const ProofreadingPanel: React.FC = () => {
   // 正誤・提案のチェック状態
   const [checkedCorrectnessItems, setCheckedCorrectnessItems] = useState<Set<string>>(new Set());
   const [checkedProposalItems, setCheckedProposalItems] = useState<Set<string>>(new Set());
+
+  // PDF/JPEG読み込み時にチェック状態をリセット
+  const pagesLengthRef = useRef(pages.length);
+  useEffect(() => {
+    // ページ数が変わった場合（新しいファイルが読み込まれた）にリセット
+    if (pages.length !== pagesLengthRef.current) {
+      pagesLengthRef.current = pages.length;
+      setCheckedComments(new Set());
+      setCommentDoneStamps(new Map());
+      setCheckedCorrectnessItems(new Set());
+      setCheckedProposalItems(new Set());
+    }
+  }, [pages.length]);
 
   // 正誤・提案のアイテムID一覧を取得（全アイテム数のカウント用）
   const correctnessItemIds = useMemo(() => {
@@ -517,6 +570,48 @@ export const ProofreadingPanel: React.FC = () => {
     });
   }, []);
 
+  // 検索機能
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // タブ切替時に検索をクリア
+  const handleTabChange = useCallback((tab: 'correctness' | 'proposal' | 'comments') => {
+    setCurrentTab(tab);
+    setSearchQuery('');
+  }, [setCurrentTab]);
+
+  // 検索クリア
+  const clearSearch = useCallback(() => {
+    setSearchQuery('');
+    searchInputRef.current?.focus();
+  }, []);
+
+  // 検索フィルタ（正誤/提案）
+  const filterItemsBySearch = useCallback((items: ProofreadingCheckItem[], query: string): ProofreadingCheckItem[] => {
+    if (!query) return items;
+    const lower = query.toLowerCase();
+    return items.filter(item =>
+      (item.content && item.content.toLowerCase().includes(lower)) ||
+      (item.excerpt && item.excerpt.toLowerCase().includes(lower)) ||
+      (item.category && item.category.toLowerCase().includes(lower))
+    );
+  }, []);
+
+  // 検索フィルタ（コメント）
+  const filteredCommentItems = useMemo(() => {
+    if (!searchQuery) return commentItems;
+    const lower = searchQuery.toLowerCase();
+    return commentItems.filter(c => c.text.toLowerCase().includes(lower));
+  }, [commentItems, searchQuery]);
+
+  // 検索結果件数
+  const searchMatchCount = useMemo(() => {
+    if (!searchQuery) return -1;
+    if (currentTab === 'comments') return filteredCommentItems.length;
+    const items = currentTab === 'correctness' ? correctnessItems : proposalItems;
+    return filterItemsBySearch(items, searchQuery).length;
+  }, [searchQuery, currentTab, correctnessItems, proposalItems, filteredCommentItems, filterItemsBySearch]);
+
   // Check if any items have checkKind
   const hasCheckKind = allItems.some(item => item.checkKind);
   // Always show tabs when we have data or comments
@@ -559,6 +654,13 @@ export const ProofreadingPanel: React.FC = () => {
     setCurrentPage(pageNum - 1);
   }, [pages, setCurrentPage]);
 
+  // Handle content click - set proofreading text for direct drawing
+  const handleContentClick = useCallback((content: string, checkKind?: 'correctness' | 'proposal') => {
+    if (!content) return;
+    const textColor = checkKind === 'proposal' ? '#0000ff' : '#ff0000';
+    setActiveProofreadingText(content, textColor);
+  }, [setActiveProofreadingText]);
+
   // Title
   const title = useMemo(() => {
     if (!currentData) return currentFileName || '校正チェック';
@@ -580,9 +682,15 @@ export const ProofreadingPanel: React.FC = () => {
       return <div className="panel-empty-small">コメントがありません</div>;
     }
 
+    const displayComments = searchQuery ? filteredCommentItems : commentItems;
+    if (searchQuery && displayComments.length === 0) {
+      return <div className="panel-empty-small">検索結果がありません</div>;
+    }
+
     return (
       <div className="panel-comments-list">
-        {commentItems.map((comment, index) => {
+        {displayComments.map((comment) => {
+          const index = commentItems.indexOf(comment);
           const isChecked = checkedComments.has(index);
           return (
             <div key={index} className={`panel-comment-item ${isChecked ? 'checked' : ''}`}>
@@ -640,20 +748,25 @@ export const ProofreadingPanel: React.FC = () => {
           collapsedCategories={collapsedCategories}
           toggleCategory={toggleCategory}
           handlePageClick={handlePageClick}
+          onContentClick={handleContentClick}
         />
       );
     }
 
     // Single column layout for correctness or proposal
-    const items = currentTab === 'correctness' ? correctnessItems : proposalItems;
+    const rawItems = currentTab === 'correctness' ? correctnessItems : proposalItems;
+    const items = filterItemsBySearch(rawItems, searchQuery);
     const tabName = currentTab === 'correctness' ? '正誤チェック' : '提案チェック';
     const checkedItems = currentTab === 'correctness' ? checkedCorrectnessItems : checkedProposalItems;
     const onToggleCheck = currentTab === 'correctness' ? toggleCorrectnessCheck : toggleProposalCheck;
     const onToggleCategoryCheck = currentTab === 'correctness' ? toggleCorrectnessCategoryCheck : toggleProposalCategoryCheck;
     const prefix = currentTab === 'correctness' ? 'correctness-' : 'proposal-';
 
-    if (items.length === 0) {
+    if (rawItems.length === 0) {
       return <div className="panel-empty-small">「{tabName}」の項目がありません</div>;
+    }
+    if (searchQuery && items.length === 0) {
+      return <div className="panel-empty-small">検索結果がありません</div>;
     }
 
     return (
@@ -662,6 +775,7 @@ export const ProofreadingPanel: React.FC = () => {
         collapsedCategories={collapsedCategories}
         toggleCategory={toggleCategory}
         handlePageClick={handlePageClick}
+        onContentClick={handleContentClick}
         prefix={prefix}
         checkedItems={checkedItems}
         onToggleCheck={onToggleCheck}
@@ -713,13 +827,13 @@ export const ProofreadingPanel: React.FC = () => {
                     title={presetColor === '#ff0000' ? '赤' : '青'}
                   />
                 ))}
-                <button
+                {/* カスタムカラー表示（グラデーションバーから選択した色を表示） */}
+                <div
                   className={`panel-color-swatch custom-color ${!PRESET_COLORS.includes(color) ? 'active' : ''}`}
                   style={{
                     backgroundColor: !PRESET_COLORS.includes(color) ? color : 'transparent',
                   }}
-                  onClick={handleOpenColorPicker}
-                  title="カスタムカラー"
+                  title="グラデーションバーから選択した色"
                 />
                 {isEyeDropperSupported && (
                   <button
@@ -731,13 +845,6 @@ export const ProofreadingPanel: React.FC = () => {
                   </button>
                 )}
               </div>
-              <input
-                ref={colorInputRef}
-                type="color"
-                value={color}
-                onChange={(e) => handleColorSelect(e.target.value)}
-                style={{ display: 'none' }}
-              />
               {/* グラデーションバー */}
               <div className="panel-color-gradient">
                 {GRADIENT_COLORS.map((gradColor, index) => (
@@ -811,22 +918,22 @@ export const ProofreadingPanel: React.FC = () => {
             {showTabs && (
               <div className="panel-tabs">
                 <button
-                  className={`panel-tab ${currentTab === 'correctness' ? 'active' : ''}`}
-                  onClick={() => setCurrentTab('correctness')}
+                  className={`panel-tab tab-correctness ${currentTab === 'correctness' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('correctness')}
                 >
                   正誤{correctnessItems.length > 0 ? ` (${correctnessItems.length})` : ''}
                   {allCorrectnessChecked && <span className="panel-tab-done">済</span>}
                 </button>
                 <button
-                  className={`panel-tab ${currentTab === 'proposal' ? 'active' : ''}`}
-                  onClick={() => setCurrentTab('proposal')}
+                  className={`panel-tab tab-proposal ${currentTab === 'proposal' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('proposal')}
                 >
                   提案{proposalItems.length > 0 ? ` (${proposalItems.length})` : ''}
                   {allProposalChecked && <span className="panel-tab-done">済</span>}
                 </button>
                 <button
-                  className={`panel-tab ${currentTab === 'comments' ? 'active' : ''}`}
-                  onClick={() => setCurrentTab('comments')}
+                  className={`panel-tab tab-comments ${currentTab === 'comments' ? 'active' : ''}`}
+                  onClick={() => handleTabChange('comments')}
                 >
                   コメント{commentItems.length > 0 ? ` (${commentItems.length})` : ''}
                   {allCommentsChecked && <span className="panel-tab-done">済</span>}
@@ -834,6 +941,31 @@ export const ProofreadingPanel: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Search */}
+          {showTabs && (
+            <div className="panel-search">
+              <input
+                ref={searchInputRef}
+                type="text"
+                className="panel-search-input"
+                placeholder="検索..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') clearSearch(); }}
+              />
+              {searchQuery && (
+                <>
+                  <span className="panel-search-count">{searchMatchCount}件</span>
+                  <button className="panel-search-clear" onClick={clearSearch} title="クリア">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Content */}
           <div className="panel-content">

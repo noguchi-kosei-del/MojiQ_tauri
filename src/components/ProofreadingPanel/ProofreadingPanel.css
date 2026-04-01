@@ -480,6 +480,51 @@
   border-color: var(--accent-color);
 }
 
+/* タブごとの色 - 正誤（赤） */
+.panel-tab.tab-correctness {
+  border-color: rgba(211, 47, 47, 0.3);
+}
+
+.panel-tab.tab-correctness:hover {
+  background: rgba(211, 47, 47, 0.1);
+  border-color: rgba(211, 47, 47, 0.5);
+}
+
+.panel-tab.tab-correctness.active {
+  background: #d32f2f;
+  border-color: #d32f2f;
+}
+
+/* タブごとの色 - 提案（青） */
+.panel-tab.tab-proposal {
+  border-color: rgba(25, 118, 210, 0.3);
+}
+
+.panel-tab.tab-proposal:hover {
+  background: rgba(25, 118, 210, 0.1);
+  border-color: rgba(25, 118, 210, 0.5);
+}
+
+.panel-tab.tab-proposal.active {
+  background: #1976d2;
+  border-color: #1976d2;
+}
+
+/* タブごとの色 - コメント（緑） */
+.panel-tab.tab-comments {
+  border-color: rgba(56, 142, 60, 0.3);
+}
+
+.panel-tab.tab-comments:hover {
+  background: rgba(56, 142, 60, 0.1);
+  border-color: rgba(56, 142, 60, 0.5);
+}
+
+.panel-tab.tab-comments.active {
+  background: #388e3c;
+  border-color: #388e3c;
+}
+
 /* タブの済タグ */
 .panel-tab-done {
   display: inline-flex;
@@ -496,6 +541,60 @@
 
 .panel-tab.active .panel-tab-done {
   background: rgba(255, 255, 255, 0.3);
+}
+
+/* ========================================= */
+/* 検索バー                                  */
+/* ========================================= */
+
+.panel-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.panel-search-input {
+  flex: 1;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+}
+
+.panel-search-input:focus {
+  border-color: #0078d4;
+}
+
+.panel-search-count {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.panel-search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.panel-search-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 /* ========================================= */
@@ -679,6 +778,20 @@
 .proofreading-panel.dark .panel-page.clickable:hover {
   color: #90caf9;
   background: rgba(100, 181, 246, 0.15);
+}
+
+/* content列クリック可能スタイル */
+.panel-content.clickable {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.panel-content.clickable:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.proofreading-panel.dark .panel-content.clickable:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .panel-excerpt {
@@ -946,6 +1059,16 @@
   color: #c62828;
 }
 
+.panel-comment-type.mojiq {
+  background: #f3e5f5;
+  color: #7b1fa2;
+}
+
+.panel-comment-type.annotation {
+  background: #e0f2f1;
+  color: #00695c;
+}
+
 .proofreading-panel.dark .panel-comment-type.text {
   background: #1a2a3d;
   color: #90caf9;
@@ -969,6 +1092,16 @@
 .proofreading-panel.dark .panel-comment-type.strikeout {
   background: #3d2020;
   color: #ef9a9a;
+}
+
+.proofreading-panel.dark .panel-comment-type.mojiq {
+  background: #2d1a30;
+  color: #ce93d8;
+}
+
+.proofreading-panel.dark .panel-comment-type.annotation {
+  background: #1a302d;
+  color: #80cbc4;
 }
 
 .panel-comment-text {

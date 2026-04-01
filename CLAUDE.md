@@ -675,6 +675,17 @@ MojiQ_3.0/
 - `src/App.css` - `@keyframes`定義、`.mode-transition-to-*`クラスで適用
 - `src/App.tsx` - `useEffect`でモード変化を検知、200ms後にクラス除去
 
+#### 校正チェック検索機能（旧MojiQ ver_2.11より移植）
+- **検索バー**: タブと内容エリアの間に配置、プレースホルダー「検索...」
+- **即時フィルタ**: 入力ごとに正誤/提案/コメントの項目をフィルタリング
+  - 正誤・提案タブ: `content`・`excerpt`・`category`フィールドを検索
+  - コメントタブ: コメントテキストを検索
+- **検索結果件数表示**: 入力欄右に「N件」表示
+- **クリアボタン**: ×アイコンで検索をクリア、Escapeキーでも可能
+- **タブ切替時自動クリア**: タブを切り替えると検索欄が自動リセット
+- `src/components/ProofreadingPanel/ProofreadingPanel.tsx` - 検索state・フィルタロジック・UI追加
+- `src/components/ProofreadingPanel/ProofreadingPanel.css` - 検索バーのスタイル
+
 #### 四分アキスタンプ追加
 - **四分アキスタンプ**: `yonbunakiStamp`（テキストスタンプ「四分アキ」、サイズ14）
 - 引出線対応（ドラッグで引出線付き配置可能）
