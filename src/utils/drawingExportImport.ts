@@ -6,13 +6,15 @@
  */
 
 import { PageState, Layer, Stroke, Shape, TextElement, ImageElement, Point, Annotation } from '../types';
+import type { CheckedState } from '../stores/proofreadingCheckStore';
 
 // エクスポートデータ形式（ver_2.08互換）
 export interface MojiQExportData {
-  version: string;  // '1.0', '1.1' など
+  version: string;  // '1.0', '1.1', '1.2' など
   exportedAt: string;
   pageCount: number;
   pageSizes?: Record<string, { width: number; height: number }>;  // v1.1以降
+  checkedState?: CheckedState;  // v1.2以降: 校正チェック済み状態
   data: Record<string, ExportedObject[]>;
 }
 
@@ -59,7 +61,7 @@ export interface ExportedObject {
   width?: number;
 }
 
-const VERSION = '1.1';
+const VERSION = '1.2';
 const FILE_EXTENSION = '.mojiq.json';
 
 /**
@@ -434,7 +436,7 @@ export function validateImportData(data: unknown): { valid: boolean; error?: str
 /**
  * 描画データをエクスポート形式に変換
  */
-export function prepareExportData(pages: PageState[]): MojiQExportData {
+export function prepareExportData(pages: PageState[], checkedState?: CheckedState): MojiQExportData {
   const data: Record<string, ExportedObject[]> = {};
   const pageSizes: Record<string, { width: number; height: number }> = {};
 
@@ -452,13 +454,24 @@ export function prepareExportData(pages: PageState[]): MojiQExportData {
     }
   }
 
-  return {
+  const exportData: MojiQExportData = {
     version: VERSION,
     exportedAt: new Date().toISOString(),
     pageCount: Object.keys(data).length,
     pageSizes,
     data,
   };
+
+  // チェック済み状態があれば含める
+  if (checkedState && (
+    checkedState.checkedComments.length > 0 ||
+    checkedState.checkedCorrectnessItems.length > 0 ||
+    checkedState.checkedProposalItems.length > 0
+  )) {
+    exportData.checkedState = checkedState;
+  }
+
+  return exportData;
 }
 
 /**

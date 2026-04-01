@@ -23,6 +23,26 @@ export const PDF_LIMITS = {
   SINGLE_PAGE_SIZE_LIMIT: 100 * 1024 * 1024,
 } as const;
 
+/** オブジェクト制限（1ページあたり） */
+export const OBJECT_LIMITS = {
+  /** 1ページあたりの最大オブジェクト数 */
+  MAX_PER_PAGE: 5000,
+  /** 警告を出すオブジェクト数 */
+  WARNING_PER_PAGE: 3000,
+} as const;
+
+/** ストローク制限 */
+export const STROKE_LIMITS = {
+  /** 1ストロークあたりの最大ポイント数 */
+  MAX_POINTS: 50000,
+} as const;
+
+/** テキスト制限 */
+export const TEXT_LIMITS = {
+  /** 最大文字数 */
+  MAX_LENGTH: 50000,
+} as const;
+
 /** キャッシュ設定 */
 export const CACHE_LIMITS = {
   /** 最小キャッシュサイズ（ページ数） */

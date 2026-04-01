@@ -425,8 +425,20 @@ export const ProofreadingPanel: React.FC = () => {
 
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
-  // チェック済みコメントの状態管理（校正チェックコメント用）
-  const [checkedComments, setCheckedComments] = useState<Set<number>>(new Set());
+  // チェック済み状態はストアで管理（永続化対象）
+  const {
+    checkedComments,
+    checkedCorrectnessItems,
+    checkedProposalItems,
+    toggleCheckedComment,
+    toggleCheckedCorrectnessItem,
+    toggleCheckedProposalItem,
+    toggleCheckedCorrectnessCategory,
+    toggleCheckedProposalCategory,
+    resetCheckedState,
+  } = useProofreadingCheckStore();
+
+  // コメント済スタンプの対応表（ローカル管理: スタンプIDはセッション固有のため）
   const [commentDoneStamps, setCommentDoneStamps] = useState<Map<number, { pageIndex: number; stampId: string }>>(new Map());
 
   // チェックボックス変更ハンドラー
@@ -434,7 +446,9 @@ export const ProofreadingPanel: React.FC = () => {
     const comment = commentItems[commentIndex];
     if (!comment) return;
 
-    if (checkedComments.has(commentIndex)) {
+    const isNowChecked = toggleCheckedComment(commentIndex);
+
+    if (!isNowChecked) {
       // チェック解除 → スタンプ削除
       const stampInfo = commentDoneStamps.get(commentIndex);
       if (stampInfo) {
@@ -445,11 +459,6 @@ export const ProofreadingPanel: React.FC = () => {
           return next;
         });
       }
-      setCheckedComments(prev => {
-        const next = new Set(prev);
-        next.delete(commentIndex);
-        return next;
-      });
     } else {
       // チェック → スタンプ追加
       const stampId = addDoneStampToPage(comment.pageIndex, { x: comment.x, y: comment.y });
@@ -460,13 +469,8 @@ export const ProofreadingPanel: React.FC = () => {
           return next;
         });
       }
-      setCheckedComments(prev => {
-        const next = new Set(prev);
-        next.add(commentIndex);
-        return next;
-      });
     }
-  }, [commentItems, checkedComments, commentDoneStamps, addDoneStampToPage, removeShapeById]);
+  }, [commentItems, commentDoneStamps, toggleCheckedComment, addDoneStampToPage, removeShapeById]);
 
   // Separate items by checkKind
   const correctnessItems = useMemo(() =>
@@ -474,22 +478,16 @@ export const ProofreadingPanel: React.FC = () => {
   const proposalItems = useMemo(() =>
     allItems.filter(item => item.checkKind === 'proposal'), [allItems]);
 
-  // 正誤・提案のチェック状態
-  const [checkedCorrectnessItems, setCheckedCorrectnessItems] = useState<Set<string>>(new Set());
-  const [checkedProposalItems, setCheckedProposalItems] = useState<Set<string>>(new Set());
-
   // PDF/JPEG読み込み時にチェック状態をリセット
   const pagesLengthRef = useRef(pages.length);
   useEffect(() => {
     // ページ数が変わった場合（新しいファイルが読み込まれた）にリセット
     if (pages.length !== pagesLengthRef.current) {
       pagesLengthRef.current = pages.length;
-      setCheckedComments(new Set());
+      resetCheckedState();
       setCommentDoneStamps(new Map());
-      setCheckedCorrectnessItems(new Set());
-      setCheckedProposalItems(new Set());
     }
-  }, [pages.length]);
+  }, [pages.length, resetCheckedState]);
 
   // 正誤・提案のアイテムID一覧を取得（全アイテム数のカウント用）
   const correctnessItemIds = useMemo(() => {
@@ -516,59 +514,23 @@ export const ProofreadingPanel: React.FC = () => {
 
   // 正誤チェックボックス変更ハンドラー
   const toggleCorrectnessCheck = useCallback((itemId: string) => {
-    setCheckedCorrectnessItems(prev => {
-      const next = new Set(prev);
-      if (next.has(itemId)) {
-        next.delete(itemId);
-      } else {
-        next.add(itemId);
-      }
-      return next;
-    });
-  }, []);
+    toggleCheckedCorrectnessItem(itemId);
+  }, [toggleCheckedCorrectnessItem]);
 
   // 提案チェックボックス変更ハンドラー
   const toggleProposalCheck = useCallback((itemId: string) => {
-    setCheckedProposalItems(prev => {
-      const next = new Set(prev);
-      if (next.has(itemId)) {
-        next.delete(itemId);
-      } else {
-        next.add(itemId);
-      }
-      return next;
-    });
-  }, []);
+    toggleCheckedProposalItem(itemId);
+  }, [toggleCheckedProposalItem]);
 
   // 正誤カテゴリ全体チェックハンドラー
   const toggleCorrectnessCategoryCheck = useCallback((itemIds: string[], checked: boolean) => {
-    setCheckedCorrectnessItems(prev => {
-      const next = new Set(prev);
-      itemIds.forEach(id => {
-        if (checked) {
-          next.add(id);
-        } else {
-          next.delete(id);
-        }
-      });
-      return next;
-    });
-  }, []);
+    toggleCheckedCorrectnessCategory(itemIds, checked);
+  }, [toggleCheckedCorrectnessCategory]);
 
   // 提案カテゴリ全体チェックハンドラー
   const toggleProposalCategoryCheck = useCallback((itemIds: string[], checked: boolean) => {
-    setCheckedProposalItems(prev => {
-      const next = new Set(prev);
-      itemIds.forEach(id => {
-        if (checked) {
-          next.add(id);
-        } else {
-          next.delete(id);
-        }
-      });
-      return next;
-    });
-  }, []);
+    toggleCheckedProposalCategory(itemIds, checked);
+  }, [toggleCheckedProposalCategory]);
 
   // 検索機能
   const [searchQuery, setSearchQuery] = useState('');

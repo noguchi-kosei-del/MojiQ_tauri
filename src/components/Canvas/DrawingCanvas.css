@@ -73,6 +73,22 @@
   background-color: #ffffff;
 }
 
+.background-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.background-white {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
 .drawing-canvas {
   position: absolute;
   top: 0;
@@ -85,6 +101,30 @@
   top: 0;
   left: 0;
   pointer-events: none;
+}
+
+/* PDFテキストレイヤーオーバーレイ */
+.pdf-text-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+  opacity: 0.35;
+}
+
+.pdf-text-layer span {
+  position: absolute;
+  white-space: pre;
+  color: #000000;
+  line-height: 1;
+  transform-origin: left top;
+}
+
+/* ダークモード */
+:root[data-theme="dark"] .pdf-text-layer span {
+  color: #e0e0e0;
 }
 
 .canvas-placeholder {

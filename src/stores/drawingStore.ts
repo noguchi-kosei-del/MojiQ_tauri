@@ -3,6 +3,7 @@ import { DrawingState, PageState, Layer, Stroke, Shape, Point, ToolType, Selecti
 import { renderPdfPage } from '../utils/pdfRenderer';
 import { imageCache } from '../utils/imageCache';
 import { useDisplayScaleStore } from './displayScaleStore';
+import { OBJECT_LIMITS } from '../constants/loadingLimits';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
 /**
@@ -11,6 +12,29 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
  * 将来的にimmerの完全導入を検討する場合は、zustand/middleware/immerを使用
  */
 const deepClone = <T>(obj: T): T => structuredClone(obj);
+
+/**
+ * ページ内の総オブジェクト数を取得（ストローク + 図形 + テキスト + 画像）
+ */
+const countPageObjects = (pageState: PageState): number => {
+  return pageState.layers.reduce((total, layer) => {
+    return total + layer.strokes.length + layer.shapes.length + layer.texts.length + layer.images.length;
+  }, 0);
+};
+
+/**
+ * オブジェクト数制限チェック。上限に達していたらアラートを出してtrueを返す
+ */
+const isPageObjectLimitReached = (pageState: PageState): boolean => {
+  const count = countPageObjects(pageState);
+  if (count >= OBJECT_LIMITS.MAX_PER_PAGE) {
+    setTimeout(() => {
+      alert(`このページの描画オブジェクト数が上限(${OBJECT_LIMITS.MAX_PER_PAGE})に達しました。\n新しいオブジェクトを追加するには、不要なオブジェクトを削除してください。`);
+    }, 0);
+    return true;
+  }
+  return false;
+};
 
 const createDefaultLayer = (): Layer => ({
   id: `layer-${Date.now()}`,
@@ -707,6 +731,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     const state = get();
     const currentPageState = state.pages[state.currentPage];
     if (!currentPageState) return;
+    if (isPageObjectLimitReached(currentPageState)) return;
 
     const newStroke: Stroke = {
       ...strokeData,
@@ -734,6 +759,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     const state = get();
     const currentPageState = state.pages[state.currentPage];
     if (!currentPageState) return;
+    if (isPageObjectLimitReached(currentPageState)) return;
 
     const newShape: Shape = {
       ...shapeData,
@@ -1919,6 +1945,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     const state = get();
     const currentPageState = state.pages[state.currentPage];
     if (!currentPageState) return;
+    if (isPageObjectLimitReached(currentPageState)) return;
 
     const newText: TextElement = {
       ...textData,
@@ -2288,6 +2315,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     const state = get();
     const currentPageState = state.pages[state.currentPage];
     if (!currentPageState) return;
+    if (isPageObjectLimitReached(currentPageState)) return;
 
     const currentLayer = currentPageState.layers.find((l) => l.id === state.currentLayerId);
     if (!currentLayer) return;
@@ -2537,6 +2565,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     const state = get();
     const currentPageState = state.pages[state.currentPage];
     if (!currentPageState || !state.currentStampType) return;
+    if (isPageObjectLimitReached(currentPageState)) return;
 
     // スタンプのデフォルトサイズ
     const defaultSizes: Record<StampType, number> = {

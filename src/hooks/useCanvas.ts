@@ -7,6 +7,8 @@ import { backgroundImageCache } from '../utils/backgroundImageCache';
 import { useCalibrationStore, MM_PER_PT } from '../stores/calibrationStore';
 import { useGridStore } from '../stores/gridStore';
 import { useDisplayScaleStore } from '../stores/displayScaleStore';
+import { getVisibleViewport, isStrokeVisible, isShapeVisible, isTextVisible, isImageVisible, ViewportRect } from '../utils/viewportCulling';
+import { STROKE_LIMITS } from '../constants/loadingLimits';
 
 // アノテーションモード: 0=通常, 1=図形描画中, 2=引出線描画中
 type AnnotationState = 0 | 1 | 2;
@@ -23,6 +25,8 @@ export const useCanvas = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const backgroundCanvasRef = useRef<HTMLCanvasElement>(null);
   const selectionCanvasRef = useRef<HTMLCanvasElement>(null);
+  // ビューポートカリング用: DrawingCanvasからセットされるスクロール領域ref
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isDraggingShape, setIsDraggingShape] = useState(false);
@@ -1691,18 +1695,27 @@ export const useCanvas = () => {
     const renderScale = displayScale > 0 ? 1 / displayScale : 1;
     currentRenderScaleRef.current = renderScale;
 
+    // ビューポートカリング: 画面外オブジェクトの描画をスキップ
+    let viewport: ViewportRect | null = null;
+    if (scrollAreaRef.current) {
+      viewport = getVisibleViewport(scrollAreaRef.current, displayScale);
+    }
+
+    const state = useDrawingStore.getState();
+
     // Draw strokes
     const strokes = getAllStrokes();
     strokes.forEach((stroke) => {
       const isSelected = selectedStrokeIds.includes(stroke.id);
+      if (!isSelected && viewport && !isStrokeVisible(stroke, viewport)) return;
       drawStroke(ctx, stroke, isSelected);
     });
 
     // Draw shapes
     const shapes = getAllShapes();
-    const state = useDrawingStore.getState();
     shapes.forEach((shape) => {
       const isSelected = state.selectedShapeIds.includes(shape.id);
+      if (!isSelected && viewport && !isShapeVisible(shape, viewport)) return;
       drawShape(ctx, shape, isSelected);
     });
 
@@ -1710,6 +1723,7 @@ export const useCanvas = () => {
     const texts = getAllTexts();
     texts.forEach((textElement) => {
       const isSelected = state.selectedTextIds.includes(textElement.id);
+      if (!isSelected && viewport && !isTextVisible(textElement, viewport)) return;
       drawText(ctx, textElement, isSelected);
     });
 
@@ -1717,6 +1731,7 @@ export const useCanvas = () => {
     const images = getLocalAllImages();
     images.forEach((imageElement) => {
       const isSelected = state.selectedImageIds.includes(imageElement.id);
+      if (!isSelected && viewport && !isImageVisible(imageElement, viewport)) return;
       drawImage(ctx, imageElement, isSelected);
     });
 
@@ -2924,6 +2939,23 @@ export const useCanvas = () => {
           eraseAt(point, strokeWidth * 2);
           redrawCanvas();
         } else {
+          // ストロークポイント数制限チェック — 上限に達したらストロークを自動終了
+          if (currentStrokeRef.current.length >= STROKE_LIMITS.MAX_POINTS) {
+            console.warn('[MojiQ] ストロークポイント数が上限に達しました。自動終了します。');
+            setIsDrawing(false);
+            if (currentStrokeRef.current.length > 1) {
+              addStroke({
+                points: [...currentStrokeRef.current],
+                color,
+                width: strokeWidth,
+                isMarker: tool === 'marker',
+                opacity: tool === 'marker' ? 0.3 : undefined,
+              });
+            }
+            currentStrokeRef.current = [];
+            redrawCanvas();
+            return;
+          }
           currentStrokeRef.current.push(point);
           redrawCanvas();
         }
@@ -3701,6 +3733,7 @@ export const useCanvas = () => {
     canvasRef,
     backgroundCanvasRef,
     selectionCanvasRef,
+    scrollAreaRef,
     redrawCanvas,
     drawBackground,
     drawBackgroundFromCache,

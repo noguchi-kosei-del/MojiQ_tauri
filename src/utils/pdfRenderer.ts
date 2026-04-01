@@ -334,6 +334,68 @@ export async function renderPdfPage(
   return imageData;
 }
 
+/**
+ * PDFページからテキストコンテンツを抽出（テキストレイヤー表示用）
+ * PDF.js の getTextContent() API を使用して元テキストの位置・サイズ情報を取得
+ */
+export async function extractPdfTextContent(
+  pdfDocument: pdfjsLib.PDFDocumentProxy,
+  pageIndex: number // 0-indexed
+): Promise<Array<{
+  str: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontName: string;
+  fontSize: number;
+  angle: number;
+}>> {
+  const page = await pdfDocument.getPage(pageIndex + 1);
+  const viewport = page.getViewport({ scale: RENDER_SCALE });
+  const textContent = await page.getTextContent();
+
+  const items: Array<{
+    str: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    fontName: string;
+    fontSize: number;
+    angle: number;
+  }> = [];
+
+  for (const item of textContent.items) {
+    // TextItem のみ処理（TextMarkedContent はスキップ）
+    if (!('str' in item) || !item.str.trim()) continue;
+
+    const tx = item.transform;
+    // transform: [scaleX, skewY, skewX, scaleY, translateX, translateY]
+    const fontSize = Math.abs(tx[3]) * RENDER_SCALE;
+    const angle = Math.atan2(tx[1], tx[0]);
+
+    // PDF座標（左下原点）→ キャンバス座標（左上原点）に変換
+    const x = tx[4] * (viewport.width / (viewport.width / RENDER_SCALE));
+    const y = viewport.height - tx[5] * (viewport.height / (viewport.height / RENDER_SCALE)) - fontSize;
+    const width = item.width * RENDER_SCALE;
+    const height = fontSize * 1.2;
+
+    items.push({
+      str: item.str,
+      x,
+      y,
+      width: width > 0 ? width : fontSize * item.str.length * 0.6,
+      height,
+      fontName: item.fontName || '',
+      fontSize,
+      angle,
+    });
+  }
+
+  return items;
+}
+
 // 後方互換性のため、従来の関数も残す
 export async function renderPdfToImages(
   pdfBase64: string,

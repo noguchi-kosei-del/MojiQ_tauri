@@ -308,6 +308,65 @@ pub async fn load_files(paths: Vec<String>) -> Result<LoadedDocument, String> {
     })
 }
 
+/// ディスク容量チェック（保存前確認）
+/// 旧MojiQ ver_2.11 の electron/main.js より移植
+#[derive(Debug, Serialize)]
+pub struct DiskSpaceResult {
+    pub free_space: u64,
+    pub is_enough: bool,
+}
+
+#[tauri::command]
+pub async fn check_disk_space(file_path: String, required_bytes: u64) -> Result<DiskSpaceResult, String> {
+    let path = Path::new(&file_path);
+
+    // ドライブのルートを取得
+    // 保存先のパスからルート(例: "C:\")を取り出す
+    let root = {
+        let mut ancestors = path.ancestors();
+        let mut last = path;
+        while let Some(p) = ancestors.next() {
+            if p.parent().is_none() || p == Path::new("") {
+                break;
+            }
+            last = p;
+        }
+        last.to_path_buf()
+    };
+
+    // Windows: wmicコマンドでディスク空き容量を取得
+    if cfg!(target_os = "windows") {
+        let drive_str = root.to_string_lossy();
+        // ドライブレターを抽出 (例: "C:" → "C")
+        let drive_letter = drive_str.chars().next().unwrap_or('C');
+        if !drive_letter.is_ascii_alphabetic() {
+            // 無効なドライブレター: チェックをスキップ（保存を許可）
+            return Ok(DiskSpaceResult { free_space: u64::MAX, is_enough: true });
+        }
+
+        let output = std::process::Command::new("wmic")
+            .args(["logicaldisk", "where", &format!("DeviceID='{drive_letter}:'"), "get", "FreeSpace"])
+            .output()
+            .map_err(|e| format!("wmicコマンド実行失敗: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let lines: Vec<&str> = stdout.trim().lines().collect();
+        if lines.len() >= 2 {
+            if let Ok(free_space) = lines[1].trim().parse::<u64>() {
+                // 必要容量の1.5倍のマージンを確保
+                let required_with_margin = required_bytes + required_bytes / 2;
+                return Ok(DiskSpaceResult {
+                    free_space,
+                    is_enough: free_space > required_with_margin,
+                });
+            }
+        }
+    }
+
+    // 非Windows環境またはコマンド失敗時はチェックをスキップ（保存を許可）
+    Ok(DiskSpaceResult { free_space: u64::MAX, is_enough: true })
+}
+
 #[tauri::command]
 pub async fn save_pdf(
     save_path: String,

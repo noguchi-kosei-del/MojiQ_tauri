@@ -3,6 +3,13 @@ import { ProofreadingCheckData, ProofreadingCheckItem } from '../types';
 
 export type ProofreadingTabType = 'comments' | 'correctness' | 'proposal';
 
+/** チェック済み状態（永続化対象） */
+export interface CheckedState {
+  checkedComments: number[];           // チェック済みコメントインデックス
+  checkedCorrectnessItems: string[];   // チェック済み正誤アイテムID
+  checkedProposalItems: string[];      // チェック済み提案アイテムID
+}
+
 interface ProofreadingCheckState {
   // Modal state
   isModalOpen: boolean;
@@ -17,6 +24,11 @@ interface ProofreadingCheckState {
   currentFileName: string;
   allItems: ProofreadingCheckItem[];
   currentTab: ProofreadingTabType;
+
+  // チェック済み状態（永続化対象）
+  checkedComments: Set<number>;
+  checkedCorrectnessItems: Set<string>;
+  checkedProposalItems: Set<string>;
 
   // Loading state
   isLoading: boolean;
@@ -39,6 +51,16 @@ interface ProofreadingCheckActions {
   setCurrentTab: (tab: ProofreadingTabType) => void;
   clearData: () => void;
 
+  // チェック済み状態の操作
+  toggleCheckedComment: (index: number) => boolean; // returns new checked state
+  toggleCheckedCorrectnessItem: (itemId: string) => void;
+  toggleCheckedProposalItem: (itemId: string) => void;
+  toggleCheckedCorrectnessCategory: (itemIds: string[], checked: boolean) => void;
+  toggleCheckedProposalCategory: (itemIds: string[], checked: boolean) => void;
+  resetCheckedState: () => void;
+  getCheckedState: () => CheckedState;
+  restoreCheckedState: (state: CheckedState) => void;
+
   // Loading state
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -60,6 +82,9 @@ export const useProofreadingCheckStore = create<ProofreadingCheckState & Proofre
     currentFileName: '',
     allItems: [],
     currentTab: 'correctness',
+    checkedComments: new Set(),
+    checkedCorrectnessItems: new Set(),
+    checkedProposalItems: new Set(),
     isLoading: false,
     error: null,
 
@@ -151,6 +176,77 @@ export const useProofreadingCheckStore = create<ProofreadingCheckState & Proofre
       currentFileName: '',
       allItems: [],
       currentTab: 'correctness',
+    }),
+
+    // チェック済み状態の操作
+    toggleCheckedComment: (index) => {
+      const { checkedComments } = get();
+      const next = new Set(checkedComments);
+      const isNowChecked = !next.has(index);
+      if (isNowChecked) {
+        next.add(index);
+      } else {
+        next.delete(index);
+      }
+      set({ checkedComments: next });
+      return isNowChecked;
+    },
+
+    toggleCheckedCorrectnessItem: (itemId) => {
+      const { checkedCorrectnessItems } = get();
+      const next = new Set(checkedCorrectnessItems);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      set({ checkedCorrectnessItems: next });
+    },
+
+    toggleCheckedProposalItem: (itemId) => {
+      const { checkedProposalItems } = get();
+      const next = new Set(checkedProposalItems);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      set({ checkedProposalItems: next });
+    },
+
+    toggleCheckedCorrectnessCategory: (itemIds, checked) => {
+      const { checkedCorrectnessItems } = get();
+      const next = new Set(checkedCorrectnessItems);
+      itemIds.forEach(id => { if (checked) next.add(id); else next.delete(id); });
+      set({ checkedCorrectnessItems: next });
+    },
+
+    toggleCheckedProposalCategory: (itemIds, checked) => {
+      const { checkedProposalItems } = get();
+      const next = new Set(checkedProposalItems);
+      itemIds.forEach(id => { if (checked) next.add(id); else next.delete(id); });
+      set({ checkedProposalItems: next });
+    },
+
+    resetCheckedState: () => set({
+      checkedComments: new Set(),
+      checkedCorrectnessItems: new Set(),
+      checkedProposalItems: new Set(),
+    }),
+
+    getCheckedState: () => {
+      const { checkedComments, checkedCorrectnessItems, checkedProposalItems } = get();
+      return {
+        checkedComments: Array.from(checkedComments),
+        checkedCorrectnessItems: Array.from(checkedCorrectnessItems),
+        checkedProposalItems: Array.from(checkedProposalItems),
+      };
+    },
+
+    restoreCheckedState: (state) => set({
+      checkedComments: new Set(state.checkedComments),
+      checkedCorrectnessItems: new Set(state.checkedCorrectnessItems),
+      checkedProposalItems: new Set(state.checkedProposalItems),
     }),
 
     setLoading: (loading) => set({ isLoading: loading }),

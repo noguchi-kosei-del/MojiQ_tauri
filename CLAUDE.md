@@ -690,3 +690,75 @@ MojiQ_3.0/
 - **四分アキスタンプ**: `yonbunakiStamp`（テキストスタンプ「四分アキ」、サイズ14）
 - 引出線対応（ドラッグで引出線付き配置可能）
 - `RightToolbar`・`ProofreadingToolPanel`のスタンプ一覧に追加
+
+### 2026-04-01
+#### ビューポートカリング（旧MojiQ ver_2.11より移植）
+- **画面外オブジェクトの描画スキップ**: パフォーマンス最適化
+  - `src/utils/viewportCulling.ts` - カリングユーティリティ新規作成
+  - `getVisibleViewport()` - スクロール領域からキャンバス座標系のビューポート矩形を計算
+  - `isStrokeVisible()` / `isShapeVisible()` / `isTextVisible()` / `isImageVisible()` - バウンディングボックス判定
+  - ビューポート外マージン: 100px（部分表示対応）
+  - 選択中オブジェクトは常に描画（UIインタラクション維持）
+- `src/hooks/useCanvas.ts` - `redrawCanvas`内でカリング判定を追加、`scrollAreaRef`追加
+- `src/components/Canvas/DrawingCanvas.tsx` - スクロール時に`requestAnimationFrame`で再描画
+
+#### オブジェクト数/ストロークポイント制限（旧MojiQ ver_2.11より移植）
+- **メモリ保護**: ページあたり最大オブジェクト数・ストロークポイント数を制限
+  - `src/constants/loadingLimits.ts` - 定数追加
+    - `OBJECT_LIMITS.MAX_PER_PAGE: 5000` / `WARNING_PER_PAGE: 3000`
+    - `STROKE_LIMITS.MAX_POINTS: 50000`
+    - `TEXT_LIMITS.MAX_LENGTH: 50000`
+  - `src/stores/drawingStore.ts` - `countPageObjects()` / `isPageObjectLimitReached()` ヘルパー追加
+    - `addStroke` / `addShape` / `addText` / `addImage` / `addStamp` の5関数に制限チェック
+    - 上限到達時はオブジェクト追加をブロック＋アラート表示
+  - `src/hooks/useCanvas.ts` - ストロークポイント50,000到達で自動終了
+
+#### ファイルロック — 保存中の競合防止（旧MojiQ ver_2.11より移植）
+- **保存ロック機構**: 複数の保存リクエストが同時に走るのを防止
+  - `src/utils/saveLock.ts` - ロックユーティリティ新規作成
+    - `acquireSaveLock(pageCount, totalObjects)` - ロック取得（動的タイムアウト付き）
+    - `releaseSaveLock()` - ロック解放
+    - 動的タイムアウト: ベース60秒 + (ページ数×3秒) + (オブジェクト数×500ms)、最大10分
+    - タイムアウト超過で自動解放（デッドロック防止）
+  - `src/components/HeaderBar/HeaderBar.tsx` - `savePdfToPath()`にロック取得/解放を統合
+
+#### ディスク容量チェック — 保存前確認（旧MojiQ ver_2.11より移植）
+- **保存前にディスク空き容量を確認**: 容量不足時はエラーダイアログを表示
+  - `src-tauri/src/commands.rs` - `check_disk_space` Tauriコマンド追加
+    - Windows: `wmic`コマンドでドライブ空き容量を取得
+    - ドライブレターバリデーション（コマンドインジェクション対策）
+    - 必要容量の1.5倍マージンで判定
+    - 非Windows/コマンド失敗時はチェックスキップ（グレースフルフォールバック）
+  - `src-tauri/src/lib.rs` - コマンド登録
+  - `src/components/HeaderBar/HeaderBar.tsx` - 保存前にディスク容量チェック実行
+
+#### チェック済み状態の永続化 — 再読み込み時のチェック状態復元（旧MojiQ ver_2.11より移植）
+- **校正チェックのチェック済み状態を`.mojiq.json`に保存・復元**
+  - `src/stores/proofreadingCheckStore.ts` - チェック済み状態をストアに移動
+    - `CheckedState`型エクスポート（`checkedComments` / `checkedCorrectnessItems` / `checkedProposalItems`）
+    - `getCheckedState()` - シリアライズ可能な形式で取得（Set→Array）
+    - `restoreCheckedState()` - 保存データから復元（Array→Set）
+    - `resetCheckedState()` - 全チェック状態クリア
+  - `src/utils/drawingExportImport.ts` - エクスポートデータv1.2に`checkedState`フィールド追加
+    - `prepareExportData(pages, checkedState)` - チェック状態を含めてエクスポート
+    - v1.1以前のデータも引き続き読み込み可能（後方互換性）
+  - `src/components/HeaderBar/HeaderBar.tsx` - 保存時にチェック状態をエクスポート、読み込み時に復元
+  - `src/components/ProofreadingPanel/ProofreadingPanel.tsx` - ローカルstateからストアに移行
+
+#### PDFテキストレイヤー表示 (Ctrl+T)（旧MojiQ ver_2.11より移植）
+- **PDF元テキストのオーバーレイ表示**: Ctrl+Tで切り替え
+  - `src/stores/textLayerStore.ts` - テキストレイヤー表示状態の管理（新規作成）
+    - `isVisible` - 表示/非表示状態
+    - `pageTextItems` - ページごとの抽出済みテキストキャッシュ（`Map<number, PdfTextItem[]>`）
+    - `toggle()` / `show()` / `hide()` / `clearCache()`
+  - `src/utils/pdfRenderer.ts` - `extractPdfTextContent()` 関数追加
+    - PDF.js `getTextContent()` APIで元テキストの位置・サイズ・フォント・回転を抽出
+    - PDF座標（左下原点）→キャンバス座標（左上原点）変換
+  - `src/components/Canvas/DrawingCanvas.tsx` - テキストレイヤーオーバーレイ描画
+    - 背景キャンバスと描画キャンバスの間に`<div class="pdf-text-layer">`を配置
+    - 各テキストを`<span>`でabsolute配置（位置・フォントサイズ・回転反映）
+    - `pointer-events: none`で描画操作を妨げない
+    - オンデマンド抽出（表示時のみ、結果はキャッシュ）
+  - `src/components/Canvas/DrawingCanvas.css` - 半透明（opacity: 0.35）オーバーレイ、ダークモード対応
+  - `src/App.tsx` - Ctrl+Tでテキストレイヤー＋コメントテキスト同時トグル
+  - `src/stores/documentStore.ts` - ドキュメント閉じ時にテキストレイヤーキャッシュクリア

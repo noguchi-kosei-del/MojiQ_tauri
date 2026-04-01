@@ -12,9 +12,9 @@ import { AnnotationModal } from '../AnnotationModal';
 import { open, message } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { LoadedDocument } from '../../types';
-import { renderPdfToImages } from '../../utils/pdfRenderer';
+import { renderPdfToImages, extractPdfTextContent } from '../../utils/pdfRenderer';
 import { backgroundImageCache, preloadAllBackgroundImages } from '../../utils/backgroundImageCache';
-import { uint8ArrayToBase64 } from '../../utils/imageCompression';
+import { useTextLayerStore, PdfTextItem } from '../../stores/textLayerStore';
 import './DrawingCanvas.css';
 
 // モードアイコン（指示入れモード）- HeaderBarと同じ
@@ -46,6 +46,7 @@ export const DrawingCanvas: React.FC = () => {
   const {
     canvasRef,
     selectionCanvasRef,
+    scrollAreaRef: canvasScrollAreaRef,
     redrawCanvas,
     showAnnotationModal,
     handleAnnotationSubmit,
@@ -84,10 +85,18 @@ export const DrawingCanvas: React.FC = () => {
   const { bgOpacity } = useBgOpacityStore();
   const { mode } = useModeStore();
   const { setDisplayScale } = useDisplayScaleStore();
+  const { isVisible: isTextLayerVisible, getPageTextItems, setPageTextItems, setExtracting } = useTextLayerStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const backgroundCanvasRef = useRef<HTMLCanvasElement>(null);
   const [baseScale, setBaseScale] = useState(1);
+
+  // ビューポートカリング用: useCanvasのscrollAreaRefにDOM要素を同期
+  useEffect(() => {
+    if (scrollAreaRef.current) {
+      (canvasScrollAreaRef as React.MutableRefObject<HTMLDivElement | null>).current = scrollAreaRef.current;
+    }
+  });
 
   // 前回のページ情報を保持（サイズ変更時の再描画判定用）
   const prevPageRef = useRef<{ page: number; width: number; height: number } | null>(null);
@@ -116,10 +125,12 @@ export const DrawingCanvas: React.FC = () => {
   useEffect(() => {
     if (showLabelInputModal) {
       setLabelInput('小'); // デフォルト値
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         labelInputRef.current?.focus();
         labelInputRef.current?.select();
       }, 50);
+      // クリーンアップ：コンポーネントアンマウントやモーダル閉じ時にタイムアウトをクリア
+      return () => clearTimeout(timeoutId);
     }
   }, [showLabelInputModal]);
 
@@ -200,17 +211,8 @@ export const DrawingCanvas: React.FC = () => {
         const result = await invoke<LoadedDocument>('load_file', { path: filePath });
 
         if (result.file_type === 'pdf' && result.pdf_data) {
-          // PDFデータをUint8Arrayに変換（App.tsxと同じ方式）
-          const base64Data = result.pdf_data;
-          const binaryString = atob(base64Data);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          const compressedBase64 = uint8ArrayToBase64(bytes);
-
           setLoading(true, 'PDFをレンダリング中...');
-          const pdfResult = await renderPdfToImages(compressedBase64, (progress) => {
+          const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
             setProgress(20 + Math.floor(progress * 0.5));
           });
           setProgress(70);
@@ -447,6 +449,58 @@ export const DrawingCanvas: React.FC = () => {
     redrawCanvas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, pages.length, redrawCanvas, originalWidth, originalHeight]);
+
+  // ビューポートカリング: スクロール時に再描画して画面外オブジェクトをスキップ
+  useEffect(() => {
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea) return;
+    let rafId = 0;
+    const handleScroll = () => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        redrawCanvas();
+      });
+    };
+    scrollArea.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      scrollArea.removeEventListener('scroll', handleScroll);
+      cancelAnimationFrame(rafId);
+    };
+  }, [redrawCanvas]);
+
+  // PDFテキストレイヤー: テキストコンテンツをオンデマンドで抽出
+  const [textLayerItems, setTextLayerItems] = useState<PdfTextItem[]>([]);
+  useEffect(() => {
+    if (!isTextLayerVisible) {
+      setTextLayerItems([]);
+      return;
+    }
+    const pdfDoc = useDrawingStore.getState().pdfDocument;
+    if (!pdfDoc) {
+      setTextLayerItems([]);
+      return;
+    }
+    // キャッシュがあればそれを使う
+    const cached = getPageTextItems(currentPage);
+    if (cached) {
+      setTextLayerItems(cached);
+      return;
+    }
+    // 非同期で抽出
+    let cancelled = false;
+    setExtracting(true);
+    extractPdfTextContent(pdfDoc, currentPage).then(items => {
+      if (!cancelled) {
+        setPageTextItems(currentPage, items as PdfTextItem[]);
+        setTextLayerItems(items as PdfTextItem[]);
+      }
+    }).catch(err => {
+      console.warn('テキストレイヤー抽出に失敗:', err);
+    }).finally(() => {
+      if (!cancelled) setExtracting(false);
+    });
+    return () => { cancelled = true; };
+  }, [isTextLayerVisible, currentPage, getPageTextItems, setPageTextItems, setExtracting]);
 
   // Open file dialog when showImageInput becomes true
   useEffect(() => {
@@ -740,6 +794,36 @@ export const DrawingCanvas: React.FC = () => {
                 opacity: bgOpacity / 100,
               }}
             />
+            {/* PDFテキストレイヤーオーバーレイ */}
+            {isTextLayerVisible && textLayerItems.length > 0 && (
+              <div
+                className="pdf-text-layer"
+                style={{ width: displayWidth, height: displayHeight }}
+              >
+                {textLayerItems.map((item, i) => {
+                  const scale = displayWidth / originalWidth;
+                  const left = item.x * scale;
+                  const top = item.y * scale;
+                  const fontSize = item.fontSize * scale;
+                  const transform = item.angle !== 0
+                    ? `rotate(${item.angle}rad)`
+                    : undefined;
+                  return (
+                    <span
+                      key={i}
+                      style={{
+                        left,
+                        top,
+                        fontSize,
+                        transform,
+                      }}
+                    >
+                      {item.str}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
             <canvas
               ref={canvasRef}
               width={originalWidth}

@@ -27,6 +27,7 @@ import { useViewerModeStore } from './stores/viewerModeStore';
 import { useWorkspaceStore } from './stores/workspaceStore';
 import { useSpreadViewStore } from './stores/spreadViewStore';
 import { useCommentVisibilityStore } from './stores/commentVisibilityStore';
+import { useTextLayerStore } from './stores/textLayerStore';
 import { useModeStore } from './stores/modeStore';
 import { useSidebarStore } from './stores/sidebarStore';
 import { LoadedDocument, FileMetadata } from './types';
@@ -59,6 +60,7 @@ function App() {
   const { isFlipped } = useWorkspaceStore();
   const { isSpreadView, nextSpread, prevSpread, bindingDirection, disableSpreadView } = useSpreadViewStore();
   const { toggle: toggleCommentVisibility } = useCommentVisibilityStore();
+  const { toggle: toggleTextLayer } = useTextLayerStore();
   const { mode } = useModeStore();
   const { isProofreadingPanelCollapsed } = useSidebarStore();
 
@@ -824,9 +826,10 @@ function App() {
           e.preventDefault();
           selectAll();
         }
-        // Ctrl+T: コメントテキスト表示/非表示
+        // Ctrl+T: PDFテキストレイヤー表示/非表示 + コメントテキスト表示/非表示
         else if (e.key === 't') {
           e.preventDefault();
+          toggleTextLayer();
           toggleCommentVisibility();
         }
         // Zoom In: Ctrl + + or Ctrl + =

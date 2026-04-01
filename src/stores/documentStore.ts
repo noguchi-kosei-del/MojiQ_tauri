@@ -3,6 +3,7 @@ import { DocumentState, TabInfo, CreateDocumentOptions, DocumentFileType } from 
 import { PageState, HistoryState, PdfPageInfo, PdfAnnotationText } from '../types';
 import { useZoomStore } from './zoomStore';
 import { cacheManager } from '../utils/cacheManager';
+import { useTextLayerStore } from './textLayerStore';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
 // メモリにフル保持するドキュメント数の上限
@@ -163,6 +164,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
 
     // キャッシュをクリア
     cacheManager.clearForDocument(id);
+    useTextLayerStore.getState().clearCache();
 
     // ドキュメントを削除
     const newDocuments = new Map(state.documents);

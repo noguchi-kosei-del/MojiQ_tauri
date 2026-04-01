@@ -24,7 +24,8 @@ import {
 } from '../../utils/drawingExportImport';
 import { HamburgerMenu } from '../HamburgerMenu';
 import { backgroundImageCache, preloadAllBackgroundImages } from '../../utils/backgroundImageCache';
-import { uint8ArrayToBase64 } from '../../utils/imageCompression';
+import { acquireSaveLock, releaseSaveLock } from '../../utils/saveLock';
+import { useProofreadingCheckStore } from '../../stores/proofreadingCheckStore';
 import MojiQLogo from '../../../logo/MojiQ_icon.png';
 import './HeaderBar.css';
 
@@ -416,18 +417,8 @@ export const HeaderBar: React.FC = () => {
           }
 
           if (result.file_type === 'pdf' && result.pdf_data) {
-            // PDFデータをUint8Arrayに変換
-            const base64Data = result.pdf_data;
-            const binaryString = atob(base64Data);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-            }
-            // Base64に再エンコード（チャンク分割で高速化）
-            const compressedBase64 = uint8ArrayToBase64(bytes);
-
             setLoading(true, 'PDFをレンダリング中...');
-            const pdfResult = await renderPdfToImages(compressedBase64, (progress) => {
+            const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
               // 30%〜70%の範囲でプログレスを表示
               setProgress(30 + Math.floor(progress * 0.4));
             });
@@ -594,18 +585,8 @@ export const HeaderBar: React.FC = () => {
           }
 
           if (result.file_type === 'pdf' && result.pdf_data) {
-            // PDFデータをUint8Arrayに変換
-            const base64Data = result.pdf_data;
-            const binaryString = atob(base64Data);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-            }
-            // Base64に再エンコード（チャンク分割で高速化）
-            const compressedBase64 = uint8ArrayToBase64(bytes);
-
             setLoading(true, 'PDFをレンダリング中...');
-            const pdfResult = await renderPdfToImages(compressedBase64, (progress) => {
+            const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
               // 30%〜70%の範囲でプログレスを表示
               setProgress(30 + Math.floor(progress * 0.4));
             });
@@ -708,7 +689,44 @@ export const HeaderBar: React.FC = () => {
 
   // PDF保存の共通処理
   const savePdfToPath = async (savePath: string) => {
+    // ファイルロック: 保存中の競合防止
+    const { pages: pagesForLock } = useDrawingStore.getState();
+    const totalObjects = pagesForLock.reduce((sum, page) =>
+      sum + page.layers.reduce((s, l) => s + l.strokes.length + l.shapes.length + l.texts.length + l.images.length, 0), 0);
+    if (!acquireSaveLock(pagesForLock.length, totalObjects)) {
+      await message('現在保存処理中です。完了までお待ちください。', { title: '処理中', kind: 'info' });
+      return;
+    }
+
     try {
+      // ディスク容量チェック: 保存前にディスクの空き容量を確認
+      // 背景画像のBase64データ量から必要バイト数を概算（Base64 → バイナリは約75%）
+      const estimatedBytes = pagesForLock.reduce((sum, page) => {
+        const bgSize = page.backgroundImage ? page.backgroundImage.length * 0.75 : 0;
+        const drawingSize = page.layers.reduce((s, l) => s + JSON.stringify(l).length, 0);
+        return sum + bgSize + drawingSize;
+      }, 0);
+
+      try {
+        const diskResult = await invoke<{ free_space: number; is_enough: boolean }>('check_disk_space', {
+          filePath: savePath,
+          requiredBytes: Math.ceil(estimatedBytes),
+        });
+        if (!diskResult.is_enough) {
+          const freeMB = Math.floor(diskResult.free_space / (1024 * 1024));
+          const requiredMB = Math.ceil(estimatedBytes * 1.5 / (1024 * 1024));
+          releaseSaveLock();
+          await message(
+            `ディスクの空き容量が不足しています。\n空き容量: ${freeMB} MB / 必要容量（目安）: ${requiredMB} MB\n不要なファイルを削除してから再度お試しください。`,
+            { title: 'ディスク容量不足', kind: 'error' }
+          );
+          return;
+        }
+      } catch (diskError) {
+        // ディスク容量チェック失敗時はスキップして保存を続行
+        console.warn('ディスク容量チェックに失敗:', diskError);
+      }
+
       setLoading(true, 'PDFを保存中...');
       setProgress(10);
 
@@ -753,7 +771,8 @@ export const HeaderBar: React.FC = () => {
         let overlayPng = '';
         if (hasDrawings(page)) {
           try {
-            overlayPng = await renderPageDrawingsToCanvas(page);
+            // PDF注釈テキストは非表示にして保存（元PDFに既にテキストがあるため重複を避ける）
+            overlayPng = await renderPageDrawingsToCanvas(page, { hideComments: true });
           } catch (error) {
             console.error(`Failed to render drawings for page ${i}:`, error);
           }
@@ -786,7 +805,9 @@ export const HeaderBar: React.FC = () => {
       const exportWithPdf = useSettingsStore.getState().getExportDrawingWithPdf();
       if (exportWithPdf) {
         try {
-          const exportData = prepareExportData(pages);
+          // チェック済み状態もエクスポートに含める
+          const checkedState = useProofreadingCheckStore.getState().getCheckedState();
+          const exportData = prepareExportData(pages, checkedState);
           if (exportData.pageCount > 0) {
             const jsonString = exportDataToJson(exportData);
             const jsonPath = getDrawingJsonPath(savePath);
@@ -806,7 +827,10 @@ export const HeaderBar: React.FC = () => {
       setProgress(100);
     } catch (error) {
       console.error('Failed to save PDF:', error);
+      // エラーを再スローして呼び出し元に通知
+      throw error;
     } finally {
+      releaseSaveLock();
       setLoading(false);
     }
   };
@@ -827,8 +851,9 @@ export const HeaderBar: React.FC = () => {
       await message('上書き保存しました', { title: '保存完了', kind: 'info' });
     } catch (error) {
       console.error('Failed to overwrite save PDF:', error);
-      setLoading(false);
-      await message('PDF保存に失敗しました: ' + error, { title: 'エラー', kind: 'error' });
+      // setLoading(false)はsavePdfToPathのfinallyで呼ばれるので不要
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      await message('PDF保存に失敗しました: ' + errorMessage, { title: 'エラー', kind: 'error' });
     }
   };
 
@@ -855,8 +880,9 @@ export const HeaderBar: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to save PDF:', error);
-      setLoading(false);
-      await message('PDF保存に失敗しました: ' + error, { title: 'エラー', kind: 'error' });
+      // setLoading(false)はsavePdfToPathのfinallyで呼ばれるので不要
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      await message('PDF保存に失敗しました: ' + errorMessage, { title: 'エラー', kind: 'error' });
     }
   };
 
@@ -1173,6 +1199,11 @@ export const HeaderBar: React.FC = () => {
       // 描画データを適用
       const newPages = applyImportDataToPages(scaledData, pages);
       setPages(newPages);
+
+      // チェック済み状態を復元（v1.2以降のデータに含まれる場合）
+      if (importData.checkedState) {
+        useProofreadingCheckStore.getState().restoreCheckedState(importData.checkedState);
+      }
 
       setProgress(100);
       setLoading(false);
