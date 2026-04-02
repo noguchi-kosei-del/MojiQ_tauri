@@ -16,7 +16,7 @@ type AnnotationState = 0 | 1 | 2;
 // アノテーション付き図形情報
 interface PendingAnnotatedShape {
   shapeId: string;
-  shapeType: 'rect' | 'ellipse' | 'line';
+  shapeType: 'rect' | 'ellipse' | 'line' | 'doubleArrow';
   startPos: Point;
   endPos: Point;
 }
@@ -1120,7 +1120,7 @@ export const useCanvas = () => {
 
   // 図形から引出線の開始位置を計算
   const getLeaderStartPos = useCallback(
-    (shapeType: 'rect' | 'ellipse' | 'line', startPos: Point, endPos: Point, targetPos: Point): Point => {
+    (shapeType: 'rect' | 'ellipse' | 'line' | 'doubleArrow', startPos: Point, endPos: Point, targetPos: Point): Point => {
       if (shapeType === 'rect') {
         // 矩形: 4辺の中点から最も近い点を選択
         const minX = Math.min(startPos.x, endPos.x);
@@ -2382,7 +2382,7 @@ export const useCanvas = () => {
               setEditingShapeId(shape.id);
               pendingAnnotatedShapeRef.current = {
                 shapeId: shape.id,
-                shapeType: shape.type.replace('Annotated', '') as 'rect' | 'ellipse' | 'line',
+                shapeType: shape.type.replace('Annotated', '') as 'rect' | 'ellipse' | 'line' | 'doubleArrow',
                 startPos: shape.startPos,
                 endPos: shape.endPos,
               };
@@ -2400,7 +2400,7 @@ export const useCanvas = () => {
             setEditingShapeId(clickedShape.id);
             pendingAnnotatedShapeRef.current = {
               shapeId: clickedShape.id,
-              shapeType: clickedShape.type.replace('Annotated', '') as 'rect' | 'ellipse' | 'line',
+              shapeType: clickedShape.type.replace('Annotated', '') as 'rect' | 'ellipse' | 'line' | 'doubleArrow',
               startPos: clickedShape.startPos,
               endPos: clickedShape.endPos,
             };
@@ -2448,7 +2448,7 @@ export const useCanvas = () => {
             lastDragPointRef.current = point;
             pendingAnnotatedShapeRef.current = {
               shapeId: shape.id,
-              shapeType: shape.type.replace('Annotated', '') as 'rect' | 'ellipse' | 'line',
+              shapeType: shape.type.replace('Annotated', '') as 'rect' | 'ellipse' | 'line' | 'doubleArrow',
               startPos: shape.startPos,
               endPos: shape.endPos,
             };
@@ -2559,11 +2559,15 @@ export const useCanvas = () => {
         pendingTextPosRef.current = point;
         setEditingTextId(null);
         setShowTextModal(true);
-      } else if (tool === 'rect' || tool === 'ellipse' || tool === 'line' || tool === 'arrow' || tool === 'doubleArrow' || tool === 'semicircle' || tool === 'chevron' || tool === 'lshape' || tool === 'zshape' || tool === 'bracket') {
-        // Start drawing shape
+      } else if (tool === 'rect' || tool === 'ellipse' || tool === 'line' || tool === 'arrow' || tool === 'doubleArrow' || tool === 'semicircle' || tool === 'chevron' || tool === 'lshape' || tool === 'zshape' || tool === 'bracket' || tool === 'rectAnnotated' || tool === 'ellipseAnnotated' || tool === 'lineAnnotated' || tool === 'doubleArrowAnnotated') {
+        // Start drawing shape (annotated shapes also start as shape drawing)
         setIsDrawingShape(true);
         shapeStartRef.current = point;
         currentShapeEndRef.current = point;
+        // アノテーション付き図形の場合はフェーズ1に設定
+        if (tool === 'rectAnnotated' || tool === 'ellipseAnnotated' || tool === 'lineAnnotated' || tool === 'doubleArrowAnnotated') {
+          setAnnotationState(1);
+        }
       } else if (tool === 'labeledRect') {
         // labeledRect（小文字指定）: 引出線フェーズを開始
         setLabeledRectPhase(1);
@@ -2643,12 +2647,6 @@ export const useCanvas = () => {
           }
         }
         return;
-      } else if (tool === 'rectAnnotated' || tool === 'ellipseAnnotated' || tool === 'lineAnnotated') {
-        // アノテーション付き図形ツール - 図形の描画開始
-        setIsDrawingShape(true);
-        setAnnotationState(1);
-        shapeStartRef.current = point;
-        currentShapeEndRef.current = point;
       } else {
         setIsDrawing(true);
         currentStrokeRef.current = [point];
@@ -2913,7 +2911,7 @@ export const useCanvas = () => {
         // Update shape preview
         ctrlKeyRef.current = e.ctrlKey;
         // For line/arrow tools, snap to 45-degree angles when Shift is pressed
-        if ((tool === 'line' || tool === 'lineAnnotated' || tool === 'arrow' || tool === 'doubleArrow') && e.shiftKey) {
+        if ((tool === 'line' || tool === 'lineAnnotated' || tool === 'arrow' || tool === 'doubleArrow' || tool === 'doubleArrowAnnotated') && e.shiftKey) {
           currentShapeEndRef.current = snapLineEndpoint(shapeStartRef.current, point);
         } else {
           currentShapeEndRef.current = point;
@@ -3318,8 +3316,8 @@ export const useCanvas = () => {
       } else if (isDrawingShape && shapeStartRef.current && currentShapeEndRef.current) {
         // Finalize shape
         const startPoint = shapeStartRef.current;
-        const isLineType = tool === 'line' || tool === 'lineAnnotated' || tool === 'arrow' || tool === 'doubleArrow';
-        const isAnnotated = tool === 'rectAnnotated' || tool === 'ellipseAnnotated' || tool === 'lineAnnotated';
+        const isLineType = tool === 'line' || tool === 'lineAnnotated' || tool === 'arrow' || tool === 'doubleArrow' || tool === 'doubleArrowAnnotated';
+        const isAnnotated = tool === 'rectAnnotated' || tool === 'ellipseAnnotated' || tool === 'lineAnnotated' || tool === 'doubleArrowAnnotated';
 
         // For line/arrow tools, apply snap if Shift is pressed
         const endPoint = (isLineType && e.shiftKey)
@@ -3412,7 +3410,7 @@ export const useCanvas = () => {
 
           if (isAnnotated) {
             // アノテーション付きの場合はフェーズ2へ移行（引出線が自動で追従）
-            const baseType = tool.replace('Annotated', '') as 'rect' | 'ellipse' | 'line';
+            const baseType = tool.replace('Annotated', '') as 'rect' | 'ellipse' | 'line' | 'doubleArrow';
 
             // 最後に追加された図形のIDを取得
             const state = useDrawingStore.getState();

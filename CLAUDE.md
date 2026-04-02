@@ -769,3 +769,48 @@ MojiQ_3.0/
 - **修正**: `src/components/HamburgerMenu/HamburgerMenu.tsx`
   - ホーム画面遷移時に`[...tabOrder].forEach(id => closeDocument(id, true))`で全タブを強制クローズ
   - PDFリソース解放・キャッシュクリアも正しく実行される
+
+### 2026-04-02
+#### 旧MojiQ ver_2.13からの機能移植
+
+##### Z-ordering（前面/背面移動）
+- **`bringToFront()`**: 選択中オブジェクトをレイヤー内配列末尾に移動（前面へ）
+- **`sendToBack()`**: 選択中オブジェクトをレイヤー内配列先頭に移動（背面へ）
+- Undo/Redo対応、ストローク・図形・テキスト・画像すべてに対応
+- `src/stores/drawingStore.ts` に実装
+
+##### Ctrl+Arrowによる選択オブジェクト移動
+- **Ctrl+↑↓←→**: 選択中オブジェクトを5pxずつ移動（v2.13と同じステップ幅）
+- 選択なし時は従来通りCtrl+←→で最初/最後のページへジャンプ
+- `moveSelectedByDelta()` - 全オブジェクト種別を一括移動＋selectionBounds更新
+- `src/stores/drawingStore.ts` に実装、`src/App.tsx` にキーハンドラ追加
+
+##### 両矢印+テキスト（doubleArrowAnnotated）
+- 両矢印に引出線+テキスト指示を追加可能なアノテーション付きバリアント
+- `src/types/index.ts` - `ShapeType`と`ToolType`に`'doubleArrowAnnotated'`追加
+- `src/components/DrawingToolbar/DrawingToolbar.tsx` - 両矢印ボタンをtool-groupに変更
+- `src/hooks/useCanvas.ts` - 図形描画、Shiftスナップ、アノテーションフェーズ管理に対応
+- drawingRenderer.tsは`replace('Annotated', '')`で自動対応
+
+##### PDFページ挿入機能
+- **`insertBlankPage(position: 'before' | 'after')`**: 現在ページの前後に空白ページを挿入
+  - 現在のページと同じサイズで空白ページを作成
+  - ページ番号再割り当て、PDF関連情報も同期更新
+  - Undo対応（履歴保存）
+- `src/stores/drawingStore.ts` に実装
+- `src/components/HeaderBar/HeaderBar.tsx` - 見開きメニューの「ページ操作」に挿入ボタン追加
+
+##### PDF注釈コメントの校正チェックパネル表示（旧MojiQ ver_2.13より移植）
+- **PDF読み込み時に注釈コメントをコメントタブに自動表示**
+  - `src/stores/drawingStore.ts` - `loadDocumentWithAnnotations`で`pdfAnnotations`にデータを保存（従来は空配列だった）
+  - `src/components/ProofreadingPanel/ProofreadingPanel.tsx` - 指示入れモードでもPDF注釈がある場合はパネル表示
+    - 校正チェック専用UI（カラー/線太さ/スタンプ/読み込みボタン）は校正チェックモード時のみ表示
+    - JSON未読み込み時にPDF注釈があればコメントタブに自動切替
+  - `src/App.tsx` - `hasPdfAnnotationComments`フラグで指示入れモードでもProofreadingPanel表示
+- コメントタブ機能: ページジャンプリンク、コメント内容表示、チェックボックス＋済スタンプ配置/除去
+
+#### モード切替アニメーション改善
+- **カクツキ修正**: `.app-body`全体への`transform`アニメーションを廃止
+  - `opacity`のみのフェードアニメーション（0.15秒）に変更
+  - `opacity`はコンポジタスレッドのみで処理されレイアウト/ペイントが不要
+  - `src/App.css` - `modeFadeIn`キーフレームに変更

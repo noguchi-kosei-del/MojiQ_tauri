@@ -6,7 +6,7 @@ export interface Point {
   pressure?: number;
 }
 
-export type ShapeType = 'rect' | 'ellipse' | 'line' | 'rectAnnotated' | 'ellipseAnnotated' | 'lineAnnotated' | 'arrow' | 'doubleArrow' | 'polyline' | 'stamp' | 'labeledRect' | 'semicircle' | 'chevron' | 'lshape' | 'zshape' | 'bracket';
+export type ShapeType = 'rect' | 'ellipse' | 'line' | 'rectAnnotated' | 'ellipseAnnotated' | 'lineAnnotated' | 'arrow' | 'doubleArrow' | 'doubleArrowAnnotated' | 'polyline' | 'stamp' | 'labeledRect' | 'semicircle' | 'chevron' | 'lshape' | 'zshape' | 'bracket';
 
 // スタンプの種類
 export type StampType =
@@ -199,11 +199,13 @@ export interface SelectionBounds {
   height: number;
 }
 
+export type ToolType = 'pen' | 'eraser' | 'select' | 'rect' | 'ellipse' | 'line' | 'rectAnnotated' | 'ellipseAnnotated' | 'lineAnnotated' | 'marker' | 'pan' | 'text' | 'arrow' | 'doubleArrow' | 'doubleArrowAnnotated' | 'polyline' | 'image' | 'stamp' | 'labeledRect' | 'semicircle' | 'chevron' | 'lshape' | 'zshape' | 'bracket';
+
 export interface DrawingState {
   pages: PageState[];
   currentPage: number;
   currentLayerId: string;
-  tool: 'pen' | 'eraser' | 'select' | 'rect' | 'ellipse' | 'line' | 'rectAnnotated' | 'ellipseAnnotated' | 'lineAnnotated' | 'marker' | 'pan' | 'text' | 'arrow' | 'doubleArrow' | 'polyline' | 'image' | 'stamp' | 'labeledRect' | 'semicircle' | 'chevron' | 'lshape' | 'zshape' | 'bracket';
+  tool: ToolType;
   color: string;
   strokeWidth: number;
   history: HistoryState[];
@@ -226,8 +228,6 @@ export interface HistoryState {
   pages: PageState[];
   currentPage: number;
 }
-
-export type ToolType = 'pen' | 'eraser' | 'select' | 'rect' | 'ellipse' | 'line' | 'rectAnnotated' | 'ellipseAnnotated' | 'lineAnnotated' | 'marker' | 'pan' | 'text' | 'arrow' | 'doubleArrow' | 'polyline' | 'image' | 'stamp' | 'labeledRect' | 'semicircle' | 'chevron' | 'lshape' | 'zshape' | 'bracket';
 
 // ===== 校正チェック機能 =====
 

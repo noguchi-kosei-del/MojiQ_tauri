@@ -3,6 +3,7 @@ import { useProofreadingCheckStore } from '../../stores/proofreadingCheckStore';
 import { useThemeStore } from '../../stores/themeStore';
 import { useDrawingStore } from '../../stores/drawingStore';
 import { useSidebarStore } from '../../stores/sidebarStore';
+import { useModeStore } from '../../stores/modeStore';
 import { ProofreadingCheckItem, StampType } from '../../types';
 import { isLandscapeDocument, pdfPageToNombreRange } from '../../utils/pageNumberUtils';
 import './ProofreadingPanel.css';
@@ -269,6 +270,8 @@ export const ProofreadingPanel: React.FC = () => {
   } = useProofreadingCheckStore();
   const { pages, setCurrentPage, pdfAnnotations, color, setColor, strokeWidth, setStrokeWidth, tool, setTool, currentStampType, setCurrentStampType, addDoneStampToPage, removeShapeById, setActiveProofreadingText } = useDrawingStore();
   const { isProofreadingPanelCollapsed, toggleProofreadingPanel } = useSidebarStore();
+  const { mode } = useModeStore();
+  const isInstructionMode = mode === 'instruction';
 
   // カラー選択
   const handleColorSelect = useCallback((newColor: string) => {
@@ -422,6 +425,13 @@ export const ProofreadingPanel: React.FC = () => {
 
     return items;
   }, [pdfAnnotations, pages, getPageDisplay]);
+
+  // JSON未読み込みでPDF注釈コメントがある場合、自動でコメントタブに切り替え
+  useEffect(() => {
+    if (!currentData && commentItems.length > 0 && currentTab !== 'comments') {
+      setCurrentTab('comments');
+    }
+  }, [currentData, commentItems.length, currentTab, setCurrentTab]);
 
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
@@ -763,7 +773,8 @@ export const ProofreadingPanel: React.FC = () => {
 
       {!isProofreadingPanelCollapsed && (
         <>
-          {/* 校正チェック読み込みボタン */}
+          {/* 校正チェック読み込みボタン（校正チェックモードのみ） */}
+          {!isInstructionMode && (
           <div className="panel-load-section">
             <button
               className="panel-load-btn"
@@ -773,8 +784,10 @@ export const ProofreadingPanel: React.FC = () => {
               <span>校正チェックを読み込み</span>
             </button>
           </div>
+          )}
 
-          {/* カラーと線の太さセクション */}
+          {/* カラーと線の太さ・スタンプセクション（校正チェックモードのみ） */}
+          {!isInstructionMode && (<>
           <div className="panel-color-section">
             {/* カラー列 */}
             <div className="panel-color-column">
@@ -860,17 +873,18 @@ export const ProofreadingPanel: React.FC = () => {
                 onClick={() => handleStampSelect('doneStamp')}
                 title="済スタンプ"
               >
-                済
+                済スタンプ
               </button>
               <button
                 className={`panel-stamp-btn ${isRubyStampActive ? 'active' : ''}`}
                 onClick={() => handleStampSelect('rubyStamp')}
                 title="ルビスタンプ"
               >
-                ルビ
+                ルビスタンプ
               </button>
             </div>
           </div>
+          </>)}
 
           {/* Header */}
           <div className="panel-header">

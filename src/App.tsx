@@ -30,7 +30,7 @@ import { useCommentVisibilityStore } from './stores/commentVisibilityStore';
 import { useTextLayerStore } from './stores/textLayerStore';
 import { useModeStore } from './stores/modeStore';
 import { useSidebarStore } from './stores/sidebarStore';
-import { LoadedDocument, FileMetadata } from './types';
+import { LoadedDocument, FileMetadata, ToolType } from './types';
 import { renderPdfToImages } from './utils/pdfRenderer';
 import { preloadAllBackgroundImages, backgroundImageCache } from './utils/backgroundImageCache';
 import { checkPageCount } from './utils/fileValidation';
@@ -41,7 +41,7 @@ const ZOOM_ANIMATION_DURATION = 300;
 const NAVIGATE_COOLDOWN_MS = 150;
 
 function App() {
-  const { loadDocument, loadDocumentWithAnnotations, loadDocumentWithLinks, loadAllPageImages, undo, redo, pages, currentPage, setCurrentPage, tool, setTool, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedImageIds, deleteSelectedStrokes, clearAllDrawings, getDocumentState, restoreDocumentState, activeProofreadingText, clearActiveProofreadingText, copySelected, cutSelected, pasteClipboard, hasClipboard, selectAll } = useDrawingStore();
+  const { loadDocument, loadDocumentWithAnnotations, loadDocumentWithLinks, loadAllPageImages, undo, redo, pages, currentPage, setCurrentPage, tool, setTool, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedImageIds, deleteSelectedStrokes, clearAllDrawings, getDocumentState, restoreDocumentState, activeProofreadingText, clearActiveProofreadingText, copySelected, cutSelected, pasteClipboard, hasClipboard, selectAll, moveSelectedByDelta, pdfAnnotations } = useDrawingStore();
   const {
     activeDocumentId,
     syncFromDrawingStore,
@@ -64,6 +64,9 @@ function App() {
   const { mode } = useModeStore();
   const { isProofreadingPanelCollapsed } = useSidebarStore();
 
+  // PDF注釈コメントが存在するか
+  const hasPdfAnnotationComments = pdfAnnotations.some(pageAnnots => pageAnnots && pageAnnots.length > 0);
+
   // モード切替アニメーション
   const [modeTransition, setModeTransition] = useState<'mode-transition-to-proofreading' | 'mode-transition-to-instruction' | ''>('');
   const prevModeRef = useRef(mode);
@@ -74,7 +77,7 @@ function App() {
         ? 'mode-transition-to-proofreading'
         : 'mode-transition-to-instruction';
       setModeTransition(transitionClass);
-      const timer = setTimeout(() => setModeTransition(''), 200);
+      const timer = setTimeout(() => setModeTransition(''), 150);
       prevModeRef.current = mode;
       return () => clearTimeout(timer);
     }
@@ -924,6 +927,25 @@ function App() {
             handleSwitchDocument(nextId);
           }
         }
+        // Ctrl+Arrow: 選択オブジェクトの移動 / ページジャンプ
+        else if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          const hasSelection = selectedStrokeIds.length > 0 || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedImageIds.length > 0;
+          if (hasSelection) {
+            // 選択オブジェクトを5pxずつ移動
+            const step = 5;
+            const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+            const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+            moveSelectedByDelta(dx, dy);
+          } else {
+            // 選択なし: 最初/最後のページへジャンプ
+            if (e.key === 'ArrowLeft') {
+              setCurrentPage(pages.length - 1);
+            } else if (e.key === 'ArrowRight') {
+              setCurrentPage(0);
+            }
+          }
+        }
       }
     };
 
@@ -932,7 +954,7 @@ function App() {
       if (e.code === 'Space') {
         e.preventDefault();
         if (previousToolRef.current) {
-          setTool(previousToolRef.current as 'pen' | 'eraser' | 'select' | 'rect' | 'ellipse' | 'line' | 'rectAnnotated' | 'ellipseAnnotated' | 'lineAnnotated' | 'marker' | 'pan' | 'text' | 'arrow' | 'doubleArrow' | 'polyline' | 'image');
+          setTool(previousToolRef.current as ToolType);
           previousToolRef.current = null;
         }
       }
@@ -944,7 +966,7 @@ function App() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [undo, redo, resetZoom, tool, setTool, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedImageIds, deleteSelectedStrokes, pages, currentPage, setCurrentPage, isViewerMode, handleEnterViewerMode, handleExitViewerMode, navigatePageInViewerMode, clearAllDrawings, activeDocumentId, getDocumentState, syncFromDrawingStore, closeDocument, getTabInfoList, switchDocument, getDocumentForDrawingStore, restoreDocumentState, isSpreadView, nextSpread, prevSpread, bindingDirection, toggleCommentVisibility, handleSwitchDocument, copySelected, cutSelected, pasteClipboard, hasClipboard, selectAll]);
+  }, [undo, redo, resetZoom, tool, setTool, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedImageIds, deleteSelectedStrokes, pages, currentPage, setCurrentPage, isViewerMode, handleEnterViewerMode, handleExitViewerMode, navigatePageInViewerMode, clearAllDrawings, activeDocumentId, getDocumentState, syncFromDrawingStore, closeDocument, getTabInfoList, switchDocument, getDocumentForDrawingStore, restoreDocumentState, isSpreadView, nextSpread, prevSpread, bindingDirection, toggleCommentVisibility, handleSwitchDocument, copySelected, cutSelected, pasteClipboard, hasClipboard, selectAll, moveSelectedByDelta]);
 
   // ホイールスクロールでページ送り（閲覧モード時）
   useEffect(() => {
@@ -982,7 +1004,7 @@ function App() {
   }, [handleFileDrop]);
 
   return (
-    <div className={`app ${isViewerMode ? 'viewer-mode' : ''} ${isFlipped ? 'workspace-flipped' : ''} ${mode === 'proofreading' ? 'proofreading-mode' : ''} ${mode === 'proofreading' && isProofreadingPanelCollapsed ? 'proofreading-panel-collapsed' : ''} ${modeTransition}`}>
+    <div className={`app ${isViewerMode ? 'viewer-mode' : ''} ${isFlipped ? 'workspace-flipped' : ''} ${mode === 'proofreading' ? 'proofreading-mode' : ''} ${(mode === 'proofreading' || (mode === 'instruction' && hasPdfAnnotationComments)) && isProofreadingPanelCollapsed ? 'proofreading-panel-collapsed' : ''} ${modeTransition}`}>
       <LoadingOverlay />
       <ViewerModeOverlay onExit={handleExitViewerMode} />
       <HeaderBar />
@@ -1008,7 +1030,8 @@ function App() {
                 {isSpreadView ? <SpreadCanvas /> : <DrawingCanvas />}
               </div>
             </div>
-            {!isSpreadView && mode === 'instruction' && <RightToolbar />}
+            {!isSpreadView && mode === 'instruction' && !hasPdfAnnotationComments && <RightToolbar />}
+            {!isSpreadView && mode === 'instruction' && hasPdfAnnotationComments && <ProofreadingPanel />}
             {!isSpreadView && mode === 'proofreading' && <ProofreadingToolbar />}
             {!isSpreadView && mode === 'proofreading' && <ProofreadingPanel />}
           </div>

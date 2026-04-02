@@ -106,6 +106,7 @@ interface DrawingStore extends DrawingState {
   // Page navigation
   setCurrentPage: (page: number) => void;
   deleteCurrentPage: () => void;
+  insertBlankPage: (position: 'before' | 'after') => void;
 
   // Tool settings
   setTool: (tool: ToolType) => void;
@@ -204,6 +205,13 @@ interface DrawingStore extends DrawingState {
 
   // Rotation operations
   rotateSelected: (rotation: number) => void;
+
+  // Z-ordering operations
+  bringToFront: () => void;
+  sendToBack: () => void;
+
+  // Move selected by delta (arrow key movement)
+  moveSelectedByDelta: (dx: number, dy: number) => void;
 
   // Clipboard operations
   copySelected: () => void;
@@ -419,7 +427,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       historyIndex: -1,
       pdfDocument: null,
       pdfPageInfos: [],
-      pdfAnnotations: [],
+      pdfAnnotations: annotations,
     });
 
     // 読み込んだ状態を履歴に保存
@@ -629,6 +637,59 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
 
     set({
       pages: newPageNumbers,
+      currentPage: newCurrentPage,
+      currentLayerId: newCurrentLayerId,
+      pdfPageInfos: newPdfPageInfos,
+      pdfAnnotations: newPdfAnnotations,
+      selectedStrokeIds: [],
+      selectedShapeIds: [],
+      selectedTextIds: [],
+      selectedImageIds: [],
+      selectionBounds: null,
+    });
+
+    get().saveToHistory();
+  },
+
+  insertBlankPage: (position: 'before' | 'after') => {
+    const state = get();
+    if (state.pages.length === 0) return;
+
+    const currentIndex = state.currentPage;
+    const currentPageState = state.pages[currentIndex];
+
+    // 現在のページと同じサイズの空白ページを作成
+    const insertIndex = position === 'before' ? currentIndex : currentIndex + 1;
+    const newPage = createDefaultPage(
+      insertIndex + 1,
+      '', // 空白の背景
+      currentPageState.width,
+      currentPageState.height,
+    );
+
+    // ページを挿入
+    const newPages = [...state.pages];
+    newPages.splice(insertIndex, 0, newPage);
+
+    // ページ番号を再割り当て
+    const renumberedPages = newPages.map((page, index) => ({
+      ...page,
+      pageNumber: index + 1,
+    }));
+
+    // PDF関連の情報も更新（空の情報を挿入）
+    const newPdfPageInfos = [...state.pdfPageInfos];
+    newPdfPageInfos.splice(insertIndex, 0, { pageNumber: insertIndex + 1, width: currentPageState.width, height: currentPageState.height, rendered: true });
+
+    const newPdfAnnotations = [...state.pdfAnnotations];
+    newPdfAnnotations.splice(insertIndex, 0, []);
+
+    // 挿入したページに移動
+    const newCurrentPage = insertIndex;
+    const newCurrentLayerId = renumberedPages[newCurrentPage]?.layers[0]?.id || '';
+
+    set({
+      pages: renumberedPages,
       currentPage: newCurrentPage,
       currentLayerId: newCurrentLayerId,
       pdfPageInfos: newPdfPageInfos,
@@ -2791,6 +2852,101 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     };
 
     set({ pages: updatedPages });
+  },
+
+  // === Z-ordering operations ===
+
+  bringToFront: () => {
+    const state = get();
+    const currentPageState = state.pages[state.currentPage];
+    if (!currentPageState) return;
+
+    const hasSelection = state.selectedStrokeIds.length > 0 || state.selectedShapeIds.length > 0 ||
+      state.selectedTextIds.length > 0 || state.selectedImageIds.length > 0;
+    if (!hasSelection) return;
+
+    state.saveToHistory();
+
+    const updatedLayers = currentPageState.layers.map((layer) => ({
+      ...layer,
+      strokes: [
+        ...layer.strokes.filter(s => !state.selectedStrokeIds.includes(s.id)),
+        ...layer.strokes.filter(s => state.selectedStrokeIds.includes(s.id)),
+      ],
+      shapes: [
+        ...layer.shapes.filter(s => !state.selectedShapeIds.includes(s.id)),
+        ...layer.shapes.filter(s => state.selectedShapeIds.includes(s.id)),
+      ],
+      texts: [
+        ...layer.texts.filter(t => !state.selectedTextIds.includes(t.id)),
+        ...layer.texts.filter(t => state.selectedTextIds.includes(t.id)),
+      ],
+      images: [
+        ...layer.images.filter(img => !state.selectedImageIds.includes(img.id)),
+        ...layer.images.filter(img => state.selectedImageIds.includes(img.id)),
+      ],
+    }));
+
+    const updatedPages = [...state.pages];
+    updatedPages[state.currentPage] = { ...currentPageState, layers: updatedLayers };
+    set({ pages: updatedPages });
+  },
+
+  sendToBack: () => {
+    const state = get();
+    const currentPageState = state.pages[state.currentPage];
+    if (!currentPageState) return;
+
+    const hasSelection = state.selectedStrokeIds.length > 0 || state.selectedShapeIds.length > 0 ||
+      state.selectedTextIds.length > 0 || state.selectedImageIds.length > 0;
+    if (!hasSelection) return;
+
+    state.saveToHistory();
+
+    const updatedLayers = currentPageState.layers.map((layer) => ({
+      ...layer,
+      strokes: [
+        ...layer.strokes.filter(s => state.selectedStrokeIds.includes(s.id)),
+        ...layer.strokes.filter(s => !state.selectedStrokeIds.includes(s.id)),
+      ],
+      shapes: [
+        ...layer.shapes.filter(s => state.selectedShapeIds.includes(s.id)),
+        ...layer.shapes.filter(s => !state.selectedShapeIds.includes(s.id)),
+      ],
+      texts: [
+        ...layer.texts.filter(t => state.selectedTextIds.includes(t.id)),
+        ...layer.texts.filter(t => !state.selectedTextIds.includes(t.id)),
+      ],
+      images: [
+        ...layer.images.filter(img => state.selectedImageIds.includes(img.id)),
+        ...layer.images.filter(img => !state.selectedImageIds.includes(img.id)),
+      ],
+    }));
+
+    const updatedPages = [...state.pages];
+    updatedPages[state.currentPage] = { ...currentPageState, layers: updatedLayers };
+    set({ pages: updatedPages });
+  },
+
+  // === Move selected by delta ===
+
+  moveSelectedByDelta: (dx: number, dy: number) => {
+    const state = get();
+    if (state.selectedStrokeIds.length > 0) state.moveSelectedStrokes(dx, dy);
+    if (state.selectedShapeIds.length > 0) state.moveSelectedShapes(dx, dy);
+    if (state.selectedTextIds.length > 0) state.moveSelectedTexts(dx, dy);
+    if (state.selectedImageIds.length > 0) state.moveSelectedImages(dx, dy);
+
+    // selectionBoundsも更新
+    if (state.selectionBounds) {
+      set({
+        selectionBounds: {
+          ...state.selectionBounds,
+          x: state.selectionBounds.x + dx,
+          y: state.selectionBounds.y + dy,
+        },
+      });
+    }
   },
 
   // === Clipboard operations ===

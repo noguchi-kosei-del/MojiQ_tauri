@@ -291,23 +291,15 @@ html, body, #root {
    校正チェックモード (Proofreading Mode) スタイル
    ======================================== */
 
-/* モード切替スライドアニメーション */
-@keyframes slideInFromRight {
-  from { transform: translateX(20px); }
-  to { transform: translateX(0); }
+/* モード切替フェードアニメーション（opacityのみ＝コンポジタ処理でカクツキなし） */
+@keyframes modeFadeIn {
+  from { opacity: 0.7; }
+  to { opacity: 1; }
 }
 
-@keyframes slideInFromLeft {
-  from { transform: translateX(-20px); }
-  to { transform: translateX(0); }
-}
-
-.app.mode-transition-to-proofreading .app-body {
-  animation: slideInFromRight 0.2s ease-out forwards;
-}
-
+.app.mode-transition-to-proofreading .app-body,
 .app.mode-transition-to-instruction .app-body {
-  animation: slideInFromLeft 0.2s ease-out forwards;
+  animation: modeFadeIn 0.15s ease-out forwards;
 }
 
 /* 校正チェックモード時: ツールバー類の非表示 */

@@ -116,6 +116,17 @@ const EllipseAnnotatedIcon = () => (
   </svg>
 );
 
+const DoubleArrowAnnotatedIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="5" y1="16" x2="15" y2="6"/>
+    <polyline points="11 6 15 6 15 10"/>
+    <polyline points="9 16 5 16 5 12"/>
+    <line x1="15" y1="6" x2="20" y2="3"/>
+    <circle cx="20" cy="3" r="1.5" fill="currentColor"/>
+    <text x="19" y="19" fontSize="8" fontWeight="bold" fill="currentColor" stroke="none">T</text>
+  </svg>
+);
+
 const LineAnnotatedIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
     <line x1="3" y1="16" x2="14" y2="8"/>
@@ -304,13 +315,22 @@ export const DrawingToolbar: React.FC = () => {
             <ArrowIcon />
           </button>
 
-          <button
-            onClick={() => setTool('doubleArrow')}
-            className={tool === 'doubleArrow' ? 'active' : ''}
-            title="両矢印 (D)"
-          >
-            <DoubleArrowIcon />
-          </button>
+          <div className="tool-group">
+            <button
+              onClick={() => setTool('doubleArrow')}
+              className={tool === 'doubleArrow' ? 'active' : ''}
+              title="両矢印 (D)"
+            >
+              <DoubleArrowIcon />
+            </button>
+            <button
+              onClick={() => setTool('doubleArrowAnnotated')}
+              className={`annotated-btn ${tool === 'doubleArrowAnnotated' ? 'active' : ''}`}
+              title="両矢印+テキスト"
+            >
+              <DoubleArrowAnnotatedIcon />
+            </button>
+          </div>
 
           <button
             onClick={() => setTool('polyline')}
