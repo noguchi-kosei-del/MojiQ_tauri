@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    mojiq_30_lib::run()
+    mojiq_pro_lib::run()
 }

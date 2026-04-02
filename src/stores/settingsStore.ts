@@ -1,4 +1,4 @@
-// src/stores/settingsStore.ts - MojiQ 3.0 設定管理
+// src/stores/settingsStore.ts - MojiQ Pro 1.0 設定管理
 
 import { create } from 'zustand';
 

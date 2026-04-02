@@ -278,18 +278,12 @@ export const ProofreadingPanel: React.FC = () => {
     setColor(newColor);
   }, [setColor]);
 
-  // 線の太さ変更（数値入力）
+  // 線の太さ変更（数値入力・スライダー共通）
   const handleStrokeWidthChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseFloat(e.target.value);
-    if (!isNaN(value) && value >= 1 && value <= 20) {
+    const value = parseInt(e.target.value, 10);
+    if (!isNaN(value) && value >= 1 && value <= 50) {
       setStrokeWidth(value);
     }
-  }, [setStrokeWidth]);
-
-  // 線の太さ変更（スライダー）
-  const handleStrokeWidthSlider = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseFloat(e.target.value);
-    setStrokeWidth(value);
   }, [setStrokeWidth]);
 
   // 線の太さスライダーのホイール操作
@@ -836,29 +830,27 @@ export const ProofreadingPanel: React.FC = () => {
             <div className="panel-linewidth-column">
               <h3 className="panel-section-title">線の太さ</h3>
               <div className="panel-line-width">
-                <label>
+                <div className="panel-line-width-row">
                   <input
                     type="number"
-                    min="1"
-                    max="20"
-                    step="0.5"
+                    min={1}
+                    max={50}
                     value={strokeWidth}
                     onChange={handleStrokeWidthChange}
                     className="panel-line-width-input"
                   />
-                  px
-                </label>
+                  <span className="panel-line-width-unit">px</span>
+                </div>
                 <input
                   type="range"
-                  min="1"
-                  max="20"
-                  step="0.5"
+                  min={1}
+                  max={20}
                   value={strokeWidth}
-                  onChange={handleStrokeWidthSlider}
+                  onChange={handleStrokeWidthChange}
                   onWheel={handleStrokeWidthWheel}
                   className="panel-line-width-slider"
                   style={{
-                    background: `linear-gradient(to right, #ff8c00 ${((strokeWidth - 1) / 19) * 100}%, #666 ${((strokeWidth - 1) / 19) * 100}%)`
+                    background: `linear-gradient(to right, #ff9800 0%, #ff9800 ${((strokeWidth - 1) / 19) * 100}%, var(--bg-tertiary) ${((strokeWidth - 1) / 19) * 100}%, var(--bg-tertiary) 100%)`
                   }}
                 />
               </div>

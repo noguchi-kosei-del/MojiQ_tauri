@@ -1161,7 +1161,7 @@ export const HeaderBar: React.FC = () => {
         multiple: false,
         filters: [
           {
-            name: 'MojiQ Drawing Data',
+            name: 'MojiQ Pro Drawing Data',
             extensions: ['mojiq.json', 'json'],
           },
         ],
@@ -1228,7 +1228,7 @@ export const HeaderBar: React.FC = () => {
     <>
       <div className="header-bar">
         <div className="header-logo">
-          <img src={MojiQLogo} alt="MojiQ" className="header-logo-img" />
+          <img src={MojiQLogo} alt="MojiQ Pro" className="header-logo-img" />
         </div>
         <div className="header-hamburger">
           <button onClick={toggleMenu} title="メニュー" className="hamburger-btn">

@@ -105,6 +105,52 @@
   border-color: var(--accent-color);
 }
 
+/* 選択中バッジ（文字サイズ・フォント指定ボタン内） */
+.right-toolbar-btn-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.right-toolbar-btn-badge.badge-fontsize {
+  background: linear-gradient(135deg, #29b6f6, #0288d1);
+  color: #fff;
+}
+
+.right-toolbar-menu-btn.active .right-toolbar-btn-badge.badge-fontsize {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.right-toolbar-btn-badge.badge-font {
+  background: transparent;
+  border: 2px solid;
+  font-size: 10px;
+  padding: 1px 6px;
+}
+
+.right-toolbar-menu-btn.active .right-toolbar-btn-badge.badge-font {
+  border-color: rgba(255, 255, 255, 0.7) !important;
+  color: #fff !important;
+}
+
+.right-toolbar-btn-badge.badge-prooftool {
+  background: linear-gradient(135deg, #ec407a, #d81b60);
+  color: #fff;
+}
+
+.right-toolbar-menu-btn.active .right-toolbar-btn-badge.badge-prooftool {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
 /* 作品仕様読み込みボタン */
 .right-toolbar-load-btn {
   display: flex;

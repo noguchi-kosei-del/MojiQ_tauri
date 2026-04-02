@@ -2390,8 +2390,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "mojiq-30"
-version = "0.1.0"
+name = "mojiq-pro"
+version = "1.0.0"
 dependencies = [
  "base64 0.22.1",
  "image",

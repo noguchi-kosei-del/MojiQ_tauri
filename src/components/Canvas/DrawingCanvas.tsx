@@ -751,11 +751,8 @@ export const DrawingCanvas: React.FC = () => {
     }
   };
 
-  // アノテーションモード時のヒントメッセージ
+  // 折れ線モード時のヒントメッセージ
   const getAnnotationHint = () => {
-    if (annotationState === 2) {
-      return '引出線を描画してください（ドラッグしてテキストを配置する位置を指定）';
-    }
     if (isDrawingPolyline) {
       return '折れ線描画中: クリックで頂点追加、ダブルクリックで確定';
     }
@@ -863,8 +860,8 @@ export const DrawingCanvas: React.FC = () => {
         </div>
       )}
 
-      {/* アノテーションモード/折れ線モードのヒント */}
-      {(annotationState === 2 || isDrawingPolyline) && (
+      {/* 折れ線モードのヒント */}
+      {isDrawingPolyline && (
         <div className="annotation-hint">
           {getAnnotationHint()}
         </div>

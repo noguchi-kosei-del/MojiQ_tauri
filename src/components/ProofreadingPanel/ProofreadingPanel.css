@@ -275,31 +275,42 @@
   gap: 6px;
 }
 
-.panel-line-width label {
-  font-size: 12px;
-  color: var(--text-secondary);
+.panel-line-width-row {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
 .panel-line-width-input {
-  width: 50px !important;
-  flex: 0 0 50px;
+  width: 56px;
   padding: 4px 6px;
+  background: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: 4px;
-  font-size: 13px;
-  font-weight: bold;
-  color: #1976d2;
+  color: var(--text-primary);
+  font-size: 12px;
   text-align: center;
-  background: var(--bg-primary);
 }
 
-.proofreading-panel.dark .panel-line-width-input {
-  background: #2a2a2a;
-  border-color: #555;
-  color: #64b5f6;
+.panel-line-width-input::-webkit-outer-spin-button,
+.panel-line-width-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.panel-line-width-input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.panel-line-width-input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+.panel-line-width-unit {
+  font-size: 11px;
+  color: var(--text-secondary);
+  min-width: 20px;
 }
 
 .panel-line-width-slider {
@@ -307,9 +318,10 @@
   height: 6px;
   -webkit-appearance: none;
   appearance: none;
-  background: linear-gradient(to right, #ff8c00 0%, #666 0%);
+  background: var(--bg-tertiary);
   border-radius: 3px;
   outline: none;
+  cursor: pointer;
 }
 
 .panel-line-width-slider::-webkit-slider-thumb {
@@ -317,25 +329,29 @@
   appearance: none;
   width: 14px;
   height: 14px;
-  background: #ff8c00;
+  background: #ff9800;
   border-radius: 50%;
   cursor: pointer;
+  transition: transform 0.1s ease;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.panel-line-width-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
 }
 
 .panel-line-width-slider::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #ff8c00;
+  background: #ff9800;
   border: none;
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-.panel-line-width-slider::-moz-range-progress {
-  background: #ff8c00;
-  height: 6px;
+.panel-line-width-slider::-moz-range-track {
+  background: var(--bg-tertiary);
   border-radius: 3px;
 }
 

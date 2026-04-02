@@ -70,7 +70,7 @@ const FileIcon = () => (
 const MEMO_STORAGE_KEY = 'mojiq_memo';
 
 export const RightToolbar: React.FC = () => {
-  const { history, historyIndex, undo, redo, clearHistory, tool, setTool, setColor, setCurrentStampType } = useDrawingStore();
+  const { history, historyIndex, undo, redo, clearHistory, tool, setTool, setColor, setCurrentStampType, currentStampType } = useDrawingStore();
   const { isActive: isViewerMode } = useViewerModeStore();
   const { isRightCollapsed, toggleRightSidebar } = useSidebarStore();
   const { fontSizes, fonts, selectedFontSize, selectedFont, selectFontSize, selectFont, appendWorkSpec, clearFonts, addFont, removeFont, updateFont, fontColorIndex } = usePresetStore();
@@ -331,6 +331,39 @@ export const RightToolbar: React.FC = () => {
     removeFont(id);
   }, [removeFont]);
 
+  // 校正ツールのアクティブラベルを取得
+  const activeProofToolLabel = (() => {
+    const allItems: { stamp: string; label: string; toolType?: string }[] = [
+      { stamp: 'toruStamp', label: 'トル' },
+      { stamp: 'torutsumeStamp', label: 'トルツメ' },
+      { stamp: 'torumamaStamp', label: 'トルママ' },
+      { stamp: 'zenkakuakiStamp', label: '全角アキ' },
+      { stamp: 'hankakuakiStamp', label: '半角アキ' },
+      { stamp: 'yonbunakiStamp', label: '四分アキ' },
+      { stamp: 'kaigyouStamp', label: '改行' },
+      { stamp: 'tojiruStamp', label: 'とじる' },
+      { stamp: 'hirakuStamp', label: 'ひらく' },
+      { stamp: 'doneStamp', label: '済' },
+      { stamp: 'rubyStamp', label: 'ルビ' },
+      { stamp: 'rectSymbolStamp', label: '□' },
+      { stamp: 'triangleSymbolStamp', label: '△' },
+      { stamp: 'jikan', label: '字間指示', toolType: 'doubleArrow' },
+      { stamp: 'chevron', label: '＜', toolType: 'chevron' },
+      { stamp: 'lshape', label: '∟', toolType: 'lshape' },
+      { stamp: 'zshape', label: 'Z', toolType: 'zshape' },
+      { stamp: 'bracket', label: '⊐', toolType: 'bracket' },
+      { stamp: 'semicircle', label: '◠', toolType: 'semicircle' },
+      { stamp: 'labeledRect', label: '小文字指定', toolType: 'labeledRect' },
+    ];
+    if (tool === 'stamp' && currentStampType) {
+      const found = allItems.find(i => i.stamp === currentStampType);
+      if (found) return found.label;
+    }
+    const byTool = allItems.find(i => i.toolType === tool);
+    if (byTool) return byTool.label;
+    return null;
+  })();
+
   // 校正ツール選択
   const handleProofreadingSelect = useCallback((stampType: string) => {
     setColor('#ff0000');
@@ -399,10 +432,13 @@ export const RightToolbar: React.FC = () => {
           <div ref={el => { dropdownRefs.current['proofreading'] = el; }} className="right-toolbar-dropdown-wrapper">
             <button
               ref={el => { buttonRefs.current['proofreading'] = el; }}
-              className={`right-toolbar-menu-btn ${tool === 'stamp' || tool === 'doubleArrow' ? 'active' : ''}`}
+              className={`right-toolbar-menu-btn ${activeProofToolLabel ? 'active' : ''}`}
               onClick={() => openPopup('proofreading', setIsProofreadingOpen, isProofreadingOpen)}
             >
               校正ツール
+              {activeProofToolLabel && (
+                <span className="right-toolbar-btn-badge badge-prooftool">{activeProofToolLabel}</span>
+              )}
             </button>
             {isProofreadingOpen && popupPosition && (
               <div className="right-toolbar-popup right-toolbar-popup-sections" style={{ position: 'fixed', top: popupPosition.top, right: popupPosition.right }}>
@@ -489,7 +525,10 @@ export const RightToolbar: React.FC = () => {
               className={`right-toolbar-menu-btn ${selectedFontSize !== null ? 'active' : ''}`}
               onClick={() => openPopup('fontSize', setIsFontSizeOpen, isFontSizeOpen)}
             >
-              文字サイズ {selectedFontSize !== null && `(${selectedFontSize}P)`}
+              文字サイズ
+              {selectedFontSize !== null && (
+                <span className="right-toolbar-btn-badge badge-fontsize">{selectedFontSize}P</span>
+              )}
             </button>
             {isFontSizeOpen && popupPosition && (
               <div className="right-toolbar-popup right-toolbar-popup-grid" style={{ position: 'fixed', top: popupPosition.top, right: popupPosition.right }}>
@@ -514,6 +553,11 @@ export const RightToolbar: React.FC = () => {
               onClick={() => openPopup('font', setIsFontOpen, isFontOpen)}
             >
               フォント指定
+              {selectedFont !== null && (
+                <span className="right-toolbar-btn-badge badge-font" style={{ borderColor: selectedFont.color, color: selectedFont.color }}>
+                  {selectedFont.name}
+                </span>
+              )}
             </button>
             {isFontOpen && popupPosition && (
               <div className="right-toolbar-popup" style={{ position: 'fixed', top: popupPosition.top, right: popupPosition.right }}>

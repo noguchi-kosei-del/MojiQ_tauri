@@ -64,9 +64,6 @@ function App() {
   const { mode } = useModeStore();
   const { isProofreadingPanelCollapsed } = useSidebarStore();
 
-  // PDF注釈コメントが存在するか
-  const hasPdfAnnotationComments = pdfAnnotations.some(pageAnnots => pageAnnots && pageAnnots.length > 0);
-
   // モード切替アニメーション
   const [modeTransition, setModeTransition] = useState<'mode-transition-to-proofreading' | 'mode-transition-to-instruction' | ''>('');
   const prevModeRef = useRef(mode);
@@ -753,7 +750,7 @@ function App() {
           e.preventDefault();
           setTool('image');
         } else if ((e.key === 'Delete' || e.key === 'Backspace') && !e.ctrlKey && !e.metaKey) {
-          if (selectedStrokeIds.length > 0 || selectedTextIds.length > 0) {
+          if (selectedStrokeIds.length > 0 || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedImageIds.length > 0) {
             e.preventDefault();
             deleteSelectedStrokes();
           }
@@ -1004,7 +1001,7 @@ function App() {
   }, [handleFileDrop]);
 
   return (
-    <div className={`app ${isViewerMode ? 'viewer-mode' : ''} ${isFlipped ? 'workspace-flipped' : ''} ${mode === 'proofreading' ? 'proofreading-mode' : ''} ${(mode === 'proofreading' || (mode === 'instruction' && hasPdfAnnotationComments)) && isProofreadingPanelCollapsed ? 'proofreading-panel-collapsed' : ''} ${modeTransition}`}>
+    <div className={`app ${isViewerMode ? 'viewer-mode' : ''} ${isFlipped ? 'workspace-flipped' : ''} ${mode === 'proofreading' ? 'proofreading-mode' : ''} ${mode === 'proofreading' && isProofreadingPanelCollapsed ? 'proofreading-panel-collapsed' : ''} ${modeTransition}`}>
       <LoadingOverlay />
       <ViewerModeOverlay onExit={handleExitViewerMode} />
       <HeaderBar />
@@ -1030,8 +1027,7 @@ function App() {
                 {isSpreadView ? <SpreadCanvas /> : <DrawingCanvas />}
               </div>
             </div>
-            {!isSpreadView && mode === 'instruction' && !hasPdfAnnotationComments && <RightToolbar />}
-            {!isSpreadView && mode === 'instruction' && hasPdfAnnotationComments && <ProofreadingPanel />}
+            {!isSpreadView && mode === 'instruction' && <RightToolbar />}
             {!isSpreadView && mode === 'proofreading' && <ProofreadingToolbar />}
             {!isSpreadView && mode === 'proofreading' && <ProofreadingPanel />}
           </div>

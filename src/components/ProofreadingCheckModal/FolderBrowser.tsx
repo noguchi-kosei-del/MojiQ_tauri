@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { message } from '@tauri-apps/plugin-dialog';
 import { useProofreadingCheckStore } from '../../stores/proofreadingCheckStore';
 import { FolderEntry, ProofreadingCheckData } from '../../types';
 
@@ -94,6 +95,9 @@ export const FolderBrowser: React.FC = () => {
 
       // モーダルを閉じる
       closeModal();
+
+      // 読み込み完了メッセージを表示
+      await message('校正チェックデータを読み込みました', { title: '完了', kind: 'info' });
     } catch (e) {
       console.error('[ProofreadingCheck] JSONファイルの読み込みエラー:', e);
       setError(`ファイルの読み込みに失敗: ${e}`);

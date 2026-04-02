@@ -1252,6 +1252,66 @@ export const useCanvas = () => {
     ctx.strokeStyle = '#2E7D32';
     ctx.lineWidth = 1;
     ctx.stroke();
+
+    // 削除ボタン（右下に赤い円 + ゴミ箱アイコン）
+    const deleteSize = 24;
+    const deleteOffset = 8;
+    const deleteBtnX = x + width + deleteOffset;
+    const deleteBtnY = y + height + deleteOffset;
+    const deleteCX = deleteBtnX + deleteSize / 2;
+    const deleteCY = deleteBtnY + deleteSize / 2;
+
+    // 赤い円
+    ctx.beginPath();
+    ctx.arc(deleteCX, deleteCY, deleteSize / 2, 0, 2 * Math.PI);
+    ctx.fillStyle = '#F44336';
+    ctx.fill();
+    ctx.strokeStyle = '#D32F2F';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // ゴミ箱アイコン（白色）
+    const s = deleteSize / 24; // スケール
+    ctx.save();
+    ctx.translate(deleteCX, deleteCY);
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.fillStyle = 'transparent';
+    ctx.lineWidth = 1.5 * s;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // ふた
+    ctx.beginPath();
+    ctx.moveTo(-6 * s, -5 * s);
+    ctx.lineTo(6 * s, -5 * s);
+    ctx.stroke();
+    // 取っ手
+    ctx.beginPath();
+    ctx.moveTo(-2.5 * s, -5 * s);
+    ctx.lineTo(-2.5 * s, -7 * s);
+    ctx.lineTo(2.5 * s, -7 * s);
+    ctx.lineTo(2.5 * s, -5 * s);
+    ctx.stroke();
+    // 本体
+    ctx.beginPath();
+    ctx.moveTo(-5 * s, -4 * s);
+    ctx.lineTo(-4 * s, 7 * s);
+    ctx.lineTo(4 * s, 7 * s);
+    ctx.lineTo(5 * s, -4 * s);
+    ctx.stroke();
+    // 縦線
+    ctx.beginPath();
+    ctx.moveTo(0, -3 * s);
+    ctx.lineTo(0, 5.5 * s);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-2.5 * s, -3 * s);
+    ctx.lineTo(-2 * s, 5.5 * s);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(2.5 * s, -3 * s);
+    ctx.lineTo(2 * s, 5.5 * s);
+    ctx.stroke();
+    ctx.restore();
   }, []);
 
   const clearSelectionCanvas = useCallback(() => {
@@ -2509,6 +2569,26 @@ export const useCanvas = () => {
               if (images.length > 0) currentRotation = images[0].rotation || 0;
             }
             originalRotationRef.current = currentRotation;
+            return;
+          }
+        }
+
+        // 削除ボタンのヒットテスト
+        if (selectionBounds) {
+          const delPadding = 5;
+          const delBx = selectionBounds.x - delPadding;
+          const delBy = selectionBounds.y - delPadding;
+          const delBw = selectionBounds.width + delPadding * 2;
+          const delBh = selectionBounds.height + delPadding * 2;
+          const deleteSize = 24;
+          const deleteOffset = 8;
+          const deleteCX = delBx + delBw + deleteOffset + deleteSize / 2;
+          const deleteCY = delBy + delBh + deleteOffset + deleteSize / 2;
+          const distToDelete = Math.hypot(point.x - deleteCX, point.y - deleteCY);
+          if (distToDelete <= deleteSize / 2 + 4) {
+            const state = useDrawingStore.getState();
+            state.deleteSelectedStrokes();
+            redrawCanvas();
             return;
           }
         }

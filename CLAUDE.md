@@ -1,11 +1,11 @@
-# MojiQ 3.0
+# MojiQ Pro 1.0
 
 PDF/画像に対して描画・注釈を追加し、校正作業を行うためのデスクトップアプリケーション
 
 ## プロジェクト概要
 
-- **アプリ名**: MojiQ 3.0
-- **バージョン**: 3.0.0
+- **アプリ名**: MojiQ Pro
+- **バージョン**: 1.0.0
 - **識別子**: com.mojiq.app
 - **目的**: PDF・画像ファイルへの校正指示・注釈の追加、校正済みPDFの出力
 
@@ -216,7 +216,7 @@ npm run tauri build
 ## ディレクトリ構成
 
 ```
-MojiQ_3.0/
+MojiQ_Pro_1.0/
 ├── src/                      # Reactフロントエンド
 │   ├── App.tsx              # メインコンポーネント
 │   ├── App.css              # スタイル
@@ -814,3 +814,52 @@ MojiQ_3.0/
   - `opacity`のみのフェードアニメーション（0.15秒）に変更
   - `opacity`はコンポジタスレッドのみで処理されレイアウト/ペイントが不要
   - `src/App.css` - `modeFadeIn`キーフレームに変更
+
+### 2026-04-02（続き）
+#### アプリ名リネーム: MojiQ 3.0 → MojiQ Pro 1.0
+- **全体リネーム**: アプリ名を「MojiQ Pro」、バージョンを「1.0.0」に変更
+  - `src-tauri/tauri.conf.json` - productName, version, window title
+  - `package.json` - name → `mojiq-pro`, version → `1.0.0`
+  - `src-tauri/Cargo.toml` - name → `mojiq-pro`, lib name → `mojiq_pro_lib`
+  - `src-tauri/src/main.rs` - `mojiq_pro_lib::run()`
+  - `src-tauri/src/pdf.rs` - PDFメタデータ → `MojiQ Pro Document`
+  - `index.html`, `proofreading-viewer.html` - タイトル更新
+  - `src/components/HeaderBar/HeaderBar.tsx` - ファイルダイアログ名・alt属性
+
+#### 指示入れモードのサイドバー修正
+- **RightToolbar復元**: 指示入れモードで常にRightToolbar（指示ツール・文字サイズ等）を表示
+  - PDF注釈がある場合にProofreadingPanelに置き換わるバグを修正
+  - `src/App.tsx` - `hasPdfAnnotationComments`による条件分岐を削除
+  - ProofreadingPanelは校正チェックモード時のみ表示
+
+#### サイドバーボタンのバッジ表示
+- **文字サイズボタン**: 選択中のサイズを青いグラデーションバッジで表示（例: `16P`）
+- **フォント指定ボタン**: 選択中のフォント名をフォント色の枠線バッジで表示
+- **校正ツールボタン**: 選択中のツール名をピンク系グラデーションバッジで表示
+  - スタンプ系・描画ツール系の全校正ツールに対応
+  - `src/components/RightToolbar/RightToolbar.tsx` - バッジUI追加、currentStampType取得
+  - `src/components/RightToolbar/RightToolbar.css` - `.right-toolbar-btn-badge`スタイル追加
+
+#### 校正チェックモードの線の太さ入力を指示入れモードと統一
+- **仕様統一**: 校正チェックモードの入力仕様を指示入れモードに揃えた
+  - number input max: 20 → 50、step: 0.5 → 1（整数のみ）
+  - `parseFloat` → `parseInt`、スライダーハンドラを共通化
+  - スライダー色を`#ff9800`に統一、背景を`var(--bg-tertiary)`に
+  - スピンボタン非表示、ホバー時つまみ拡大を追加
+  - px単位を入力欄の右隣に横並び配置（`.panel-line-width-row`ラッパー追加）
+  - `src/components/ProofreadingPanel/ProofreadingPanel.tsx` - ハンドラ・UI修正
+  - `src/components/ProofreadingPanel/ProofreadingPanel.css` - スタイル統一
+
+#### 引出線ヒントメッセージ削除
+- **不要なメッセージ除去**: 図形+テキストツールで引出線描画時の画面下部メッセージを削除
+  - `src/components/Canvas/DrawingCanvas.tsx` - `annotationState === 2`の条件を除去
+  - 折れ線描画中のヒントは引き続き表示
+
+#### オブジェクト削除機能の修正
+- **Deleteキー修正**: 図形（Shape）・画像（Image）も削除対象に追加
+  - `src/App.tsx` - `selectedShapeIds`と`selectedImageIds`の条件を追加
+- **削除ボタン追加**: 選択ボックスの右下に赤い円＋ゴミ箱アイコンのボタンを描画（旧MojiQ同様）
+  - `src/hooks/useCanvas.ts` - `drawSelectionBounds`内で削除ボタン描画
+  - サイズ24px、オフセット8px、赤色(`#F44336`)の円＋白色ゴミ箱アイコン
+  - ポインターダウン時に円形ヒットテスト（半径+4px余裕）でクリック検出
+  - `deleteSelectedStrokes()`で全オブジェクト種別を削除

@@ -136,7 +136,7 @@ pub fn create_pdf_with_drawings(
     };
 
     let (doc, page1, layer1) = PdfDocument::new(
-        "MojiQ Document",
+        "MojiQ Pro Document",
         first_width_mm,
         first_height_mm,
         "Layer 1",
@@ -322,7 +322,7 @@ pub fn create_pdf_with_overlays(
     };
 
     let (doc, page1, layer1) = PdfDocument::new(
-        "MojiQ Document",
+        "MojiQ Pro Document",
         first_width_mm,
         first_height_mm,
         "Layer 1",

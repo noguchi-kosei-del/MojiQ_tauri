@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useDrawingStore } from '../../stores/drawingStore';
 import { usePresetStore } from '../../stores/presetStore';
 import { useSidebarStore } from '../../stores/sidebarStore';
@@ -72,7 +72,7 @@ const GRADIENT_COLORS = [
 ];
 
 export const DrawingSettingsBar: React.FC = () => {
-  const { color, setColor, strokeWidth, setStrokeWidth, pages, pdfDocument } = useDrawingStore();
+  const { color, setColor, strokeWidth, setStrokeWidth, pages, pdfAnnotations } = useDrawingStore();
   const { selectedFontSize, selectFontSize } = usePresetStore();
   const { isSettingsBarCollapsed, toggleSettingsBar } = useSidebarStore();
   const { bgOpacity, setBgOpacity } = useBgOpacityStore();
@@ -80,18 +80,18 @@ export const DrawingSettingsBar: React.FC = () => {
   const { isPageNavHidden, togglePageNavHidden } = usePageNavStore();
   const { isHidden: isCommentHidden, toggle: toggleCommentVisibility } = useCommentVisibilityStore();
 
-  // カラーピッカーref
-  const colorInputRef = useRef<HTMLInputElement>(null);
+  // PDF注釈テキストがあるかどうかをチェック
+  const hasPdfAnnotationTexts = useMemo(() => {
+    if (!pdfAnnotations) return false;
+    return pdfAnnotations.some(pageAnnotations =>
+      pageAnnotations?.some(annot => annot.text && annot.text.trim())
+    );
+  }, [pdfAnnotations]);
 
   // カラー選択
   const handleColorSelect = useCallback((newColor: string) => {
     setColor(newColor);
   }, [setColor]);
-
-  // カラーピッカーを開く
-  const handleOpenColorPicker = useCallback(() => {
-    colorInputRef.current?.click();
-  }, []);
 
   // 線の太さ変更
   const handleStrokeWidthChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -165,19 +165,11 @@ export const DrawingSettingsBar: React.FC = () => {
               title={presetColor}
             />
           ))}
-          {/* カスタムカラーピッカー */}
-          <button
+          {/* カスタムカラー表示（グラデーションバーから選択した色を表示） */}
+          <div
             className={`color-swatch custom ${!PRESET_COLORS.includes(color) ? 'active' : ''}`}
-            style={!PRESET_COLORS.includes(color) ? { backgroundColor: color } : undefined}
-            onClick={handleOpenColorPicker}
-            title="カスタムカラー"
-          />
-          <input
-            ref={colorInputRef}
-            type="color"
-            value={color}
-            onChange={(e) => handleColorSelect(e.target.value)}
-            className="hidden-color-input"
+            style={{ backgroundColor: !PRESET_COLORS.includes(color) ? color : 'transparent' }}
+            title="グラデーションバーから選択した色"
           />
         </div>
         {/* グラデーションバー */}
@@ -281,7 +273,7 @@ export const DrawingSettingsBar: React.FC = () => {
           <button
             className={`sidebar-bottom-btn ${isCommentHidden ? 'active' : ''}`}
             onClick={toggleCommentVisibility}
-            disabled={!pdfDocument}
+            disabled={!hasPdfAnnotationTexts}
             title={isCommentHidden ? 'コメントテキスト表示 (Ctrl+T)' : 'コメントテキスト非表示 (Ctrl+T)'}
           >
             {isCommentHidden ? <CommentHideIcon /> : <CommentShowIcon />}
