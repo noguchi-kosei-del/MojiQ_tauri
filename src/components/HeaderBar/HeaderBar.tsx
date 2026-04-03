@@ -26,6 +26,7 @@ import { HamburgerMenu } from '../HamburgerMenu';
 import { backgroundImageCache, preloadAllBackgroundImages } from '../../utils/backgroundImageCache';
 import { acquireSaveLock, releaseSaveLock } from '../../utils/saveLock';
 import { useProofreadingCheckStore } from '../../stores/proofreadingCheckStore';
+import { useCommentVisibilityStore } from '../../stores/commentVisibilityStore';
 import MojiQLogo from '../../../logo/MojiQ_icon.png';
 import './HeaderBar.css';
 
@@ -257,6 +258,7 @@ export const HeaderBar: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSpreadMenuOpen, setIsSpreadMenuOpen] = useState(false);
   const [isSaveMenuOpen, setIsSaveMenuOpen] = useState(false);
+  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const spreadMenuRef = useRef<HTMLDivElement>(null);
   const spreadButtonRef = useRef<HTMLButtonElement>(null);
@@ -828,6 +830,10 @@ export const HeaderBar: React.FC = () => {
         }
       }
 
+      // PDF注釈由来テキストを非表示状態にしてUIボタンにも反映
+      // （元PDFに既にテキストがあるため、保存後は非表示のままにする）
+      useCommentVisibilityStore.getState().hide();
+
       // ドキュメントを保存済みとしてマーク
       if (activeDocumentId) {
         markAsSaved(activeDocumentId, savePath);
@@ -937,6 +943,46 @@ export const HeaderBar: React.FC = () => {
     };
   }, [getActiveDocument, savePdfToPath]);
 
+  // Ctrl+S保存リクエストをリッスン
+  useEffect(() => {
+    const handleSaveShortcut = async () => {
+      const activeDoc = getActiveDocument();
+
+      // 保存パスがない場合は名前を付けて保存
+      if (!activeDoc?.filePath) {
+        try {
+          const defaultFileName = activeDoc?.title?.replace(/\.[^/.]+$/, '') || 'output';
+          const savePath = await save({
+            filters: [{ name: 'PDF', extensions: ['pdf'] }],
+            defaultPath: `${defaultFileName}.pdf`,
+          });
+          if (savePath) {
+            await savePdfToPath(savePath);
+            await message('PDFを保存しました', { title: '保存完了', kind: 'info' });
+          }
+        } catch (error) {
+          console.error('Failed to save PDF:', error);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          await message('PDF保存に失敗しました: ' + errorMessage, { title: 'エラー', kind: 'error' });
+        }
+      } else {
+        try {
+          await savePdfToPath(activeDoc.filePath);
+          await message('上書き保存しました', { title: '保存完了', kind: 'info' });
+        } catch (error) {
+          console.error('Failed to overwrite save PDF:', error);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          await message('PDF保存に失敗しました: ' + errorMessage, { title: 'エラー', kind: 'error' });
+        }
+      }
+    };
+
+    window.addEventListener('mojiq-save', handleSaveShortcut);
+    return () => {
+      window.removeEventListener('mojiq-save', handleSaveShortcut);
+    };
+  }, [getActiveDocument, savePdfToPath]);
+
   // 印刷リクエストをリッスン（Ctrl+P）
   useEffect(() => {
     const handlePrintRequest = () => {
@@ -949,17 +995,31 @@ export const HeaderBar: React.FC = () => {
     };
   }, []);
 
-  const handleClearAllDrawings = async () => {
+  const handleClearAllDrawings = () => {
     if (pages.length > 0) {
-      const confirmed = await ask('すべての描画を消去しますか？', {
-        title: '確認',
-        kind: 'warning',
-      });
-      if (confirmed) {
-        clearAllDrawings();
-      }
+      setIsClearConfirmOpen(true);
     }
   };
+
+  const handleClearConfirm = useCallback(() => {
+    setIsClearConfirmOpen(false);
+    clearAllDrawings();
+  }, [clearAllDrawings]);
+
+  const handleClearCancel = useCallback(() => {
+    setIsClearConfirmOpen(false);
+  }, []);
+
+  // Ctrl+Delete全消去リクエストをリッスン
+  useEffect(() => {
+    const handleClearRequest = () => {
+      setIsClearConfirmOpen(true);
+    };
+    window.addEventListener('mojiq-clear-all', handleClearRequest);
+    return () => {
+      window.removeEventListener('mojiq-clear-all', handleClearRequest);
+    };
+  }, []);
 
   // Check if there are any drawings in the document
   const documentHasDrawings = pages.some(page =>
@@ -1467,6 +1527,29 @@ export const HeaderBar: React.FC = () => {
         </div>
       </div>
       <HamburgerMenu isOpen={isMenuOpen} onToggle={toggleMenu} />
+
+      {/* 全消去確認モーダル */}
+      {isClearConfirmOpen && (
+        <div className="clear-confirm-overlay" onClick={handleClearCancel}>
+          <div className="clear-confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="clear-confirm-header">
+              <span className="clear-confirm-title">確認</span>
+            </div>
+            <div className="clear-confirm-body">
+              <p>すべての描画を消去しますか？</p>
+              <p>この操作は元に戻せません。</p>
+            </div>
+            <div className="clear-confirm-actions">
+              <button className="clear-confirm-btn cancel" onClick={handleClearCancel}>
+                キャンセル
+              </button>
+              <button className="clear-confirm-btn confirm" onClick={handleClearConfirm}>
+                全消去
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

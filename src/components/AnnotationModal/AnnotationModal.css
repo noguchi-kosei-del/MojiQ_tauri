@@ -92,6 +92,8 @@
   width: 16px;
   height: 16px;
   cursor: pointer;
+  accent-color: var(--accent-color, #2196F3);
+  color-scheme: light dark;
 }
 
 .annotation-font-size {
@@ -110,6 +112,7 @@
   font-size: 14px;
   background: var(--bg-primary, #ffffff);
   color: var(--text-primary, #333);
+  color-scheme: light dark;
 }
 
 .annotation-font-size input[type="number"]:focus {

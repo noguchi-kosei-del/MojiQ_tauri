@@ -54,6 +54,35 @@ const ProofreadingIcon = () => (
   </svg>
 );
 
+// 矢印アイコン
+const ArrowIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="5" y1="19" x2="19" y2="5"/>
+    <polyline points="10 5 19 5 19 14"/>
+  </svg>
+);
+
+// 両矢印アイコン
+const DoubleArrowIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="5" y1="19" x2="19" y2="5"/>
+    <polyline points="10 5 19 5 19 14"/>
+    <polyline points="14 19 5 19 5 10"/>
+  </svg>
+);
+
+// 両矢印+テキストアイコン
+const DoubleArrowAnnotatedIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="5" y1="16" x2="15" y2="6"/>
+    <polyline points="11 6 15 6 15 10"/>
+    <polyline points="9 16 5 16 5 12"/>
+    <line x1="15" y1="6" x2="20" y2="3"/>
+    <circle cx="20" cy="3" r="1.5" fill="currentColor"/>
+    <text x="19" y="19" fontSize="8" fontWeight="bold" fill="currentColor" stroke="none">T</text>
+  </svg>
+);
+
 // Z形改行アイコン
 const ZShapeIcon = () => (
   <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -91,7 +120,7 @@ export const ProofreadingToolPanel: React.FC<ProofreadingToolPanelProps> = ({
   // 他のツールに切り替わったら選択を解除
   useEffect(() => {
     // スタンプツール、両矢印ツール、または校正記号関連ツール以外に切り替わった場合
-    const proofreadingTools = ['stamp', 'doubleArrow', 'rect', 'polyline', 'ellipse'];
+    const proofreadingTools = ['stamp', 'arrow', 'doubleArrow', 'doubleArrowAnnotated', 'rect', 'polyline', 'ellipse'];
     if (!proofreadingTools.includes(tool)) {
       setSelectedStamp(null);
       setSelectedSymbol(null);
@@ -289,6 +318,30 @@ export const ProofreadingToolPanel: React.FC<ProofreadingToolPanelProps> = ({
                   </span>
                 </button>
               ))}
+              <button
+                className={`proofreading-symbol-btn ${tool === 'arrow' ? 'active' : ''}`}
+                onClick={() => { setSelectedSymbol(null); setTool('arrow'); }}
+                title="矢印"
+              >
+                <span className="symbol-icon"><ArrowIcon /></span>
+                <span className="symbol-label">矢印</span>
+              </button>
+              <button
+                className={`proofreading-symbol-btn ${tool === 'doubleArrow' ? 'active' : ''}`}
+                onClick={() => { setSelectedSymbol(null); setTool('doubleArrow'); }}
+                title="両矢印"
+              >
+                <span className="symbol-icon"><DoubleArrowIcon /></span>
+                <span className="symbol-label">両矢印</span>
+              </button>
+              <button
+                className={`proofreading-symbol-btn ${tool === 'doubleArrowAnnotated' ? 'active' : ''}`}
+                onClick={() => { setSelectedSymbol(null); setTool('doubleArrowAnnotated'); }}
+                title="両矢印+テキスト"
+              >
+                <span className="symbol-icon"><DoubleArrowAnnotatedIcon /></span>
+                <span className="symbol-label">両矢印+T</span>
+              </button>
             </div>
           </div>
         </div>

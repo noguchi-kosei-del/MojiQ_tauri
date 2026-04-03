@@ -4,6 +4,8 @@ import { useThemeStore } from '../../stores/themeStore';
 import { useDrawingStore } from '../../stores/drawingStore';
 import { useSidebarStore } from '../../stores/sidebarStore';
 import { useModeStore } from '../../stores/modeStore';
+import { usePageNavStore } from '../../stores/pageNavStore';
+import { useCommentVisibilityStore } from '../../stores/commentVisibilityStore';
 import { ProofreadingCheckItem, StampType } from '../../types';
 import { isLandscapeDocument, pdfPageToNombreRange } from '../../utils/pageNumberUtils';
 import './ProofreadingPanel.css';
@@ -114,6 +116,43 @@ const ExpandLeftIcon: React.FC = () => (
   </svg>
 );
 
+// Page nav show icon (目のアイコン - 旧MojiQ準拠)
+const PageNavShowIcon: React.FC = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+    <circle cx="12" cy="12" r="3"/>
+  </svg>
+);
+
+// Page nav hide icon (目に斜線 - 旧MojiQ準拠)
+const PageNavHideIcon: React.FC = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+    <line x1="1" y1="1" x2="23" y2="23"/>
+    <path d="M10.59 10.59a3 3 0 1 0 4.24 4.24"/>
+  </svg>
+);
+
+// Comment text show icon
+const CommentShowIcon: React.FC = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="3" ry="3"/>
+    <path d="M8 8h8"/>
+    <path d="M12 8v9"/>
+  </svg>
+);
+
+// Comment text hide icon
+const CommentHideIcon: React.FC = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="3" ry="3" strokeDasharray="3 2"/>
+    <path d="M8 8h8" strokeDasharray="3 2"/>
+    <path d="M12 8v9" strokeDasharray="3 2"/>
+    <line x1="4" y1="4" x2="20" y2="20"/>
+  </svg>
+);
+
 // スポイトアイコン
 const EyedropperIcon: React.FC = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -200,7 +239,6 @@ const CategoryItems: React.FC<CategoryItemsProps> = ({
               <span className="panel-category-toggle" onClick={() => toggleCategory(`${prefix}${category}`)}>{isCollapsed ? '▶' : '▼'}</span>
               <span className="panel-category-name" onClick={() => toggleCategory(`${prefix}${category}`)}>{category}</span>
               <span className="panel-category-count" onClick={() => toggleCategory(`${prefix}${category}`)}>({catItems.length})</span>
-              {allCategoryChecked && <span className="panel-category-checked-label">確認済み</span>}
             </div>
             {!isCollapsed && (
               <div className="panel-category-body">
@@ -240,7 +278,6 @@ const CategoryItems: React.FC<CategoryItemsProps> = ({
                             {item.content || ''}
                           </td>
                           <td className="panel-item-status">
-                            {isChecked && <span className="panel-item-checked-label">確認済み</span>}
                           </td>
                         </tr>
                       );
@@ -267,11 +304,42 @@ export const ProofreadingPanel: React.FC = () => {
     isLoading,
     error,
     openModal,
+    clearData,
   } = useProofreadingCheckStore();
-  const { pages, setCurrentPage, pdfAnnotations, color, setColor, strokeWidth, setStrokeWidth, tool, setTool, currentStampType, setCurrentStampType, addDoneStampToPage, removeShapeById, setActiveProofreadingText } = useDrawingStore();
+  const { pages, setCurrentPage, pdfAnnotations, color, setColor, strokeWidth, setStrokeWidth, tool, setTool, currentStampType, setCurrentStampType, addDoneStampToPage, removeShapeById, setActiveProofreadingText, updateSelectedColor, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedAnnotationShapeId } = useDrawingStore();
   const { isProofreadingPanelCollapsed, toggleProofreadingPanel } = useSidebarStore();
   const { mode } = useModeStore();
+  const { isPageNavHidden, togglePageNavHidden } = usePageNavStore();
+  const { isHidden: isCommentHidden, toggle: toggleCommentVisibility } = useCommentVisibilityStore();
   const isInstructionMode = mode === 'instruction';
+
+  const panelColorInputRef = useRef<HTMLInputElement>(null);
+
+  // カスタムカラースウォッチクリック時にカラーピッカーを開く
+  const handleCustomColorClick = useCallback(() => {
+    if (panelColorInputRef.current) {
+      panelColorInputRef.current.value = color;
+      panelColorInputRef.current.click();
+    }
+  }, [color]);
+
+  // カラーピッカーのリアルタイム変更（ドラッグ中）
+  const handleColorInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const newColor = e.target.value;
+    setColor(newColor);
+    const hasSelection = selectedStrokeIds.length > 0 || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedAnnotationShapeId !== null;
+    if (hasSelection) {
+      updateSelectedColor(newColor);
+    }
+  }, [setColor, updateSelectedColor, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedAnnotationShapeId]);
+
+  // PDF注釈テキストがあるかどうかをチェック
+  const hasPdfAnnotationTexts = useMemo(() => {
+    if (!pdfAnnotations) return false;
+    return pdfAnnotations.some(pageAnnotations =>
+      pageAnnotations?.some(annot => annot.text && annot.text.trim())
+    );
+  }, [pdfAnnotations]);
 
   // カラー選択
   const handleColorSelect = useCallback((newColor: string) => {
@@ -482,16 +550,19 @@ export const ProofreadingPanel: React.FC = () => {
   const proposalItems = useMemo(() =>
     allItems.filter(item => item.checkKind === 'proposal'), [allItems]);
 
-  // PDF/JPEG読み込み時にチェック状態をリセット
-  const pagesLengthRef = useRef(pages.length);
+  // ドキュメント読み込み・切り替え・閉じ時に校正チェックデータとチェック状態をリセット
   useEffect(() => {
-    // ページ数が変わった場合（新しいファイルが読み込まれた）にリセット
-    if (pages.length !== pagesLengthRef.current) {
-      pagesLengthRef.current = pages.length;
+    const handleDocumentChanged = () => {
+      clearData();
       resetCheckedState();
       setCommentDoneStamps(new Map());
-    }
-  }, [pages.length, resetCheckedState]);
+      setCollapsedCategories(new Set());
+    };
+    window.addEventListener('mojiq-document-changed', handleDocumentChanged);
+    return () => {
+      window.removeEventListener('mojiq-document-changed', handleDocumentChanged);
+    };
+  }, [clearData, resetCheckedState]);
 
   // 正誤・提案のアイテムID一覧を取得（全アイテム数のカウント用）
   const correctnessItemIds = useMemo(() => {
@@ -516,25 +587,70 @@ export const ProofreadingPanel: React.FC = () => {
     return ids;
   }, [proposalItems]);
 
+  // 正誤の全チェック完了後にカテゴリを閉じる
+  const collapseAllCorrectness = useCallback(() => {
+    const grouped = groupByCategory(correctnessItems);
+    setCollapsedCategories(prev => {
+      const next = new Set(prev);
+      Object.keys(grouped).forEach(cat => next.add(`correctness-${cat}`));
+      return next;
+    });
+  }, [correctnessItems]);
+
+  // 提案の全チェック完了後にカテゴリを閉じる
+  const collapseAllProposal = useCallback(() => {
+    const grouped = groupByCategory(proposalItems);
+    setCollapsedCategories(prev => {
+      const next = new Set(prev);
+      Object.keys(grouped).forEach(cat => next.add(`proposal-${cat}`));
+      return next;
+    });
+  }, [proposalItems]);
+
   // 正誤チェックボックス変更ハンドラー
   const toggleCorrectnessCheck = useCallback((itemId: string) => {
     toggleCheckedCorrectnessItem(itemId);
-  }, [toggleCheckedCorrectnessItem]);
+    // チェック後に全完了か判定
+    const next = new Set(checkedCorrectnessItems);
+    if (next.has(itemId)) next.delete(itemId); else next.add(itemId);
+    if (correctnessItemIds.length > 0 && next.size === correctnessItemIds.length) {
+      setTimeout(collapseAllCorrectness, 0);
+    }
+  }, [toggleCheckedCorrectnessItem, checkedCorrectnessItems, correctnessItemIds, collapseAllCorrectness]);
 
   // 提案チェックボックス変更ハンドラー
   const toggleProposalCheck = useCallback((itemId: string) => {
     toggleCheckedProposalItem(itemId);
-  }, [toggleCheckedProposalItem]);
+    const next = new Set(checkedProposalItems);
+    if (next.has(itemId)) next.delete(itemId); else next.add(itemId);
+    if (proposalItemIds.length > 0 && next.size === proposalItemIds.length) {
+      setTimeout(collapseAllProposal, 0);
+    }
+  }, [toggleCheckedProposalItem, checkedProposalItems, proposalItemIds, collapseAllProposal]);
 
   // 正誤カテゴリ全体チェックハンドラー
   const toggleCorrectnessCategoryCheck = useCallback((itemIds: string[], checked: boolean) => {
     toggleCheckedCorrectnessCategory(itemIds, checked);
-  }, [toggleCheckedCorrectnessCategory]);
+    if (checked) {
+      const next = new Set(checkedCorrectnessItems);
+      itemIds.forEach(id => next.add(id));
+      if (correctnessItemIds.length > 0 && next.size === correctnessItemIds.length) {
+        setTimeout(collapseAllCorrectness, 0);
+      }
+    }
+  }, [toggleCheckedCorrectnessCategory, checkedCorrectnessItems, correctnessItemIds, collapseAllCorrectness]);
 
   // 提案カテゴリ全体チェックハンドラー
   const toggleProposalCategoryCheck = useCallback((itemIds: string[], checked: boolean) => {
     toggleCheckedProposalCategory(itemIds, checked);
-  }, [toggleCheckedProposalCategory]);
+    if (checked) {
+      const next = new Set(checkedProposalItems);
+      itemIds.forEach(id => next.add(id));
+      if (proposalItemIds.length > 0 && next.size === proposalItemIds.length) {
+        setTimeout(collapseAllProposal, 0);
+      }
+    }
+  }, [toggleCheckedProposalCategory, checkedProposalItems, proposalItemIds, collapseAllProposal]);
 
   // 検索機能
   const [searchQuery, setSearchQuery] = useState('');
@@ -796,13 +912,21 @@ export const ProofreadingPanel: React.FC = () => {
                     title={presetColor === '#ff0000' ? '赤' : '青'}
                   />
                 ))}
-                {/* カスタムカラー表示（グラデーションバーから選択した色を表示） */}
+                {/* カスタムカラー（クリックでカラーピッカーを開く） */}
                 <div
                   className={`panel-color-swatch custom-color ${!PRESET_COLORS.includes(color) ? 'active' : ''}`}
                   style={{
                     backgroundColor: !PRESET_COLORS.includes(color) ? color : 'transparent',
                   }}
-                  title="グラデーションバーから選択した色"
+                  title="カスタムカラー"
+                  onClick={handleCustomColorClick}
+                />
+                <input
+                  ref={panelColorInputRef}
+                  type="color"
+                  className="hidden-color-input"
+                  onInput={handleColorInput as unknown as React.FormEventHandler<HTMLInputElement>}
+                  onChange={handleColorInput}
                 />
                 {isEyeDropperSupported && (
                   <button
@@ -944,6 +1068,26 @@ export const ProofreadingPanel: React.FC = () => {
             ) : (
               renderContent()
             )}
+          </div>
+
+          {/* 下部アイコン - ページバー・コメントテキストボタン */}
+          <div className="panel-bottom-actions">
+            <button
+              className={`sidebar-bottom-btn ${isPageNavHidden ? 'active' : ''}`}
+              onClick={togglePageNavHidden}
+              disabled={pages.length <= 1}
+              title={isPageNavHidden ? 'ページバー表示' : 'ページバー非表示'}
+            >
+              {isPageNavHidden ? <PageNavHideIcon /> : <PageNavShowIcon />}
+            </button>
+            <button
+              className={`sidebar-bottom-btn ${isCommentHidden ? 'active' : ''}`}
+              onClick={toggleCommentVisibility}
+              disabled={!hasPdfAnnotationTexts}
+              title={isCommentHidden ? 'コメントテキスト表示 (Ctrl+T)' : 'コメントテキスト非表示 (Ctrl+T)'}
+            >
+              {isCommentHidden ? <CommentHideIcon /> : <CommentShowIcon />}
+            </button>
           </div>
         </>
       )}

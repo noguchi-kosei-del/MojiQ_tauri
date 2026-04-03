@@ -186,6 +186,9 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
       activeDocumentId: newActiveId,
     });
 
+    // 校正チェックデータリセット通知
+    window.dispatchEvent(new Event('mojiq-document-changed'));
+
     return true;
   },
 
@@ -211,6 +214,9 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
       documents: newDocuments,
       activeDocumentId: targetId,
     });
+
+    // 校正チェックデータリセット通知
+    window.dispatchEvent(new Event('mojiq-document-changed'));
 
     // メモリ管理
     get().unloadOldDocuments();
@@ -384,6 +390,9 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
 
       return { documents: newDocuments };
     });
+
+    // 校正チェックデータリセット通知
+    window.dispatchEvent(new Event('mojiq-document-changed'));
 
     // メモリ管理
     get().unloadOldDocuments();

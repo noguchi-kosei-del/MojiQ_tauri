@@ -64,21 +64,6 @@ const LineIcon = () => (
   </svg>
 );
 
-const ArrowIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="5" y1="19" x2="19" y2="5"/>
-    <polyline points="10 5 19 5 19 14"/>
-  </svg>
-);
-
-const DoubleArrowIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="5" y1="19" x2="19" y2="5"/>
-    <polyline points="10 5 19 5 19 14"/>
-    <polyline points="14 19 5 19 5 10"/>
-  </svg>
-);
-
 const PolylineIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="4 18 8 10 14 14 20 6"/>
@@ -116,17 +101,6 @@ const EllipseAnnotatedIcon = () => (
   </svg>
 );
 
-const DoubleArrowAnnotatedIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="5" y1="16" x2="15" y2="6"/>
-    <polyline points="11 6 15 6 15 10"/>
-    <polyline points="9 16 5 16 5 12"/>
-    <line x1="15" y1="6" x2="20" y2="3"/>
-    <circle cx="20" cy="3" r="1.5" fill="currentColor"/>
-    <text x="19" y="19" fontSize="8" fontWeight="bold" fill="currentColor" stroke="none">T</text>
-  </svg>
-);
-
 const LineAnnotatedIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
     <line x1="3" y1="16" x2="14" y2="8"/>
@@ -140,39 +114,6 @@ const MarkerIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M18 3L6 15l-2 6 6-2L22 7z"/>
     <path d="M15 6l3 3"/>
-  </svg>
-);
-
-// 校正記号ツールアイコン
-const SemicircleIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 12 A8 8 0 0 1 20 12"/>
-  </svg>
-);
-
-const ChevronIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="16 4 8 12 16 20"/>
-  </svg>
-);
-
-const LshapeIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="6 20 6 6 18 6"/>
-  </svg>
-);
-
-const ZshapeIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="6 6 6 12 18 12 18 18"/>
-  </svg>
-);
-
-const BracketIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="6 4 6 4"/>
-    <polyline points="6 5 18 5 18 19 6 19"/>
-    <polyline points="6 20 6 20"/>
   </svg>
 );
 
@@ -308,76 +249,12 @@ export const DrawingToolbar: React.FC = () => {
           </div>
 
           <button
-            onClick={() => setTool('arrow')}
-            className={tool === 'arrow' ? 'active' : ''}
-            title="矢印 (A)"
-          >
-            <ArrowIcon />
-          </button>
-
-          <div className="tool-group">
-            <button
-              onClick={() => setTool('doubleArrow')}
-              className={tool === 'doubleArrow' ? 'active' : ''}
-              title="両矢印 (D)"
-            >
-              <DoubleArrowIcon />
-            </button>
-            <button
-              onClick={() => setTool('doubleArrowAnnotated')}
-              className={`annotated-btn ${tool === 'doubleArrowAnnotated' ? 'active' : ''}`}
-              title="両矢印+テキスト"
-            >
-              <DoubleArrowAnnotatedIcon />
-            </button>
-          </div>
-
-          <button
             onClick={() => setTool('polyline')}
             className={tool === 'polyline' ? 'active' : ''}
             title="折れ線 (Y) - ダブルクリックで確定"
           >
             <PolylineIcon />
           </button>
-
-          {/* 校正記号グループ */}
-          <div className="tool-group">
-            <button
-              onClick={() => setTool('chevron')}
-              className={tool === 'chevron' ? 'active' : ''}
-              title="くの字 - Ctrl押下で∨形"
-            >
-              <ChevronIcon />
-            </button>
-            <button
-              onClick={() => setTool('lshape')}
-              className={tool === 'lshape' ? 'active' : ''}
-              title="L字（行移動）"
-            >
-              <LshapeIcon />
-            </button>
-            <button
-              onClick={() => setTool('zshape')}
-              className={tool === 'zshape' ? 'active' : ''}
-              title="Z字（改行）- Ctrl押下で方向切替"
-            >
-              <ZshapeIcon />
-            </button>
-            <button
-              onClick={() => setTool('bracket')}
-              className={tool === 'bracket' ? 'active' : ''}
-              title="コの字（全体移動）"
-            >
-              <BracketIcon />
-            </button>
-            <button
-              onClick={() => setTool('semicircle')}
-              className={tool === 'semicircle' ? 'active' : ''}
-              title="半円"
-            >
-              <SemicircleIcon />
-            </button>
-          </div>
 
           <button
             onClick={() => setTool('image')}

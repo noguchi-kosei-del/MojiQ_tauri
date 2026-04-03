@@ -1,10 +1,9 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useDrawingStore } from '../../stores/drawingStore';
 import { useDocumentStore } from '../../stores/documentStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { ask } from '@tauri-apps/plugin-dialog';
 import './HamburgerMenu.css';
 
 // SVG Icons
@@ -121,20 +120,25 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ isOpen, onToggle }
     window.open(url, '_blank');
   }, []);
 
-  const handleGoHome = useCallback(async () => {
+  const [isGoHomeConfirmOpen, setIsGoHomeConfirmOpen] = useState(false);
+
+  const handleGoHome = useCallback(() => {
     if (pages.length > 0) {
-      const confirmed = await ask('ホーム画面に戻りますか？\n読み込まれたPDFと描画がすべてリセットされます。', {
-        title: '確認',
-        kind: 'warning',
-      });
-      if (confirmed) {
-        // すべてのドキュメントタブを閉じる
-        [...tabOrder].forEach(id => closeDocument(id, true));
-        clearDocument();
-        onToggle(); // メニューを閉じる
-      }
+      setIsGoHomeConfirmOpen(true);
     }
-  }, [pages.length, tabOrder, closeDocument, clearDocument, onToggle]);
+  }, [pages.length]);
+
+  const handleGoHomeConfirm = useCallback(() => {
+    setIsGoHomeConfirmOpen(false);
+    // すべてのドキュメントタブを閉じる
+    [...tabOrder].forEach(id => closeDocument(id, true));
+    clearDocument();
+    onToggle(); // メニューを閉じる
+  }, [tabOrder, closeDocument, clearDocument, onToggle]);
+
+  const handleGoHomeCancel = useCallback(() => {
+    setIsGoHomeConfirmOpen(false);
+  }, []);
 
   return (
     <>
@@ -203,6 +207,29 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ isOpen, onToggle }
           </button>
         </div>
       </div>
+
+      {/* ホーム画面確認モーダル */}
+      {isGoHomeConfirmOpen && (
+        <div className="go-home-confirm-overlay" onClick={handleGoHomeCancel}>
+          <div className="go-home-confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="go-home-confirm-header">
+              <span className="go-home-confirm-title">確認</span>
+            </div>
+            <div className="go-home-confirm-body">
+              <p>ホーム画面に戻りますか？</p>
+              <p>読み込まれたPDFと描画がすべてリセットされます。</p>
+            </div>
+            <div className="go-home-confirm-actions">
+              <button className="go-home-confirm-btn cancel" onClick={handleGoHomeCancel}>
+                キャンセル
+              </button>
+              <button className="go-home-confirm-btn confirm" onClick={handleGoHomeConfirm}>
+                ホームに戻る
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

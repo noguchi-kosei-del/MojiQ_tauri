@@ -854,14 +854,14 @@ function App() {
             page.layers.some(layer => layer.strokes.length > 0 || layer.shapes.length > 0)
           );
           if (hasDrawings) {
-            ask('すべての描画を消去しますか？', {
-              title: '確認',
-              kind: 'warning',
-            }).then((confirmed) => {
-              if (confirmed) {
-                clearAllDrawings();
-              }
-            });
+            window.dispatchEvent(new CustomEvent('mojiq-clear-all'));
+          }
+        }
+        // Save: Ctrl + S
+        else if (e.key === 's') {
+          e.preventDefault();
+          if (pages.length > 0) {
+            window.dispatchEvent(new CustomEvent('mojiq-save'));
           }
         }
         // Print: Ctrl + P

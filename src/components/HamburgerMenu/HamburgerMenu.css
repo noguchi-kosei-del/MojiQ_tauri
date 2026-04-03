@@ -9,7 +9,7 @@
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.3s ease, visibility 0.3s ease;
-  z-index: 1000;
+  z-index: 10010;
 }
 
 .hamburger-overlay.open {
@@ -28,7 +28,7 @@
   border-right: 1px solid var(--border-color);
   transform: translateX(-100%);
   transition: transform 0.3s ease;
-  z-index: 1001;
+  z-index: 10011;
   display: flex;
   flex-direction: column;
 }
@@ -187,4 +187,91 @@
 .app.viewer-mode .hamburger-menu,
 .app.viewer-mode .hamburger-overlay {
   display: none !important;
+}
+
+/* ホーム画面確認モーダル */
+.go-home-confirm-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20000;
+}
+
+.go-home-confirm-dialog {
+  background: var(--bg-primary);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  min-width: 380px;
+  max-width: 460px;
+  overflow: hidden;
+}
+
+.go-home-confirm-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.go-home-confirm-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.go-home-confirm-body {
+  padding: 20px;
+}
+
+.go-home-confirm-body p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.go-home-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+}
+
+.go-home-confirm-btn {
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.go-home-confirm-btn.cancel {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.go-home-confirm-btn.cancel:hover {
+  background: var(--bg-hover);
+}
+
+.go-home-confirm-btn.confirm {
+  background: #f44336;
+  border: 1px solid #f44336;
+  color: #fff;
+}
+
+.go-home-confirm-btn.confirm:hover {
+  background: #d32f2f;
+  border-color: #d32f2f;
 }

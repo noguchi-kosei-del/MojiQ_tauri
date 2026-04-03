@@ -161,79 +161,73 @@
 
 .panel-color-grid {
   display: flex;
-  gap: 8px;
+  gap: 3px;
   align-items: center;
 }
 
 .panel-color-swatch {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  border: 2px solid var(--border-color);
+  width: 21px;
+  height: 21px;
+  border-radius: 3px;
+  border: 1px solid transparent;
   cursor: pointer;
   transition: transform 0.1s, border-color 0.1s;
   padding: 0;
+  flex-shrink: 0;
 }
 
 .panel-color-swatch:hover {
-  transform: scale(1.1);
+  transform: scale(1.15);
 }
 
 .panel-color-swatch.active {
-  transform: scale(1.15);
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 2px #333;
-  z-index: 1;
-}
-
-.proofreading-panel.dark .panel-color-swatch.active {
-  box-shadow: 0 0 0 2px #ddd;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 1px var(--bg-secondary), 0 0 0 2px var(--accent-color);
 }
 
 .panel-color-swatch.custom-color {
-  border: 2px dashed #ccc;
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-color);
 }
 
-.proofreading-panel.dark .panel-color-swatch.custom-color {
-  border-color: #666;
+.panel-color-swatch.custom-color.active {
+  border-style: solid;
+}
+
+.proofreading-panel .hidden-color-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+  height: 0;
 }
 
 /* スポイトボタン */
 .panel-eyedropper-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  border: 2px solid var(--border-color);
-  background: var(--bg-secondary);
+  width: 21px;
+  height: 21px;
+  border-radius: 3px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
   color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
+  flex-shrink: 0;
   transition: all 0.15s ease;
 }
 
 .panel-eyedropper-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
-  transform: scale(1.1);
+  transform: scale(1.15);
 }
 
 .panel-eyedropper-btn svg {
-  width: 18px;
-  height: 18px;
-}
-
-.proofreading-panel.dark .panel-eyedropper-btn {
-  background: #333;
-  border-color: #555;
-  color: #ddd;
-}
-
-.proofreading-panel.dark .panel-eyedropper-btn:hover {
-  background: #444;
-  color: #fff;
+  width: 14px;
+  height: 14px;
 }
 
 /* グラデーションバー */
@@ -744,13 +738,20 @@
   border-bottom: none;
 }
 
-.panel-table tr.checked {
-  opacity: 0.6;
-  background-color: rgba(0, 128, 0, 0.1);
+.panel-table tr.checked .panel-excerpt {
+  color: #bbb;
 }
 
-.proofreading-panel.dark .panel-table tr.checked {
-  background-color: rgba(0, 200, 0, 0.1);
+.panel-table tr.checked .panel-content {
+  color: #999;
+}
+
+.proofreading-panel.dark .panel-table tr.checked .panel-excerpt {
+  color: #666;
+}
+
+.proofreading-panel.dark .panel-table tr.checked .panel-content {
+  color: #888;
 }
 
 .panel-checkbox {
@@ -1136,13 +1137,9 @@
   gap: 8px;
 }
 
-.panel-comment-item.checked {
-  opacity: 0.7;
-  background-color: rgba(0, 128, 0, 0.1);
-}
-
-.proofreading-panel.dark .panel-comment-item.checked {
-  background-color: rgba(0, 200, 0, 0.1);
+.panel-comment-item.checked .panel-comment-type,
+.panel-comment-item.checked .panel-comment-text {
+  opacity: 0.5;
 }
 
 .panel-comment-checkbox {
@@ -1184,4 +1181,61 @@
 .panel-comment-body {
   flex: 1;
   min-width: 0;
+}
+
+/* ========================================= */
+/* 下部アクションボタン（ページバー・コメントテキスト） */
+/* ========================================= */
+
+.panel-bottom-actions {
+  flex-shrink: 0;
+  padding: 8px;
+  display: flex;
+  justify-content: flex-start;
+  gap: 4px;
+  background: transparent;
+  border-top: 1px solid var(--border-color);
+}
+
+.panel-bottom-actions .sidebar-bottom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: color 0.2s, background-color 0.2s;
+}
+
+.panel-bottom-actions .sidebar-bottom-btn:hover:not(:disabled) {
+  color: #1976d2;
+  background: var(--bg-hover);
+}
+
+.panel-bottom-actions .sidebar-bottom-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.panel-bottom-actions .sidebar-bottom-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.panel-bottom-actions .sidebar-bottom-btn.active {
+  color: #f44336;
+  background: rgba(244, 67, 54, 0.1);
+}
+
+.panel-bottom-actions .sidebar-bottom-btn.active:hover:not(:disabled) {
+  background: rgba(244, 67, 54, 0.15);
+}
+
+.panel-bottom-actions .sidebar-bottom-btn.active svg {
+  stroke: #f44336;
 }

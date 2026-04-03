@@ -108,7 +108,7 @@ export const AnnotationModal: React.FC<AnnotationModalProps> = ({
             onClick={handleSubmit}
             disabled={!text.trim()}
           >
-            OK (Ctrl+Enter)
+            OK
           </button>
         </div>
       </div>

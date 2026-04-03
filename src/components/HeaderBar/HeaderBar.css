@@ -262,7 +262,7 @@
   left: 50%;
   transform: translateX(-50%) translateY(-10px);
   min-width: 160px;
-  background: #fff;
+  background: var(--bg-secondary);
   border-radius: 8px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
   padding: 8px 0;
@@ -284,7 +284,7 @@
   height: 0;
   border-left: 8px solid transparent;
   border-right: 8px solid transparent;
-  border-bottom: 8px solid #fff;
+  border-bottom: 8px solid var(--bg-secondary);
   filter: drop-shadow(0 -2px 2px rgba(0, 0, 0, 0.1));
 }
 
@@ -299,15 +299,15 @@
 .spread-menu-header {
   padding: 8px 12px;
   font-size: 11px;
-  color: #888;
+  color: var(--text-secondary);
   font-weight: 500;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
   text-align: left;
 }
 
 .spread-menu-divider {
   height: 1px;
-  background: #eee;
+  background: var(--border-color);
   margin: 4px 0;
 }
 
@@ -320,7 +320,7 @@
   padding: 10px 16px;
   border: none;
   background: none;
-  color: #333;
+  color: var(--text-primary);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
@@ -329,7 +329,7 @@
 }
 
 .spread-menu-item:hover {
-  background-color: #f0f0f0;
+  background-color: var(--bg-hover);
 }
 
 .spread-menu-item.selected {
@@ -340,7 +340,7 @@
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  stroke: #333;
+  stroke: var(--text-primary);
 }
 
 .spread-menu-item:hover svg {
@@ -362,7 +362,7 @@
 }
 
 .header-right .spread-menu .spread-menu-item.danger:hover:not(:disabled) {
-  background-color: #ffebee;
+  background-color: rgba(198, 40, 40, 0.12);
 }
 
 .header-right .spread-menu .spread-menu-item.danger svg {
@@ -372,11 +372,11 @@
 .header-right .spread-menu .spread-menu-item:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-  color: #999;
+  color: var(--text-secondary);
 }
 
 .header-right .spread-menu .spread-menu-item:disabled svg {
-  stroke: #999;
+  stroke: var(--text-secondary);
 }
 
 /* Active spread view button */
@@ -397,7 +397,7 @@
   left: 50%;
   transform: translateX(-50%) translateY(-10px);
   min-width: 180px;
-  background: #fff;
+  background: var(--bg-secondary);
   border-radius: 8px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
   padding: 8px 0;
@@ -419,7 +419,7 @@
   height: 0;
   border-left: 8px solid transparent;
   border-right: 8px solid transparent;
-  border-bottom: 8px solid #fff;
+  border-bottom: 8px solid var(--bg-secondary);
   filter: drop-shadow(0 -2px 2px rgba(0, 0, 0, 0.1));
 }
 
@@ -434,9 +434,9 @@
 .save-menu-header {
   padding: 8px 12px;
   font-size: 11px;
-  color: #888;
+  color: var(--text-secondary);
   font-weight: 500;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
   text-align: left;
 }
 
@@ -449,7 +449,7 @@
   padding: 10px 16px;
   border: none;
   background: none;
-  color: #333;
+  color: var(--text-primary);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
@@ -458,20 +458,20 @@
 }
 
 .save-menu-item:hover:not(:disabled) {
-  background-color: #f0f0f0;
+  background-color: var(--bg-hover);
 }
 
 .save-menu-item:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-  color: #999;
+  color: var(--text-secondary);
 }
 
 .save-menu-item svg {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  stroke: #333;
+  stroke: var(--text-primary);
 }
 
 .save-menu-item:hover:not(:disabled) svg {
@@ -479,7 +479,7 @@
 }
 
 .save-menu-item:disabled svg {
-  stroke: #999;
+  stroke: var(--text-secondary);
 }
 
 /* Save menu checkbox option */
@@ -488,14 +488,14 @@
   align-items: center;
   gap: 8px;
   padding: 10px 16px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--border-color);
   margin-top: 4px;
   cursor: pointer;
   transition: background-color 0.15s;
 }
 
 .save-menu-checkbox:hover {
-  background-color: #f0f0f0;
+  background-color: var(--bg-hover);
 }
 
 .save-menu-checkbox input[type="checkbox"] {
@@ -508,8 +508,95 @@
 
 .save-menu-checkbox label {
   font-size: 13px;
-  color: #333;
+  color: var(--text-primary);
   cursor: pointer;
   user-select: none;
+}
+
+/* 全消去確認モーダル */
+.clear-confirm-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20000;
+}
+
+.clear-confirm-dialog {
+  background: var(--bg-primary);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  min-width: 380px;
+  max-width: 460px;
+  overflow: hidden;
+}
+
+.clear-confirm-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.clear-confirm-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.clear-confirm-body {
+  padding: 20px;
+}
+
+.clear-confirm-body p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.clear-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+}
+
+.clear-confirm-btn {
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.clear-confirm-btn.cancel {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.clear-confirm-btn.cancel:hover {
+  background: var(--bg-hover);
+}
+
+.clear-confirm-btn.confirm {
+  background: #f44336;
+  border: 1px solid #f44336;
+  color: #fff;
+}
+
+.clear-confirm-btn.confirm:hover {
+  background: #d32f2f;
+  border-color: #d32f2f;
 }
 

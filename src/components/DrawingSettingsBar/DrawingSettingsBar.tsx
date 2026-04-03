@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { useDrawingStore } from '../../stores/drawingStore';
 import { usePresetStore } from '../../stores/presetStore';
 import { useSidebarStore } from '../../stores/sidebarStore';
@@ -72,13 +72,33 @@ const GRADIENT_COLORS = [
 ];
 
 export const DrawingSettingsBar: React.FC = () => {
-  const { color, setColor, strokeWidth, setStrokeWidth, pages, pdfAnnotations } = useDrawingStore();
+  const { color, setColor, strokeWidth, setStrokeWidth, pages, pdfAnnotations, updateSelectedColor, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedAnnotationShapeId } = useDrawingStore();
   const { selectedFontSize, selectFontSize } = usePresetStore();
   const { isSettingsBarCollapsed, toggleSettingsBar } = useSidebarStore();
   const { bgOpacity, setBgOpacity } = useBgOpacityStore();
   const { isActive: isViewerMode } = useViewerModeStore();
   const { isPageNavHidden, togglePageNavHidden } = usePageNavStore();
   const { isHidden: isCommentHidden, toggle: toggleCommentVisibility } = useCommentVisibilityStore();
+
+  const colorInputRef = useRef<HTMLInputElement>(null);
+
+  // カスタムカラースウォッチクリック時にカラーピッカーを開く
+  const handleCustomColorClick = useCallback(() => {
+    if (colorInputRef.current) {
+      colorInputRef.current.value = color;
+      colorInputRef.current.click();
+    }
+  }, [color]);
+
+  // カラーピッカーのリアルタイム変更（ドラッグ中）
+  const handleColorInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const newColor = e.target.value;
+    setColor(newColor);
+    const hasSelection = selectedStrokeIds.length > 0 || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedAnnotationShapeId !== null;
+    if (hasSelection) {
+      updateSelectedColor(newColor);
+    }
+  }, [setColor, updateSelectedColor, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedAnnotationShapeId]);
 
   // PDF注釈テキストがあるかどうかをチェック
   const hasPdfAnnotationTexts = useMemo(() => {
@@ -165,11 +185,19 @@ export const DrawingSettingsBar: React.FC = () => {
               title={presetColor}
             />
           ))}
-          {/* カスタムカラー表示（グラデーションバーから選択した色を表示） */}
+          {/* カスタムカラー（クリックでカラーピッカーを開く） */}
           <div
             className={`color-swatch custom ${!PRESET_COLORS.includes(color) ? 'active' : ''}`}
             style={{ backgroundColor: !PRESET_COLORS.includes(color) ? color : 'transparent' }}
-            title="グラデーションバーから選択した色"
+            title="カスタムカラー"
+            onClick={handleCustomColorClick}
+          />
+          <input
+            ref={colorInputRef}
+            type="color"
+            className="hidden-color-input"
+            onInput={handleColorInput as unknown as React.FormEventHandler<HTMLInputElement>}
+            onChange={handleColorInput}
           />
         </div>
         {/* グラデーションバー */}
