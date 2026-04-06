@@ -6,6 +6,7 @@ import { useSidebarStore } from '../../stores/sidebarStore';
 import { useModeStore } from '../../stores/modeStore';
 import { usePageNavStore } from '../../stores/pageNavStore';
 import { useCommentVisibilityStore } from '../../stores/commentVisibilityStore';
+import { useDocumentStore } from '../../stores/documentStore';
 import { ProofreadingCheckItem, StampType } from '../../types';
 import { isLandscapeDocument, pdfPageToNombreRange } from '../../utils/pageNumberUtils';
 import './ProofreadingPanel.css';
@@ -550,13 +551,61 @@ export const ProofreadingPanel: React.FC = () => {
   const proposalItems = useMemo(() =>
     allItems.filter(item => item.checkKind === 'proposal'), [allItems]);
 
-  // ドキュメント読み込み・切り替え・閉じ時に校正チェックデータとチェック状態をリセット
+  // ローカルstateのrefを保持（イベントリスナー内で最新値を参照するため）
+  const commentDoneStampsRef = useRef(commentDoneStamps);
+  commentDoneStampsRef.current = commentDoneStamps;
+  const collapsedCategoriesRef = useRef(collapsedCategories);
+  collapsedCategoriesRef.current = collapsedCategories;
+
+  // ドキュメント読み込み・切り替え・閉じ時に校正チェックデータを保存/復元
   useEffect(() => {
-    const handleDocumentChanged = () => {
-      clearData();
-      resetCheckedState();
-      setCommentDoneStamps(new Map());
-      setCollapsedCategories(new Set());
+    const handleDocumentChanged = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      const docStore = useDocumentStore.getState();
+
+      if (detail?.type === 'switch') {
+        // 旧ドキュメントにローカルstateを保存
+        if (detail.oldId) {
+          docStore.updateDocument(detail.oldId, {
+            proofreadingCommentDoneStamps: Array.from(commentDoneStampsRef.current.entries()),
+            proofreadingCollapsedCategories: Array.from(collapsedCategoriesRef.current),
+          });
+        }
+
+        // 新ドキュメントからローカルstateを復元（store側データはswitchDocumentで復元済み）
+        const newDoc = docStore.documents.get(detail.targetId);
+        if (newDoc) {
+          setCommentDoneStamps(new Map(newDoc.proofreadingCommentDoneStamps || []));
+          setCollapsedCategories(new Set(newDoc.proofreadingCollapsedCategories || []));
+        } else {
+          setCommentDoneStamps(new Map());
+          setCollapsedCategories(new Set());
+        }
+
+      } else if (detail?.type === 'close') {
+        // タブ閉じ: 新しいアクティブドキュメントのローカルstateを復元
+        if (detail.newActiveId) {
+          const newActiveDoc = docStore.documents.get(detail.newActiveId);
+          if (newActiveDoc) {
+            setCommentDoneStamps(new Map(newActiveDoc.proofreadingCommentDoneStamps || []));
+            setCollapsedCategories(new Set(newActiveDoc.proofreadingCollapsedCategories || []));
+          } else {
+            setCommentDoneStamps(new Map());
+            setCollapsedCategories(new Set());
+          }
+        } else {
+          setCommentDoneStamps(new Map());
+          setCollapsedCategories(new Set());
+        }
+        // store側データはcloseDocumentで復元済み
+
+      } else {
+        // load / fallback: 全リセット
+        clearData();
+        resetCheckedState();
+        setCommentDoneStamps(new Map());
+        setCollapsedCategories(new Set());
+      }
     };
     window.addEventListener('mojiq-document-changed', handleDocumentChanged);
     return () => {

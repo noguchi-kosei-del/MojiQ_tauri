@@ -1,5 +1,6 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { PageState, HistoryState, PdfPageInfo, PdfAnnotationText } from './index';
+import { PageState, HistoryState, PdfPageInfo, PdfAnnotationText, ProofreadingCheckData, ProofreadingCheckItem } from './index';
+import type { ProofreadingTabType, CheckedState } from '../stores/proofreadingCheckStore';
 
 /**
  * ドキュメントのファイルタイプ
@@ -46,6 +47,22 @@ export interface DocumentState {
   // --- UI状態の保存 ---
   /** ズームレベル */
   zoom: number;
+
+  // --- 校正チェックデータ（タブ別保持） ---
+  /** 校正チェックの読み込みデータ */
+  proofreadingData: ProofreadingCheckData | null;
+  /** 校正チェックファイル名 */
+  proofreadingFileName: string;
+  /** マージ済みアイテム一覧 */
+  proofreadingAllItems: ProofreadingCheckItem[];
+  /** 現在の校正タブ（正誤/提案/コメント） */
+  proofreadingTab: ProofreadingTabType;
+  /** チェック済み状態 */
+  proofreadingCheckedState: CheckedState | null;
+  /** コメント済スタンプ情報 */
+  proofreadingCommentDoneStamps: [number, { pageIndex: number; stampId: string }][];
+  /** 折りたたみカテゴリ */
+  proofreadingCollapsedCategories: string[];
 }
 
 /**

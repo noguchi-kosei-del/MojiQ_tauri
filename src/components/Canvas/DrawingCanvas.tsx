@@ -8,6 +8,8 @@ import { useViewerModeStore } from '../../stores/viewerModeStore';
 import { useBgOpacityStore } from '../../stores/bgOpacityStore';
 import { useModeStore } from '../../stores/modeStore';
 import { useDisplayScaleStore } from '../../stores/displayScaleStore';
+import { useGridStore } from '../../stores/gridStore';
+import { useCalibrationStore, MM_PER_PT } from '../../stores/calibrationStore';
 import { AnnotationModal } from '../AnnotationModal';
 import { open, message } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
@@ -651,72 +653,135 @@ export const DrawingCanvas: React.FC = () => {
     };
   }, [zoomAtPointer]);
 
-  // Wheel handler - zoom (with Ctrl) or page navigation (without Ctrl)
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    // Ctrl/Cmd + wheel = zoom
-    if (e.ctrlKey || e.metaKey) {
+  // 全てのwheel処理をネイティブリスナーで統合（passive: false でpreventDefaultを有効化）
+  // React onWheel は passive のため preventDefault が効かない問題を回避
+  const zoomRef = useRef(zoom);
+  const pagesLengthRef = useRef(pages.length);
+  const currentPageRef = useRef(currentPage);
+  zoomRef.current = zoom;
+  pagesLengthRef.current = pages.length;
+  currentPageRef.current = currentPage;
+
+  useEffect(() => {
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      // 1. Ctrl/Cmd + wheel = ズーム
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+
+        const rect = scrollArea.getBoundingClientRect();
+        const pointerX = e.clientX - rect.left;
+        const pointerY = e.clientY - rect.top;
+        const contentX = pointerX + scrollArea.scrollLeft;
+        const contentY = pointerY + scrollArea.scrollTop;
+
+        const direction = e.deltaY < 0 ? 1 : -1;
+        const oldZoom = zoomRef.current;
+        const newZoom = Math.max(minZoom, Math.min(maxZoom, oldZoom + direction * zoomStep));
+        if (newZoom === oldZoom) return;
+
+        const zoomRatio = newZoom / oldZoom;
+        setZoom(newZoom);
+
+        requestAnimationFrame(() => {
+          scrollArea.scrollLeft = contentX * zoomRatio - pointerX;
+          scrollArea.scrollTop = contentY * zoomRatio - pointerY;
+        });
+        return;
+      }
+
+      // 2. グリッドモード: グリッド上のホイールでptサイズ変更
+      const gridState = useGridStore.getState();
+      const calibState = useCalibrationStore.getState();
+      if (gridState.isGridMode && calibState.isCalibrated) {
+        // useCanvas.ts の getPointerPosition と同じ座標変換を使用
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const canvasRect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / canvasRect.width;
+        const scaleY = canvas.height / canvasRect.height;
+        const canvasX = (e.clientX - canvasRect.left) * scaleX;
+        const canvasY = (e.clientY - canvasRect.top) * scaleY;
+        const ppm = calibState.pixelsPerMm;
+
+        const isInsideGrid = (grid: { startPos: { x: number; y: number }; lines: number; chars: number; ptSize: number; writingMode: string }) => {
+          const cs = grid.ptSize * MM_PER_PT * ppm;
+          const isH = grid.writingMode === 'horizontal';
+          const w = (isH ? grid.chars : grid.lines) * cs;
+          const h = (isH ? grid.lines : grid.chars) * cs;
+          return canvasX >= grid.startPos.x && canvasX <= grid.startPos.x + w &&
+                 canvasY >= grid.startPos.y && canvasY <= grid.startPos.y + h;
+        };
+
+        const resizeGrid = (grid: { ptSize: number; writingMode: string; chars: number; lines: number; centerPos: { x: number; y: number } }) => {
+          const delta = e.deltaY > 0 ? -0.5 : 0.5;
+          const newPt = Math.round(Math.max(1, Math.min(200, grid.ptSize + delta)) * 10) / 10;
+          if (newPt === grid.ptSize) return null;
+          const newCellSize = newPt * MM_PER_PT * ppm;
+          const isH = grid.writingMode === 'horizontal';
+          const newW = (isH ? grid.chars : grid.lines) * newCellSize;
+          const newH = (isH ? grid.lines : grid.chars) * newCellSize;
+          return {
+            ptSize: newPt,
+            startPos: { x: grid.centerPos.x - newW / 2, y: grid.centerPos.y - newH / 2 },
+            constraint: undefined,
+          };
+        };
+
+        // pendingGridを最優先
+        if (gridState.pendingGrid && isInsideGrid(gridState.pendingGrid)) {
+          e.preventDefault();
+          e.stopPropagation();
+          const updates = resizeGrid(gridState.pendingGrid);
+          if (updates) {
+            gridState.updatePendingGrid(updates);
+            redrawCanvas();
+          }
+          return;
+        }
+
+        // ページに配置済みグリッド（逆順 = 上から）
+        const cp = currentPageRef.current;
+        const pageGrids = gridState.getPageGrids(cp);
+        for (let i = pageGrids.length - 1; i >= 0; i--) {
+          if (isInsideGrid(pageGrids[i])) {
+            e.preventDefault();
+            e.stopPropagation();
+            const updates = resizeGrid(pageGrids[i]);
+            if (updates) {
+              gridState.updateGrid(cp, i, updates);
+              redrawCanvas();
+            }
+            return;
+          }
+        }
+      }
+
+      // 3. 通常ホイール = ページ移動
+      if (pagesLengthRef.current <= 1) return;
+      const now = Date.now();
+      if (now - lastPageChangeRef.current < 200) return;
+
       e.preventDefault();
-
-      const scrollArea = scrollAreaRef.current;
-      if (!scrollArea) return;
-
-      // Get pointer position relative to scroll area
-      const rect = scrollArea.getBoundingClientRect();
-      const pointerX = e.clientX - rect.left;
-      const pointerY = e.clientY - rect.top;
-
-      // Calculate position within the content (including scroll offset)
-      const contentX = pointerX + scrollArea.scrollLeft;
-      const contentY = pointerY + scrollArea.scrollTop;
-
-      // Calculate new zoom
-      const direction = e.deltaY < 0 ? 1 : -1;
-      const oldZoom = zoom;
-      const newZoom = Math.max(minZoom, Math.min(maxZoom, zoom + direction * zoomStep));
-
-      if (newZoom === oldZoom) return;
-
-      // Calculate zoom ratio
-      const zoomRatio = newZoom / oldZoom;
-
-      // Update zoom
-      setZoom(newZoom);
-
-      // Adjust scroll position to keep pointer position stable
-      // Use requestAnimationFrame to ensure DOM has updated
-      requestAnimationFrame(() => {
-        const newContentX = contentX * zoomRatio;
-        const newContentY = contentY * zoomRatio;
-
-        scrollArea.scrollLeft = newContentX - pointerX;
-        scrollArea.scrollTop = newContentY - pointerY;
-      });
-      return;
-    }
-
-    // Normal wheel = page navigation
-    if (pages.length <= 1) return;
-
-    // Debounce to prevent too fast page changes (200ms minimum interval)
-    const now = Date.now();
-    if (now - lastPageChangeRef.current < 200) return;
-
-    e.preventDefault();
-
-    if (e.deltaY > 0) {
-      // Scroll down = next page
-      if (currentPage < pages.length - 1) {
-        lastPageChangeRef.current = now;
-        setCurrentPage(currentPage + 1);
+      const cp = currentPageRef.current;
+      if (e.deltaY > 0) {
+        if (cp < pagesLengthRef.current - 1) {
+          lastPageChangeRef.current = now;
+          setCurrentPage(cp + 1);
+        }
+      } else if (e.deltaY < 0) {
+        if (cp > 0) {
+          lastPageChangeRef.current = now;
+          setCurrentPage(cp - 1);
+        }
       }
-    } else if (e.deltaY < 0) {
-      // Scroll up = previous page
-      if (currentPage > 0) {
-        lastPageChangeRef.current = now;
-        setCurrentPage(currentPage - 1);
-      }
-    }
-  }, [zoom, minZoom, maxZoom, zoomStep, setZoom, pages.length, currentPage, setCurrentPage]);
+    };
+
+    scrollArea.addEventListener('wheel', handleWheel, { passive: false });
+    return () => scrollArea.removeEventListener('wheel', handleWheel);
+  }, [minZoom, maxZoom, zoomStep, setZoom, setCurrentPage, redrawCanvas]);
 
   // Determine cursor based on tool
   const getCursor = () => {
@@ -773,7 +838,6 @@ export const DrawingCanvas: React.FC = () => {
           onPointerMove={tool === 'pan' ? handlePanMove : undefined}
           onPointerUp={tool === 'pan' ? handlePanEnd : undefined}
           onPointerLeave={tool === 'pan' ? handlePanEnd : undefined}
-          onWheel={handleWheel}
           onMouseMove={handleMouseMove}
           style={{ cursor: tool === 'pan' ? getCursor() : undefined }}
         >

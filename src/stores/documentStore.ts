@@ -4,6 +4,7 @@ import { PageState, HistoryState, PdfPageInfo, PdfAnnotationText } from '../type
 import { useZoomStore } from './zoomStore';
 import { cacheManager } from '../utils/cacheManager';
 import { useTextLayerStore } from './textLayerStore';
+import { useProofreadingCheckStore } from './proofreadingCheckStore';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
 // メモリにフル保持するドキュメント数の上限
@@ -36,6 +37,13 @@ const createEmptyDocumentState = (options: CreateDocumentOptions = {}): Document
     pdfPageInfos: [],
     pdfAnnotations: [],
     zoom: 1,
+    proofreadingData: null,
+    proofreadingFileName: '',
+    proofreadingAllItems: [],
+    proofreadingTab: 'correctness',
+    proofreadingCheckedState: null,
+    proofreadingCommentDoneStamps: [],
+    proofreadingCollapsedCategories: [],
   };
 };
 
@@ -186,8 +194,29 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
       activeDocumentId: newActiveId,
     });
 
-    // 校正チェックデータリセット通知
-    window.dispatchEvent(new Event('mojiq-document-changed'));
+    // 新しいアクティブドキュメントの校正チェック状態を復元
+    const proofStore = useProofreadingCheckStore.getState();
+    if (newActiveId) {
+      const newActiveDoc = newDocuments.get(newActiveId);
+      if (newActiveDoc?.proofreadingData) {
+        proofStore.setCurrentData(newActiveDoc.proofreadingData, newActiveDoc.proofreadingFileName);
+        proofStore.setCurrentTab(newActiveDoc.proofreadingTab);
+        if (newActiveDoc.proofreadingCheckedState) {
+          proofStore.restoreCheckedState(newActiveDoc.proofreadingCheckedState);
+        }
+      } else {
+        proofStore.clearData();
+        proofStore.resetCheckedState();
+      }
+    } else {
+      proofStore.clearData();
+      proofStore.resetCheckedState();
+    }
+
+    // 校正チェックローカルstate復元通知
+    window.dispatchEvent(new CustomEvent('mojiq-document-changed', {
+      detail: { type: 'close', closedId: id, newActiveId }
+    }));
 
     return true;
   },
@@ -200,11 +229,41 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     const targetDoc = state.documents.get(targetId);
     if (!targetDoc) return;
 
+    const newDocuments = new Map(state.documents);
+    const oldId = state.activeDocumentId;
+
+    // 切替前: 現在の校正チェック状態を旧ドキュメントに保存
+    const proofStore = useProofreadingCheckStore.getState();
+    if (oldId) {
+      const oldDoc = newDocuments.get(oldId);
+      if (oldDoc) {
+        newDocuments.set(oldId, {
+          ...oldDoc,
+          proofreadingData: proofStore.currentData,
+          proofreadingFileName: proofStore.currentFileName,
+          proofreadingAllItems: proofStore.allItems,
+          proofreadingTab: proofStore.currentTab,
+          proofreadingCheckedState: proofStore.getCheckedState(),
+        });
+      }
+    }
+
+    // 切替後: 新ドキュメントの校正チェック状態を復元
+    if (targetDoc.proofreadingData) {
+      proofStore.setCurrentData(targetDoc.proofreadingData, targetDoc.proofreadingFileName);
+      proofStore.setCurrentTab(targetDoc.proofreadingTab);
+      if (targetDoc.proofreadingCheckedState) {
+        proofStore.restoreCheckedState(targetDoc.proofreadingCheckedState);
+      }
+    } else {
+      proofStore.clearData();
+      proofStore.resetCheckedState();
+    }
+
     // ズームレベルを復元
     useZoomStore.getState().setZoom(targetDoc.zoom);
 
     // アクティブドキュメントのlastAccessedAtを更新
-    const newDocuments = new Map(state.documents);
     newDocuments.set(targetId, {
       ...targetDoc,
       lastAccessedAt: Date.now(),
@@ -215,8 +274,10 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
       activeDocumentId: targetId,
     });
 
-    // 校正チェックデータリセット通知
-    window.dispatchEvent(new Event('mojiq-document-changed'));
+    // 校正チェックローカルstate保存/復元通知
+    window.dispatchEvent(new CustomEvent('mojiq-document-changed', {
+      detail: { type: 'switch', targetId, oldId }
+    }));
 
     // メモリ管理
     get().unloadOldDocuments();
@@ -339,6 +400,13 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
       pdfPageInfos,
       pdfAnnotations,
       zoom: 1,
+      proofreadingData: null,
+      proofreadingFileName: '',
+      proofreadingAllItems: [],
+      proofreadingTab: 'correctness',
+      proofreadingCheckedState: null,
+      proofreadingCommentDoneStamps: [],
+      proofreadingCollapsedCategories: [],
     };
 
     set((state) => {
@@ -392,7 +460,9 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     });
 
     // 校正チェックデータリセット通知
-    window.dispatchEvent(new Event('mojiq-document-changed'));
+    window.dispatchEvent(new CustomEvent('mojiq-document-changed', {
+      detail: { type: 'load' }
+    }));
 
     // メモリ管理
     get().unloadOldDocuments();

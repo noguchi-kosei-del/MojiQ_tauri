@@ -6,7 +6,7 @@ import { useBgOpacityStore } from '../../stores/bgOpacityStore';
 import { useViewerModeStore } from '../../stores/viewerModeStore';
 import { usePageNavStore } from '../../stores/pageNavStore';
 import { useCommentVisibilityStore } from '../../stores/commentVisibilityStore';
-import { GridSettingsPanel } from '../GridSettingsPanel';
+import { TypesettingSimulator } from '../TypesettingSimulator';
 import './DrawingSettingsBar.css';
 
 // 折りたたみボタンアイコン
@@ -281,8 +281,8 @@ export const DrawingSettingsBar: React.FC = () => {
         />
       </div>
 
-      {/* 写植グリッド設定パネル */}
-      <GridSettingsPanel />
+      {/* 写植シミュレーター */}
+      <TypesettingSimulator />
 
         </div>
       )}

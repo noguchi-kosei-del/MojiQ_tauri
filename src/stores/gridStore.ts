@@ -7,6 +7,9 @@ export type WritingMode = 'horizontal' | 'vertical';
 // 余白密度
 export type DensityMode = 'loose' | 'standard' | 'tight' | 'none';
 
+// グリッドモード: 一文字グリッド or セリフ見本
+export type GridModeType = 'grid' | 'sampleGrid';
+
 // グリッドの状態
 export interface GridState {
   id: string;
@@ -32,10 +35,17 @@ interface PageGrids {
   selectedIndex: number;
 }
 
+// ページごとのundo/redoスタック
+interface PageUndoData {
+  grids: GridState[];
+  selectedIndex: number;
+}
+
 interface GridStoreState {
   // グリッドモード
   isGridMode: boolean;
   isGridAdjusting: boolean;
+  gridMode: GridModeType | null; // 'grid' = 一文字, 'sampleGrid' = セリフ見本
 
   // 作成中のグリッド
   pendingGrid: GridState | null;
@@ -50,11 +60,15 @@ interface GridStoreState {
 
   // ダッシュボード表示
   showDashboard: boolean;
+
+  // Undo/Redo (ページ別)
+  undoStacks: Map<number, PageUndoData[]>;
+  redoStacks: Map<number, PageUndoData[]>;
 }
 
 interface GridStoreActions {
   // モード
-  enterGridMode: () => void;
+  enterGridMode: (mode: GridModeType) => void;
   exitGridMode: () => void;
   setGridAdjusting: (value: boolean) => void;
 
@@ -71,6 +85,11 @@ interface GridStoreActions {
   getSelectedGrid: (pageNumber: number) => GridState | null;
   clearPageGrids: (pageNumber: number) => void;
 
+  // 選択グリッド削除
+  deleteSelectedGrid: (pageNumber: number) => void;
+  // pendingGridを確定してページに追加
+  confirmPendingGrid: (pageNumber: number) => void;
+
   // 設定
   setWritingMode: (mode: WritingMode) => void;
   setDensity: (density: DensityMode) => void;
@@ -78,6 +97,13 @@ interface GridStoreActions {
 
   // ダッシュボード
   setShowDashboard: (show: boolean) => void;
+
+  // Undo/Redo
+  saveStateForUndo: (pageNumber: number) => void;
+  undo: (pageNumber: number) => void;
+  redo: (pageNumber: number) => void;
+  canUndo: (pageNumber: number) => boolean;
+  canRedo: (pageNumber: number) => boolean;
 
   // グリッド計算
   calculateGridFromText: (text: string) => { lines: number; chars: number };
@@ -123,26 +149,32 @@ export const createDefaultGrid = (
   };
 };
 
+const MAX_UNDO_STACK = 20;
+
 export const useGridStore = create<GridStoreState & GridStoreActions>()((set, get) => ({
   // 初期状態
   isGridMode: false,
   isGridAdjusting: false,
+  gridMode: null,
   pendingGrid: null,
   pageGrids: new Map(),
   writingMode: 'vertical',
   density: 'standard',
   sampleText: '',
   showDashboard: false,
+  undoStacks: new Map(),
+  redoStacks: new Map(),
 
   // モード
-  enterGridMode: () => {
-    set({ isGridMode: true });
+  enterGridMode: (mode) => {
+    set({ isGridMode: true, gridMode: mode });
   },
 
   exitGridMode: () => {
     set({
       isGridMode: false,
       isGridAdjusting: false,
+      gridMode: null,
       pendingGrid: null,
       showDashboard: false,
     });
@@ -232,6 +264,31 @@ export const useGridStore = create<GridStoreState & GridStoreActions>()((set, ge
     set({ pageGrids: newPageGrids });
   },
 
+  // 選択グリッド削除（pendingGridを削除し、undo保存）
+  deleteSelectedGrid: (pageNumber) => {
+    const { pendingGrid } = get();
+    if (!pendingGrid) return;
+    get().saveStateForUndo(pageNumber);
+    set({
+      pendingGrid: null,
+      isGridAdjusting: false,
+      showDashboard: false,
+    });
+  },
+
+  // pendingGridを確定してページに追加
+  confirmPendingGrid: (pageNumber) => {
+    const { pendingGrid } = get();
+    if (!pendingGrid) return;
+    get().saveStateForUndo(pageNumber);
+    get().addGrid(pageNumber, pendingGrid);
+    set({
+      pendingGrid: null,
+      isGridAdjusting: false,
+      showDashboard: false,
+    });
+  },
+
   // 設定
   setWritingMode: (mode) => {
     set({ writingMode: mode });
@@ -253,6 +310,121 @@ export const useGridStore = create<GridStoreState & GridStoreActions>()((set, ge
   // ダッシュボード
   setShowDashboard: (show) => {
     set({ showDashboard: show });
+  },
+
+  // Undo/Redo
+  saveStateForUndo: (pageNumber) => {
+    const { pageGrids, pendingGrid, undoStacks, redoStacks } = get();
+    const pageData = pageGrids.get(pageNumber) || { grids: [], selectedIndex: -1 };
+    // pendingGridもgridsに含めて保存
+    const allGrids = pendingGrid
+      ? [...pageData.grids, pendingGrid]
+      : [...pageData.grids];
+    const snapshot: PageUndoData = {
+      grids: structuredClone(allGrids),
+      selectedIndex: pageData.selectedIndex,
+    };
+    const newUndoStacks = new Map(undoStacks);
+    const stack = newUndoStacks.get(pageNumber) || [];
+    stack.push(snapshot);
+    if (stack.length > MAX_UNDO_STACK) stack.shift();
+    newUndoStacks.set(pageNumber, stack);
+    // redo をクリア
+    const newRedoStacks = new Map(redoStacks);
+    newRedoStacks.set(pageNumber, []);
+    set({ undoStacks: newUndoStacks, redoStacks: newRedoStacks });
+  },
+
+  undo: (pageNumber) => {
+    const { undoStacks, redoStacks, pageGrids, pendingGrid } = get();
+    const undoStack = undoStacks.get(pageNumber) || [];
+    if (undoStack.length === 0) return;
+
+    // 現在の状態をredoに保存
+    const pageData = pageGrids.get(pageNumber) || { grids: [], selectedIndex: -1 };
+    const allGrids = pendingGrid
+      ? [...pageData.grids, pendingGrid]
+      : [...pageData.grids];
+    const currentSnapshot: PageUndoData = {
+      grids: structuredClone(allGrids),
+      selectedIndex: pageData.selectedIndex,
+    };
+    const newRedoStacks = new Map(redoStacks);
+    const redoStack = newRedoStacks.get(pageNumber) || [];
+    redoStack.push(currentSnapshot);
+    newRedoStacks.set(pageNumber, redoStack);
+
+    // undoから復元
+    const newUndoStacks = new Map(undoStacks);
+    const stack = [...(newUndoStacks.get(pageNumber) || [])];
+    const snapshot = stack.pop()!;
+    newUndoStacks.set(pageNumber, stack);
+
+    const newPageGrids = new Map(pageGrids);
+    newPageGrids.set(pageNumber, {
+      grids: snapshot.grids,
+      selectedIndex: snapshot.selectedIndex,
+    });
+
+    set({
+      pageGrids: newPageGrids,
+      undoStacks: newUndoStacks,
+      redoStacks: newRedoStacks,
+      pendingGrid: null,
+      isGridAdjusting: false,
+      showDashboard: false,
+    });
+  },
+
+  redo: (pageNumber) => {
+    const { undoStacks, redoStacks, pageGrids, pendingGrid } = get();
+    const redoStack = redoStacks.get(pageNumber) || [];
+    if (redoStack.length === 0) return;
+
+    // 現在の状態をundoに保存
+    const pageData = pageGrids.get(pageNumber) || { grids: [], selectedIndex: -1 };
+    const allGrids = pendingGrid
+      ? [...pageData.grids, pendingGrid]
+      : [...pageData.grids];
+    const currentSnapshot: PageUndoData = {
+      grids: structuredClone(allGrids),
+      selectedIndex: pageData.selectedIndex,
+    };
+    const newUndoStacks = new Map(undoStacks);
+    const undoStack = newUndoStacks.get(pageNumber) || [];
+    undoStack.push(currentSnapshot);
+    newUndoStacks.set(pageNumber, undoStack);
+
+    // redoから復元
+    const newRedoStacks = new Map(redoStacks);
+    const stack = [...(newRedoStacks.get(pageNumber) || [])];
+    const snapshot = stack.pop()!;
+    newRedoStacks.set(pageNumber, stack);
+
+    const newPageGrids = new Map(pageGrids);
+    newPageGrids.set(pageNumber, {
+      grids: snapshot.grids,
+      selectedIndex: snapshot.selectedIndex,
+    });
+
+    set({
+      pageGrids: newPageGrids,
+      undoStacks: newUndoStacks,
+      redoStacks: newRedoStacks,
+      pendingGrid: null,
+      isGridAdjusting: false,
+      showDashboard: false,
+    });
+  },
+
+  canUndo: (pageNumber) => {
+    const { undoStacks } = get();
+    return (undoStacks.get(pageNumber) || []).length > 0;
+  },
+
+  canRedo: (pageNumber) => {
+    const { redoStacks } = get();
+    return (redoStacks.get(pageNumber) || []).length > 0;
   },
 
   // グリッド計算

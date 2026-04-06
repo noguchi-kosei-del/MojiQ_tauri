@@ -114,11 +114,6 @@ export const useCanvas = () => {
   const [isCalibrating, setIsCalibrating] = useState(false);
   const calibrationPreviewEndRef = useRef<Point | null>(null);
 
-  // グリッドリサイズ用
-  const [isResizingGrid, setIsResizingGrid] = useState(false);
-  const [resizingCorner, setResizingCorner] = useState<'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight' | null>(null);
-  const gridResizeStartRef = useRef<{ startPos: Point; width: number; height: number; mousePos: Point } | null>(null);
-
   // グリッドドラッグ作成用
   const [isDrawingGrid, setIsDrawingGrid] = useState(false);
   const gridDrawStartRef = useRef<Point | null>(null);
@@ -1479,7 +1474,7 @@ export const useCanvas = () => {
       textData?: string;
     },
     pixelsPerMm: number,
-    showHandles: boolean = false
+    isAdjusting: boolean = false
   ) => {
     ctx.save();
     ctx.strokeStyle = '#00c853'; // 緑色
@@ -1632,26 +1627,14 @@ export const useCanvas = () => {
       ctx.restore();
     }
 
-    // リサイズハンドルを描画
-    if (showHandles) {
-      const handleSize = 8;
-      const halfHandle = handleSize / 2;
-      ctx.fillStyle = '#00c853';
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1;
-
-      // 四隅のハンドル位置
-      const corners = [
-        { x: grid.startPos.x, y: grid.startPos.y }, // topLeft
-        { x: grid.startPos.x + width, y: grid.startPos.y }, // topRight
-        { x: grid.startPos.x, y: grid.startPos.y + height }, // bottomLeft
-        { x: grid.startPos.x + width, y: grid.startPos.y + height }, // bottomRight
-      ];
-
-      corners.forEach((corner) => {
-        ctx.fillRect(corner.x - halfHandle, corner.y - halfHandle, handleSize, handleSize);
-        ctx.strokeRect(corner.x - halfHandle, corner.y - halfHandle, handleSize, handleSize);
-      });
+    // 調整中は枠をシアン色で強調
+    if (isAdjusting) {
+      ctx.save();
+      ctx.strokeStyle = '#00bcd4';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+      ctx.strokeRect(grid.startPos.x, grid.startPos.y, width, height);
+      ctx.restore();
     }
 
     ctx.restore();
@@ -1697,38 +1680,6 @@ export const useCanvas = () => {
     ctx.fillText(`${Math.round(distancePx)}px`, midX, midY - 5 * currentRenderScaleRef.current);
 
     ctx.restore();
-  }, []);
-
-  // グリッドのコーナーハンドル検出
-  const detectGridCorner = useCallback((
-    point: Point,
-    grid: { startPos: { x: number; y: number }; lines: number; chars: number; ptSize: number; writingMode: 'horizontal' | 'vertical' },
-    pixelsPerMm: number
-  ): 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight' | null => {
-    const cellSize = grid.ptSize * MM_PER_PT * pixelsPerMm;
-    const isHorizontal = grid.writingMode === 'horizontal';
-    const cols = isHorizontal ? grid.chars : grid.lines;
-    const rows = isHorizontal ? grid.lines : grid.chars;
-    const width = cols * cellSize;
-    const height = rows * cellSize;
-
-    const handleSize = 12; // クリック判定用サイズ（描画より少し大きめ）
-    const halfHandle = handleSize / 2;
-
-    const corners: { corner: 'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight'; x: number; y: number }[] = [
-      { corner: 'topLeft', x: grid.startPos.x, y: grid.startPos.y },
-      { corner: 'topRight', x: grid.startPos.x + width, y: grid.startPos.y },
-      { corner: 'bottomLeft', x: grid.startPos.x, y: grid.startPos.y + height },
-      { corner: 'bottomRight', x: grid.startPos.x + width, y: grid.startPos.y + height },
-    ];
-
-    for (const c of corners) {
-      if (point.x >= c.x - halfHandle && point.x <= c.x + halfHandle &&
-          point.y >= c.y - halfHandle && point.y <= c.y + halfHandle) {
-        return c.corner;
-      }
-    }
-    return null;
   }, []);
 
   // グリッド内部かどうかを判定
@@ -1806,17 +1757,16 @@ export const useCanvas = () => {
       drawImage(ctx, imageElement, isSelected);
     });
 
-    // Draw grids (写植グリッド)
+    // Draw grids (写植グリッド) - 確定済みグリッドは常に表示
     const gridState = useGridStore.getState();
     const calibrationState = useCalibrationStore.getState();
-    if (gridState.isGridMode) {
-      // ページごとのグリッドを描画（常にハンドルを表示）
+    {
       const pageGrids = gridState.getPageGrids(currentPage);
       pageGrids.forEach((grid) => {
-        drawGrid(ctx, grid, calibrationState.pixelsPerMm, true);
+        drawGrid(ctx, grid, calibrationState.pixelsPerMm, false);
       });
 
-      // 作成中のグリッド（pendingGrid）を描画（ハンドル付き）
+      // 作成中のグリッド（pendingGrid）を描画（調整中の枠を強調）
       if (gridState.pendingGrid) {
         drawGrid(ctx, gridState.pendingGrid, calibrationState.pixelsPerMm, true);
       }
@@ -2298,61 +2248,8 @@ export const useCanvas = () => {
       if (gState.isGridMode) {
         const { pixelsPerMm } = useCalibrationStore.getState();
 
-        // まず既存のグリッドまたはpendingGridのコーナーハンドルをチェック
-        if (gState.pendingGrid) {
-          const corner = detectGridCorner(point, gState.pendingGrid, pixelsPerMm);
-          if (corner) {
-            // リサイズ開始
-            const cellSize = gState.pendingGrid.ptSize * MM_PER_PT * pixelsPerMm;
-            const isHorizontal = gState.pendingGrid.writingMode === 'horizontal';
-            const cols = isHorizontal ? gState.pendingGrid.chars : gState.pendingGrid.lines;
-            const rows = isHorizontal ? gState.pendingGrid.lines : gState.pendingGrid.chars;
-            gridResizeStartRef.current = {
-              startPos: { ...gState.pendingGrid.startPos },
-              width: cols * cellSize,
-              height: rows * cellSize,
-              mousePos: point,
-            };
-            // フォーカスを解除（セリフサンプル入力欄など）
-            (document.activeElement as HTMLElement)?.blur?.();
-            setResizingCorner(corner);
-            setIsResizingGrid(true);
-            redrawCanvas();
-            return;
-          }
-        }
-
-        // ページに配置済みのグリッドのコーナーハンドルをチェック
-        const pageGrids = gState.getPageGrids(currentPage);
-        for (let i = 0; i < pageGrids.length; i++) {
-          const grid = pageGrids[i];
-          const corner = detectGridCorner(point, grid, pixelsPerMm);
-          if (corner) {
-            // このグリッドをpendingGridに移動してリサイズ開始
-            const cellSize = grid.ptSize * MM_PER_PT * pixelsPerMm;
-            const isHorizontal = grid.writingMode === 'horizontal';
-            const cols = isHorizontal ? grid.chars : grid.lines;
-            const rows = isHorizontal ? grid.lines : grid.chars;
-            gridResizeStartRef.current = {
-              startPos: { ...grid.startPos },
-              width: cols * cellSize,
-              height: rows * cellSize,
-              mousePos: point,
-            };
-            // 既存グリッドを削除してpendingGridに設定
-            gState.removeGrid(currentPage, i);
-            gState.setPendingGrid(grid);
-            // フォーカスを解除（セリフサンプル入力欄など）
-            (document.activeElement as HTMLElement)?.blur?.();
-            setResizingCorner(corner);
-            setIsResizingGrid(true);
-            gState.setGridAdjusting(true);
-            redrawCanvas();
-            return;
-          }
-        }
-
         // ページに配置済みのグリッド内部をクリックした場合、そのグリッドを選択して移動開始
+        const pageGrids = gState.getPageGrids(currentPage);
         for (let i = pageGrids.length - 1; i >= 0; i--) {
           const grid = pageGrids[i];
           if (isPointInsideGrid(point, grid, pixelsPerMm)) {
@@ -2372,42 +2269,38 @@ export const useCanvas = () => {
           }
         }
 
-        // グリッド調整モード中
-        if (gState.isGridAdjusting) {
-          if (gState.pendingGrid) {
-            // pendingGridが存在する場合
-            const isInsideGrid = isPointInsideGrid(point, gState.pendingGrid, pixelsPerMm);
-            if (isInsideGrid) {
-              // グリッド内クリック：グリッドを移動開始
-              gridDragStartRef.current = {
-                gridStartPos: { ...gState.pendingGrid.startPos },
-                mousePos: point,
-              };
-              // フォーカスを解除（セリフサンプル入力欄など）
-              (document.activeElement as HTMLElement)?.blur?.();
-              setIsDraggingGrid(true);
-              return;
-            } else {
-              // グリッド外クリック：グリッドを消して新規グリッド作成開始
-              gState.setPendingGrid(null);
-              // isGridAdjustingはtrueのまま維持して、すぐに新しいグリッドを引けるようにする
-              gridDrawStartRef.current = point;
-              gridDrawEndRef.current = point;
-              // フォーカスを解除（セリフサンプル入力欄など）
-              (document.activeElement as HTMLElement)?.blur?.();
-              setIsDrawingGrid(true);
-              redrawCanvas();
-              return;
-            }
+        // グリッドモード中（調整中 or 新規作成）
+        if (gState.pendingGrid) {
+          // pendingGridが存在する場合
+          const isInside = isPointInsideGrid(point, gState.pendingGrid, pixelsPerMm);
+          if (isInside) {
+            // グリッド内クリック：グリッドを移動開始
+            gridDragStartRef.current = {
+              gridStartPos: { ...gState.pendingGrid.startPos },
+              mousePos: point,
+            };
+            (document.activeElement as HTMLElement)?.blur?.();
+            setIsDraggingGrid(true);
+            return;
           } else {
-            // 新しいグリッドをドラッグで作成開始
+            // グリッド外クリック：グリッドを確定して新規グリッド作成開始
+            gState.saveStateForUndo(currentPage);
+            gState.addGrid(currentPage, gState.pendingGrid);
+            gState.setPendingGrid(null);
             gridDrawStartRef.current = point;
             gridDrawEndRef.current = point;
-            // フォーカスを解除（セリフサンプル入力欄など）
             (document.activeElement as HTMLElement)?.blur?.();
             setIsDrawingGrid(true);
+            redrawCanvas();
             return;
           }
+        } else {
+          // 新しいグリッドをドラッグで作成開始
+          gridDrawStartRef.current = point;
+          gridDrawEndRef.current = point;
+          (document.activeElement as HTMLElement)?.blur?.();
+          setIsDrawingGrid(true);
+          return;
         }
       }
 
@@ -2768,7 +2661,7 @@ export const useCanvas = () => {
         }
       }
     },
-    [getPointerPosition, tool, eraseAt, strokeWidth, selectionBounds, isPointInSelectionBounds, clearSelection, annotationState, isDrawingLeader, getLeaderStartPos, selectShapeAtPoint, selectedShapeIds, selectedTextIds, selectAnnotationAtPoint, selectTextAtPoint, selectImageAtPoint, getAllShapes, redrawCanvas, addShape, isDrawingPolyline, color, currentStampType, addStamp, selectFontLabelTextAtPoint, selectedFontLabelShapeId, detectGridCorner, isCalibrating, currentPage, isPointInsideGrid]
+    [getPointerPosition, tool, eraseAt, strokeWidth, selectionBounds, isPointInSelectionBounds, clearSelection, annotationState, isDrawingLeader, getLeaderStartPos, selectShapeAtPoint, selectedShapeIds, selectedTextIds, selectAnnotationAtPoint, selectTextAtPoint, selectImageAtPoint, getAllShapes, redrawCanvas, addShape, isDrawingPolyline, color, currentStampType, addStamp, selectFontLabelTextAtPoint, selectedFontLabelShapeId, isCalibrating, currentPage, isPointInsideGrid]
   );
 
   const handlePointerMove = useCallback(
@@ -2789,83 +2682,8 @@ export const useCanvas = () => {
         return;
       }
 
-      // グリッドリサイズ中の処理
-      const gState = useGridStore.getState();
-      if (isResizingGrid && resizingCorner && gridResizeStartRef.current && gState.pendingGrid) {
-        const { pixelsPerMm } = useCalibrationStore.getState();
-        const start = gridResizeStartRef.current;
-        const dx = point.x - start.mousePos.x;
-        const dy = point.y - start.mousePos.y;
-
-        let newStartX = start.startPos.x;
-        let newStartY = start.startPos.y;
-        let newWidth = start.width;
-        let newHeight = start.height;
-
-        // コーナーに応じてサイズと位置を計算
-        switch (resizingCorner) {
-          case 'topLeft':
-            newStartX = start.startPos.x + dx;
-            newStartY = start.startPos.y + dy;
-            newWidth = start.width - dx;
-            newHeight = start.height - dy;
-            break;
-          case 'topRight':
-            newStartY = start.startPos.y + dy;
-            newWidth = start.width + dx;
-            newHeight = start.height - dy;
-            break;
-          case 'bottomLeft':
-            newStartX = start.startPos.x + dx;
-            newWidth = start.width - dx;
-            newHeight = start.height + dy;
-            break;
-          case 'bottomRight':
-            newWidth = start.width + dx;
-            newHeight = start.height + dy;
-            break;
-        }
-
-        // 最小サイズを確保（小さなグリッドも許可）
-        if (newWidth < 5) newWidth = 5;
-        if (newHeight < 5) newHeight = 5;
-
-        // 新しいptSizeを計算（セルサイズから逆算）
-        const grid = gState.pendingGrid;
-        const isHorizontal = grid.writingMode === 'horizontal';
-        const cols = isHorizontal ? grid.chars : grid.lines;
-        const rows = isHorizontal ? grid.lines : grid.chars;
-
-        // 縦横比を維持してセルサイズを計算
-        const newCellSize = Math.min(newWidth / cols, newHeight / rows);
-        const newPtSize = Math.round((newCellSize / pixelsPerMm / MM_PER_PT) * 10) / 10;
-
-        // 新しいサイズで再計算
-        const actualWidth = cols * newCellSize;
-        const actualHeight = rows * newCellSize;
-
-        // 位置を調整（リサイズ方向に応じて）
-        let finalStartX = newStartX;
-        let finalStartY = newStartY;
-        if (resizingCorner === 'topLeft') {
-          finalStartX = start.startPos.x + start.width - actualWidth;
-          finalStartY = start.startPos.y + start.height - actualHeight;
-        } else if (resizingCorner === 'topRight') {
-          finalStartY = start.startPos.y + start.height - actualHeight;
-        } else if (resizingCorner === 'bottomLeft') {
-          finalStartX = start.startPos.x + start.width - actualWidth;
-        }
-
-        gState.updatePendingGrid({
-          startPos: { x: finalStartX, y: finalStartY },
-          centerPos: { x: finalStartX + actualWidth / 2, y: finalStartY + actualHeight / 2 },
-          ptSize: Math.max(1, newPtSize),
-        });
-        redrawCanvas();
-        return;
-      }
-
       // グリッド作成中（ドラッグで枠を描画）
+      const gState = useGridStore.getState();
       if (isDrawingGrid && gridDrawStartRef.current) {
         gridDrawEndRef.current = point;
         redrawCanvas();
@@ -3131,7 +2949,7 @@ export const useCanvas = () => {
         }
       }
     },
-    [isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, isDrawingStampLeader, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, selectedFontLabelShapeId, isSelecting, isRotating, annotationState, labeledRectPhase, getPointerPosition, tool, eraseAt, strokeWidth, redrawCanvas, drawSelectionRect, moveSelectedStrokes, moveSelectedShapes, moveSelectedImages, moveSelectedTexts, moveAnnotationOnly, moveLeaderEnd, snapLineEndpoint, getLeaderStartPos, selectAnnotationAtPoint, getAllShapes, updateShape, isCalibrating, isResizingGrid, resizingCorner, isDraggingGrid, isDrawingGrid]
+    [isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, isDrawingStampLeader, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, selectedFontLabelShapeId, isSelecting, isRotating, annotationState, labeledRectPhase, getPointerPosition, tool, eraseAt, strokeWidth, redrawCanvas, drawSelectionRect, moveSelectedStrokes, moveSelectedShapes, moveSelectedImages, moveSelectedTexts, moveAnnotationOnly, moveLeaderEnd, snapLineEndpoint, getLeaderStartPos, selectAnnotationAtPoint, getAllShapes, updateShape, isCalibrating, isDraggingGrid, isDrawingGrid]
   );
 
   const handlePointerUp = useCallback(
@@ -3164,15 +2982,6 @@ export const useCanvas = () => {
         return;
       }
 
-      // グリッドリサイズ終了
-      if (isResizingGrid) {
-        setIsResizingGrid(false);
-        setResizingCorner(null);
-        gridResizeStartRef.current = null;
-        redrawCanvas();
-        return;
-      }
-
       // グリッドドラッグ作成終了
       if (isDrawingGrid && gridDrawStartRef.current) {
         const gState = useGridStore.getState();
@@ -3188,9 +2997,23 @@ export const useCanvas = () => {
         // 最小サイズ以上の場合のみグリッドを作成（5px以上でグリッド作成）
         if (width > 5 && height > 5) {
           const { pixelsPerMm } = useCalibrationStore.getState();
-          const { lines, chars } = gState.calculateGridFromText(gState.sampleText);
-          const numLines = Math.max(1, lines);
-          const numChars = Math.max(1, chars);
+
+          // gridMode に応じて行数・文字数を決定
+          let numLines: number;
+          let numChars: number;
+          let textData: string;
+          if (gState.gridMode === 'grid') {
+            // 一文字グリッド: 常に1x1
+            numLines = 1;
+            numChars = 1;
+            textData = '';
+          } else {
+            // セリフ見本: テキストから計算
+            const { lines, chars } = gState.calculateGridFromText(gState.sampleText);
+            numLines = Math.max(1, lines);
+            numChars = Math.max(1, chars);
+            textData = gState.sampleText;
+          }
           const isHorizontal = gState.writingMode === 'horizontal';
 
           // ドラッグ範囲に収まるセルサイズを計算
@@ -3203,6 +3026,9 @@ export const useCanvas = () => {
           const actualWidth = cols * cellSize;
           const actualHeight = rows * cellSize;
 
+          // undo保存
+          gState.saveStateForUndo(currentPage);
+
           const grid = {
             id: `grid-${Date.now()}`,
             startPos: { x, y },
@@ -3210,12 +3036,18 @@ export const useCanvas = () => {
             lines: numLines,
             chars: numChars,
             ptSize: Math.max(1, ptSize),
-            textData: gState.sampleText,
+            textData,
             writingMode: gState.writingMode,
             isLocked: false,
+            constraint: {
+              w: width * 0.75,
+              h: height * 0.75,
+              rawW: width,
+              rawH: height,
+            },
           };
           gState.setPendingGrid(grid);
-          gState.setGridAdjusting(true); // グリッド調整モードを維持して移動・リサイズを可能に
+          gState.setGridAdjusting(true);
         }
 
         setIsDrawingGrid(false);
@@ -3644,7 +3476,7 @@ export const useCanvas = () => {
 
       redrawCanvas();
     },
-    [tool, isDrawing, isDrawingShape, isDrawingImage, isDrawingStampLeader, annotationState, labeledRectPhase, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, isSelecting, isRotating, addStroke, addShape, addImage, addStamp, color, strokeWidth, redrawCanvas, getPointerPosition, selectStrokesInRect, selectStrokeAtPoint, selectShapeAtPoint, selectShapesInRect, clearSelectionCanvas, snapLineEndpoint, getLeaderStartPos, isCalibrating, isResizingGrid, isDrawingGrid, isDraggingGrid]
+    [tool, isDrawing, isDrawingShape, isDrawingImage, isDrawingStampLeader, annotationState, labeledRectPhase, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, isSelecting, isRotating, addStroke, addShape, addImage, addStamp, color, strokeWidth, redrawCanvas, getPointerPosition, selectStrokesInRect, selectStrokeAtPoint, selectShapeAtPoint, selectShapesInRect, clearSelectionCanvas, snapLineEndpoint, getLeaderStartPos, isCalibrating, isDrawingGrid, isDraggingGrid]
   );
 
   useEffect(() => {
@@ -3744,6 +3576,25 @@ export const useCanvas = () => {
     leaderEndRef.current = null;
     redrawCanvas();
   }, [redrawCanvas]);
+
+  // 引出線描画中にEscで引出線のみキャンセル（図形は残す）
+  useEffect(() => {
+    if (annotationState !== 2) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setAnnotationState(0);
+        setIsDrawingLeader(false);
+        pendingAnnotatedShapeRef.current = null;
+        leaderStartRef.current = null;
+        leaderEndRef.current = null;
+        redrawCanvas();
+      }
+    };
+    window.addEventListener('keydown', handleEsc, true);
+    return () => window.removeEventListener('keydown', handleEsc, true);
+  }, [annotationState, redrawCanvas]);
 
   // 編集中のアノテーション情報を取得
   const getEditingAnnotation = useCallback(() => {

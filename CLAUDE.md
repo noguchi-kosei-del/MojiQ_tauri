@@ -997,3 +997,56 @@ MojiQ_Pro_1.0/
   - Undo/Redo対応
 - **リサイズカーソル**: ハンドルホバー時に`nwse-resize`/`nesw-resize`カーソルを表示
   - `DrawingCanvas.tsx` - `resizeCursor`をカーソル判定に統合
+
+### 2026-04-06（続き）
+#### 写植シミュレーター機能（旧MojiQ ver_2.16より移植）
+- **GridSettingsPanel → TypesettingSimulator に置き換え**
+  - `src/components/GridSettingsPanel/` - 削除（旧 縮尺・グリッド設定パネル）
+  - `src/components/TypesettingSimulator/` - 新規作成（写植シミュレーター）
+  - 旧MojiQの写植シミュレーターUI構造を移植
+- **TypesettingSimulatorコンポーネント**: 左サイドバー（DrawingSettingsBar内）に配置
+  - セクションラベル「写植シミュレーター」
+  - 縮尺表示（設定済/未設定）
+  - 3つのツールボタン:
+    - 縮尺合わせ（オレンジ色パルスアニメーション）
+    - 一文字グリッド（1x1固定、縮尺設定後に有効化）
+    - セリフ見本（テキスト入力後に有効化、テキストから行数・文字数を自動計算）
+  - セリフ見本入力エリア（textarea、横/縦方向切替、削除ボタン）
+  - サイズ表示ダッシュボード（ptサイズ、調整中のみアクティブ表示）
+  - グリッド削除ボタン（Delete/Backspaceキーでも削除可能）
+  - 縮尺入力モーダル
+  - ダークモード完全対応
+- **gridStore拡張**:
+  - `gridMode: 'grid' | 'sampleGrid' | null` - 一文字グリッド/セリフ見本の区別
+  - `enterGridMode(mode)` - モード引数追加
+  - `deleteSelectedGrid()` / `confirmPendingGrid()` - グリッド管理アクション
+  - ページ別undo/redoスタック（最大20件）: `saveStateForUndo()` / `undo()` / `redo()`
+- **useCanvas.tsグリッド処理改善**:
+  - `gridMode`に応じて1x1/テキスト計算を切替
+  - 確定済みグリッドはグリッドモード外でも常に表示
+  - グリッド外クリック時にpendingGridをページに確定保存（旧実装では破棄されていた）
+  - グリッド操作時にundo保存
+
+#### グリッドリサイズ方式変更（ハンドル → マウスホイール）
+- **四隅ハンドル廃止**: グリッドの四隅リサイズハンドルを完全削除
+  - `detectGridCorner` 関数削除
+  - `isResizingGrid` / `resizingCorner` / `gridResizeStartRef` 状態変数削除
+  - handlePointerDown/Move/Upのハンドル検出・ドラッグリサイズ処理削除
+  - drawGridのハンドル描画削除
+- **マウスホイールでptサイズ調整（旧MojiQ ver_2.16準拠）**:
+  - グリッド上でホイール回転 → ±0.5pt/ノッチ（1-200pt範囲）
+  - `centerPos`を基準に中央からリサイズ（旧MojiQ準拠）
+  - pendingGrid（調整中）とページ配置済みグリッドの両方に対応
+  - `e.preventDefault()` + `e.stopPropagation()` でページ移動をブロック
+- **ネイティブwheelリスナー統合**: React `onWheel`（passive）を廃止し、全ホイール処理を`addEventListener('wheel', handler, { passive: false })`に統合
+  - Ctrl+ホイール → ズーム
+  - グリッド上ホイール → ptサイズ変更（ページ移動ブロック）
+  - グリッド外ホイール → ページ移動
+  - 座標変換: `canvasRef.getBoundingClientRect()` + `canvas.width/rect.width`スケーリング（`getPointerPosition`と同一方式）
+- **調整中グリッドの視覚フィードバック**: ハンドルの代わりにシアン色(#00bcd4)の太枠で調整中を表示
+
+#### ＋テキスト引出線のEscキャンセル
+- **引出線描画中にEscで引出線のみキャンセル**（図形は残す）
+  - `useCanvas.ts` - `annotationState === 2`のとき`keydown`リスナーを登録
+  - Escキーで`annotationState`/`isDrawingLeader`/各refをリセット
+  - `capture: true`で他のESCハンドラへの伝播を防止
