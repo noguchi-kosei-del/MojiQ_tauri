@@ -73,6 +73,8 @@ export const DrawingCanvas: React.FC = () => {
     pendingLabeledRect,
     setShowLabelInputModal,
     setPendingLabeledRect,
+    // リサイズカーソル
+    resizeCursor,
   } = useCanvas();
 
   // 画像ファイル入力用のref
@@ -724,6 +726,8 @@ export const DrawingCanvas: React.FC = () => {
         // アノテーション移動中はmoveカーソル
         if (isDraggingAnnotation) return 'move';
         if (isDraggingLeaderEnd) return 'crosshair';
+        // リサイズカーソル
+        if (resizeCursor) return resizeCursor;
         // ホバー時のカーソル変更
         if (hoverAnnotationType === 'text') return 'move';
         if (hoverAnnotationType === 'leaderEnd') return 'crosshair';

@@ -35,6 +35,7 @@ interface PresetState {
   // 文字サイズ操作
   addFontSize: (size: number) => void;
   removeFontSize: (size: number) => void;
+  clearFontSizes: () => void;
   selectFontSize: (size: number | null) => void;
 
   // フォント操作
@@ -82,6 +83,10 @@ export const usePresetStore = create<PresetState>()(
           fontSizes: fontSizes.filter(s => s !== size),
           selectedFontSize: selectedFontSize === size ? null : selectedFontSize,
         });
+      },
+
+      clearFontSizes: () => {
+        set({ fontSizes: [], selectedFontSize: null });
       },
 
       selectFontSize: (size) => {

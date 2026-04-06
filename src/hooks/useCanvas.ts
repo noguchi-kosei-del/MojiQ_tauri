@@ -53,6 +53,15 @@ export const useCanvas = () => {
   const rotationCenterRef = useRef<Point | null>(null);
   const rotationStartAngleRef = useRef<number>(0);
   const originalRotationRef = useRef<number>(0);
+  // リサイズ用ref（useCallbackクロージャ内で最新値を参照するためrefを使用）
+  const isResizingHandleRef = useRef(false);
+  const [resizeCursor, setResizeCursor] = useState<string | null>(null);
+  const resizeHandleRef = useRef<'tl' | 'tr' | 'bl' | 'br' | null>(null);
+  const resizeOrigBoundsRef = useRef<SelectionBounds | null>(null);
+  const resizeOrigStrokesRef = useRef<Stroke[]>([]);
+  const resizeOrigShapesRef = useRef<Shape[]>([]);
+  const resizeOrigTextsRef = useRef<TextElement[]>([]);
+  const resizeOrigImagesRef = useRef<ImageElement[]>([]);
   // labeledRect（小文字指定）用state
   const [labeledRectPhase, setLabeledRectPhase] = useState<0 | 1 | 2>(0); // 0=通常, 1=引出線描画中, 2=枠線描画中
   const [showLabelInputModal, setShowLabelInputModal] = useState(false);
@@ -1210,13 +1219,15 @@ export const useCanvas = () => {
     const width = bounds.width + padding * 2;
     const height = bounds.height + padding * 2;
 
+    const uiScale = displayScale > 0 ? 1 / displayScale : 1;
+
     ctx.strokeStyle = '#0078d4';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 * uiScale;
     ctx.setLineDash([]);
     ctx.strokeRect(x, y, width, height);
 
     // Draw corner handles
-    const handleSize = 8;
+    const handleSize = 8 * uiScale;
     ctx.fillStyle = '#0078d4';
     const corners = [
       { x: x, y: y },
@@ -1229,8 +1240,8 @@ export const useCanvas = () => {
     });
 
     // 回転ハンドルを描画（上辺中央から25px上）
-    const rotHandleDistance = 25;
-    const rotHandleRadius = 6;
+    const rotHandleDistance = 25 * uiScale;
+    const rotHandleRadius = 6 * uiScale;
     const topMidX = x + width / 2;
     const topMidY = y;
     const rotHandleX = topMidX;
@@ -1239,7 +1250,7 @@ export const useCanvas = () => {
     // 接続線
     ctx.beginPath();
     ctx.strokeStyle = '#4CAF50';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1 * uiScale;
     ctx.moveTo(topMidX, topMidY);
     ctx.lineTo(rotHandleX, rotHandleY);
     ctx.stroke();
@@ -1250,12 +1261,12 @@ export const useCanvas = () => {
     ctx.fillStyle = '#4CAF50';
     ctx.fill();
     ctx.strokeStyle = '#2E7D32';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1 * uiScale;
     ctx.stroke();
 
     // 削除ボタン（右下に赤い円 + ゴミ箱アイコン）
-    const deleteSize = 24;
-    const deleteOffset = 8;
+    const deleteSize = 24 * uiScale;
+    const deleteOffset = 8 * uiScale;
     const deleteBtnX = x + width + deleteOffset;
     const deleteBtnY = y + height + deleteOffset;
     const deleteCX = deleteBtnX + deleteSize / 2;
@@ -1312,7 +1323,7 @@ export const useCanvas = () => {
     ctx.lineTo(2 * s, 5.5 * s);
     ctx.stroke();
     ctx.restore();
-  }, []);
+  }, [displayScale]);
 
   const clearSelectionCanvas = useCallback(() => {
     const canvas = selectionCanvasRef.current;
@@ -2488,6 +2499,77 @@ export const useCanvas = () => {
           setSelectedFontLabelShapeId(null);
         }
 
+        // 四隅ハンドル・回転ハンドル・削除ボタンのヒットテスト
+        const currentSelectionBounds = useDrawingStore.getState().selectionBounds;
+        if (currentSelectionBounds) {
+          const currentDisplayScale = useDisplayScaleStore.getState().displayScale;
+          const hitUiScale = currentDisplayScale > 0 ? 1 / currentDisplayScale : 1;
+          const padding = 5;
+          const hx = currentSelectionBounds.x - padding;
+          const hy = currentSelectionBounds.y - padding;
+          const hw = currentSelectionBounds.width + padding * 2;
+          const hh = currentSelectionBounds.height + padding * 2;
+          const hs = 8 * hitUiScale / 2 + 4 * hitUiScale; // handleSize/2 + tolerance
+
+          // 四隅ハンドル（リサイズ）
+          const corners: { key: 'tl' | 'tr' | 'bl' | 'br'; cx: number; cy: number }[] = [
+            { key: 'tl', cx: hx, cy: hy },
+            { key: 'tr', cx: hx + hw, cy: hy },
+            { key: 'bl', cx: hx, cy: hy + hh },
+            { key: 'br', cx: hx + hw, cy: hy + hh },
+          ];
+          for (const corner of corners) {
+            if (Math.abs(point.x - corner.cx) <= hs && Math.abs(point.y - corner.cy) <= hs) {
+              const state = useDrawingStore.getState();
+              resizeHandleRef.current = corner.key;
+              resizeOrigBoundsRef.current = { ...currentSelectionBounds };
+              resizeOrigStrokesRef.current = structuredClone(state.getSelectedStrokes());
+              resizeOrigShapesRef.current = structuredClone(state.getSelectedShapes());
+              resizeOrigTextsRef.current = structuredClone(state.getSelectedTexts());
+              resizeOrigImagesRef.current = structuredClone(state.getSelectedImages());
+              dragStartRef.current = point;
+              isResizingHandleRef.current = true;
+              return;
+            }
+          }
+
+          // 回転ハンドル
+          const rotHandleX = hx + hw / 2;
+          const rotHandleY = hy - 25 * hitUiScale;
+          const distToRotHandle = Math.hypot(point.x - rotHandleX, point.y - rotHandleY);
+          if (distToRotHandle <= 9 * hitUiScale) { // 6px radius + 3px tolerance
+            setIsRotating(true);
+            const cx = currentSelectionBounds.x + currentSelectionBounds.width / 2;
+            const cy = currentSelectionBounds.y + currentSelectionBounds.height / 2;
+            rotationCenterRef.current = { x: cx, y: cy };
+            rotationStartAngleRef.current = Math.atan2(point.y - cy, point.x - cx);
+            const state = useDrawingStore.getState();
+            let currentRotation = 0;
+            if (state.selectedShapeIds.length > 0) {
+              const shapes = state.getSelectedShapes();
+              if (shapes.length > 0) currentRotation = shapes[0].rotation || 0;
+            } else if (state.selectedImageIds.length > 0) {
+              const images = state.getSelectedImages();
+              if (images.length > 0) currentRotation = images[0].rotation || 0;
+            }
+            originalRotationRef.current = currentRotation;
+            return;
+          }
+
+          // 削除ボタン
+          const deleteSize = 24 * hitUiScale;
+          const deleteOffset = 8 * hitUiScale;
+          const deleteCX = hx + hw + deleteOffset + deleteSize / 2;
+          const deleteCY = hy + hh + deleteOffset + deleteSize / 2;
+          const distToDelete = Math.hypot(point.x - deleteCX, point.y - deleteCY);
+          if (distToDelete <= deleteSize / 2 + 4 * hitUiScale) {
+            const state = useDrawingStore.getState();
+            state.deleteSelectedStrokes();
+            redrawCanvas();
+            return;
+          }
+        }
+
         // 次にアノテーション（テキスト・引出線終点）をチェック
         const annotationHit = selectAnnotationAtPoint(point, 10);
         if (annotationHit) {
@@ -2541,56 +2623,6 @@ export const useCanvas = () => {
           lastDragPointRef.current = point;
           redrawCanvas();
           return;
-        }
-
-        // 回転ハンドルのヒットテスト
-        if (selectionBounds) {
-          const padding = 5;
-          const bx = selectionBounds.x - padding;
-          const by = selectionBounds.y - padding;
-          const bw = selectionBounds.width + padding * 2;
-          const rotHandleX = bx + bw / 2;
-          const rotHandleY = by - 25;
-          const distToRotHandle = Math.hypot(point.x - rotHandleX, point.y - rotHandleY);
-          if (distToRotHandle <= 9) { // 6px radius + 3px tolerance
-            setIsRotating(true);
-            const cx = selectionBounds.x + selectionBounds.width / 2;
-            const cy = selectionBounds.y + selectionBounds.height / 2;
-            rotationCenterRef.current = { x: cx, y: cy };
-            rotationStartAngleRef.current = Math.atan2(point.y - cy, point.x - cx);
-            // 現在の回転角度を取得
-            const state = useDrawingStore.getState();
-            let currentRotation = 0;
-            if (state.selectedShapeIds.length > 0) {
-              const shapes = state.getSelectedShapes();
-              if (shapes.length > 0) currentRotation = shapes[0].rotation || 0;
-            } else if (state.selectedImageIds.length > 0) {
-              const images = state.getSelectedImages();
-              if (images.length > 0) currentRotation = images[0].rotation || 0;
-            }
-            originalRotationRef.current = currentRotation;
-            return;
-          }
-        }
-
-        // 削除ボタンのヒットテスト
-        if (selectionBounds) {
-          const delPadding = 5;
-          const delBx = selectionBounds.x - delPadding;
-          const delBy = selectionBounds.y - delPadding;
-          const delBw = selectionBounds.width + delPadding * 2;
-          const delBh = selectionBounds.height + delPadding * 2;
-          const deleteSize = 24;
-          const deleteOffset = 8;
-          const deleteCX = delBx + delBw + deleteOffset + deleteSize / 2;
-          const deleteCY = delBy + delBh + deleteOffset + deleteSize / 2;
-          const distToDelete = Math.hypot(point.x - deleteCX, point.y - deleteCY);
-          if (distToDelete <= deleteSize / 2 + 4) {
-            const state = useDrawingStore.getState();
-            state.deleteSelectedStrokes();
-            redrawCanvas();
-            return;
-          }
         }
 
         // Check if clicking on existing selection (strokes, shapes, texts, or images)
@@ -2862,12 +2894,42 @@ export const useCanvas = () => {
 
       if (tool === 'select') {
         // ホバー時のカーソル変更用
-        if (!isSelecting && !isDragging && !isDraggingShape && !isDraggingAnnotation && !isDraggingLeaderEnd && !isDraggingText) {
+        if (!isSelecting && !isDragging && !isDraggingShape && !isDraggingAnnotation && !isDraggingLeaderEnd && !isDraggingText && !isResizingHandleRef.current && !isRotating) {
           const annotationHit = selectAnnotationAtPoint(point, 10);
           if (annotationHit) {
             setHoverAnnotationType(annotationHit.hitType);
+            setResizeCursor(null);
           } else {
             setHoverAnnotationType(null);
+            // 四隅ハンドルのホバーカーソル
+            const { selectionBounds } = useDrawingStore.getState();
+            if (selectionBounds) {
+              const hPadding = 5;
+              const hxh = selectionBounds.x - hPadding;
+              const hyh = selectionBounds.y - hPadding;
+              const hwh = selectionBounds.width + hPadding * 2;
+              const hhh = selectionBounds.height + hPadding * 2;
+              const curDisplayScale = useDisplayScaleStore.getState().displayScale;
+              const hitUiScaleC = curDisplayScale > 0 ? 1 / curDisplayScale : 1;
+              const hsC = 8 * hitUiScaleC / 2 + 4 * hitUiScaleC;
+              const cornersH: { key: string; cx: number; cy: number }[] = [
+                { key: 'tl', cx: hxh, cy: hyh },
+                { key: 'tr', cx: hxh + hwh, cy: hyh },
+                { key: 'bl', cx: hxh, cy: hyh + hhh },
+                { key: 'br', cx: hxh + hwh, cy: hyh + hhh },
+              ];
+              let found = false;
+              for (const c of cornersH) {
+                if (Math.abs(point.x - c.cx) <= hsC && Math.abs(point.y - c.cy) <= hsC) {
+                  setResizeCursor(c.key === 'tl' || c.key === 'br' ? 'nwse-resize' : 'nesw-resize');
+                  found = true;
+                  break;
+                }
+              }
+              if (!found) setResizeCursor(null);
+            } else {
+              setResizeCursor(null);
+            }
           }
         }
 
@@ -2886,6 +2948,36 @@ export const useCanvas = () => {
           }
 
           useDrawingStore.getState().rotateSelected(newRotation);
+          redrawCanvas();
+          return;
+        } else if (isResizingHandleRef.current && resizeHandleRef.current && resizeOrigBoundsRef.current && dragStartRef.current) {
+          const orig = resizeOrigBoundsRef.current;
+          const handle = resizeHandleRef.current;
+          const dx = point.x - dragStartRef.current.x;
+          const dy = point.y - dragStartRef.current.y;
+
+          let newX = orig.x;
+          let newY = orig.y;
+          let newW = orig.width;
+          let newH = orig.height;
+
+          if (handle.includes('l')) { newX += dx; newW -= dx; }
+          if (handle.includes('r')) { newW += dx; }
+          if (handle.includes('t')) { newY += dy; newH -= dy; }
+          if (handle.includes('b')) { newH += dy; }
+
+          // 最小サイズ
+          if (newW < 10) { if (handle.includes('l')) newX = orig.x + orig.width - 10; newW = 10; }
+          if (newH < 10) { if (handle.includes('t')) newY = orig.y + orig.height - 10; newH = 10; }
+
+          useDrawingStore.getState().resizeSelected(
+            orig,
+            { x: newX, y: newY, width: newW, height: newH },
+            resizeOrigStrokesRef.current,
+            resizeOrigShapesRef.current,
+            resizeOrigTextsRef.current,
+            resizeOrigImagesRef.current,
+          );
           redrawCanvas();
           return;
         } else if (isSelecting && selectionStartRef.current) {
@@ -3244,6 +3336,20 @@ export const useCanvas = () => {
           saveToHistory();
           setIsRotating(false);
           rotationCenterRef.current = null;
+        }
+
+        if (isResizingHandleRef.current) {
+          // リサイズ終了: 履歴に保存
+          const { saveToHistory } = useDrawingStore.getState();
+          saveToHistory();
+          isResizingHandleRef.current = false;
+          resizeHandleRef.current = null;
+          resizeOrigBoundsRef.current = null;
+          resizeOrigStrokesRef.current = [];
+          resizeOrigShapesRef.current = [];
+          resizeOrigTextsRef.current = [];
+          resizeOrigImagesRef.current = [];
+          dragStartRef.current = null;
         }
 
         if (isDragging) {
@@ -3849,5 +3955,7 @@ export const useCanvas = () => {
     pendingLabeledRect,
     setShowLabelInputModal,
     setPendingLabeledRect,
+    // リサイズカーソル
+    resizeCursor,
   };
 };

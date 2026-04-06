@@ -73,7 +73,7 @@ export const RightToolbar: React.FC = () => {
   const { history, historyIndex, undo, redo, clearHistory, tool, setTool, setColor, setCurrentStampType, currentStampType } = useDrawingStore();
   const { isActive: isViewerMode } = useViewerModeStore();
   const { isRightCollapsed, toggleRightSidebar } = useSidebarStore();
-  const { fontSizes, fonts, selectedFontSize, selectedFont, selectFontSize, selectFont, appendWorkSpec, clearFonts, addFont, removeFont, updateFont, fontColorIndex, addFontSize, removeFontSize } = usePresetStore();
+  const { fontSizes, fonts, selectedFontSize, selectedFont, selectFontSize, selectFont, appendWorkSpec, clearFonts, addFont, removeFont, updateFont, fontColorIndex, addFontSize, removeFontSize, clearFontSizes } = usePresetStore();
 
   // パネル開閉状態
   const [isProofreadingOpen, setIsProofreadingOpen] = useState(false);
@@ -98,7 +98,10 @@ export const RightToolbar: React.FC = () => {
   // フォント追加モーダル
   const [isFontModalOpen, setIsFontModalOpen] = useState(false);
   const [isClearHistoryConfirmOpen, setIsClearHistoryConfirmOpen] = useState(false);
+  const [isClearAllSizesConfirmOpen, setIsClearAllSizesConfirmOpen] = useState(false);
+  const [isClearAllFontsConfirmOpen, setIsClearAllFontsConfirmOpen] = useState(false);
   const [isSizeDeleteMode, setIsSizeDeleteMode] = useState(false);
+  const [isFontDeleteMode, setIsFontDeleteMode] = useState(false);
   const [isSizeAddOpen, setIsSizeAddOpen] = useState(false);
   const [sizeAddInput, setSizeAddInput] = useState('');
   const [editingFont, setEditingFont] = useState<FontPreset | null>(null);
@@ -143,6 +146,7 @@ export const RightToolbar: React.FC = () => {
             case 'font':
               if (!isFontModalOpen) {
                 setIsFontOpen(false);
+                setIsFontDeleteMode(false);
               }
               break;
             case 'history':
@@ -307,11 +311,15 @@ export const RightToolbar: React.FC = () => {
 
   // フォント選択
   const handleSelectFont = useCallback((font: FontPreset) => {
+    if (isFontDeleteMode) {
+      removeFont(font.id);
+      return;
+    }
     selectFont(font);
     setTool('rect');
     setColor(font.color);
     setIsFontOpen(false);
-  }, [selectFont, setTool, setColor]);
+  }, [isFontDeleteMode, removeFont, selectFont, setTool, setColor]);
 
   // 自動色パレット
   const AUTO_COLORS = ['#FF0000', '#FF00FF', '#00C400', '#FF6A00', '#0066FF', '#AA00FF', '#FF0070', '#0099E0'];
@@ -346,12 +354,6 @@ export const RightToolbar: React.FC = () => {
     }
     setIsFontModalOpen(false);
   }, [modalFontName, modalFontColor, editingFont, addFont, updateFont]);
-
-  // フォント削除
-  const handleRemoveFont = useCallback((id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    removeFont(id);
-  }, [removeFont]);
 
   // 校正ツールのアクティブラベルを取得
   const activeProofToolLabel = (() => {
@@ -596,34 +598,30 @@ export const RightToolbar: React.FC = () => {
             {isFontSizeOpen && popupPosition && (
               <div className="right-toolbar-popup right-toolbar-popup-size-panel" style={{ position: 'fixed', top: popupPosition.top, right: popupPosition.right }}>
                 <div className="size-panel-scroll">
-                  <div className="size-panel-grid">
-                    {fontSizes.map(size => (
-                      <button
-                        key={size}
-                        className={`right-toolbar-popup-size-btn ${selectedFontSize === size ? 'active' : ''} ${isSizeDeleteMode ? 'delete-mode' : ''}`}
-                        onClick={() => handleSelectSize(size)}
-                      >
-                        {size}P
-                        {isSizeDeleteMode && <span className="size-delete-x">&times;</span>}
-                      </button>
-                    ))}
-                  </div>
+                  {fontSizes.length === 0 ? (
+                    <div className="right-toolbar-popup-empty">コメントがありません。追加するか作品仕様を読み込みから読み込んで下さい。</div>
+                  ) : (
+                    <div className="size-panel-grid">
+                      {fontSizes.map(size => (
+                        <button
+                          key={size}
+                          className={`right-toolbar-popup-size-btn ${selectedFontSize === size ? 'active' : ''} ${isSizeDeleteMode ? 'delete-mode' : ''}`}
+                          onClick={() => handleSelectSize(size)}
+                        >
+                          {size}P
+                          {isSizeDeleteMode && <span className="size-delete-x">&times;</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="size-panel-footer">
-                  <div className="right-toolbar-popup-actions">
-                    <button
-                      className="right-toolbar-popup-action-btn add"
-                      onClick={() => { setIsSizeAddOpen(true); setSizeAddInput(''); }}
-                    >
-                      追加
-                    </button>
-                    <button
-                      className={`right-toolbar-popup-action-btn delete ${isSizeDeleteMode ? 'active' : ''}`}
-                      onClick={() => setIsSizeDeleteMode(!isSizeDeleteMode)}
-                    >
-                      {isSizeDeleteMode ? '削除中' : '削除'}
-                    </button>
-                  </div>
+                  <button
+                    className="right-toolbar-popup-action-btn add size-action-full-btn"
+                    onClick={() => { setIsSizeAddOpen(true); setSizeAddInput(''); }}
+                  >
+                    + コメント追加
+                  </button>
                   {isSizeAddOpen && (
                     <div className="right-toolbar-popup-add-row">
                       <input
@@ -640,6 +638,19 @@ export const RightToolbar: React.FC = () => {
                       <button className="right-toolbar-popup-add-ok" onClick={handleSizeAdd}>OK</button>
                     </div>
                   )}
+                  <button
+                    className={`right-toolbar-popup-action-btn delete size-action-full-btn ${isSizeDeleteMode ? 'active' : ''}`}
+                    onClick={() => setIsSizeDeleteMode(!isSizeDeleteMode)}
+                  >
+                    {isSizeDeleteMode ? '削除中' : '削除'}
+                  </button>
+                  <button
+                    className="right-toolbar-popup-action-btn delete-all size-delete-all-btn"
+                    onClick={() => setIsClearAllSizesConfirmOpen(true)}
+                    disabled={fontSizes.length === 0}
+                  >
+                    すべて削除
+                  </button>
                 </div>
               </div>
             )}
@@ -663,25 +674,19 @@ export const RightToolbar: React.FC = () => {
               <div className="right-toolbar-popup right-toolbar-popup-font-panel" style={{ position: 'fixed', top: popupPosition.top, right: popupPosition.right }}>
                 <div className="font-panel-scroll">
                   {fonts.length === 0 ? (
-                    <div className="right-toolbar-popup-empty">フォントがありません</div>
+                    <div className="right-toolbar-popup-empty">フォントがありません。追加するか作品仕様を読み込みから読み込んで下さい。</div>
                   ) : (
                     fonts.map(font => (
                       <div key={font.id} className="right-toolbar-popup-font-row">
                         <button
-                          className={`right-toolbar-popup-item right-toolbar-popup-font-item ${selectedFont?.id === font.id ? 'active' : ''}`}
+                          className={`right-toolbar-popup-item right-toolbar-popup-font-item ${selectedFont?.id === font.id ? 'active' : ''} ${isFontDeleteMode ? 'delete-mode' : ''}`}
                           onClick={() => handleSelectFont(font)}
-                          onDoubleClick={(e) => openFontModalForEdit(font, e)}
-                          title="ダブルクリックで編集"
+                          onDoubleClick={(e) => !isFontDeleteMode && openFontModalForEdit(font, e)}
+                          title={isFontDeleteMode ? 'クリックで削除' : 'ダブルクリックで編集'}
                         >
                           <span className="right-toolbar-popup-font-color" style={{ background: font.color }} />
                           {font.name}
-                        </button>
-                        <button
-                          className="right-toolbar-popup-font-delete"
-                          onClick={(e) => handleRemoveFont(font.id, e)}
-                          title="削除"
-                        >
-                          ×
+                          {isFontDeleteMode && <span className="font-delete-x">&times;</span>}
                         </button>
                       </div>
                     ))
@@ -693,6 +698,19 @@ export const RightToolbar: React.FC = () => {
                     onClick={openFontModalForAdd}
                   >
                     + フォント追加
+                  </button>
+                  <button
+                    className={`right-toolbar-popup-action-btn delete font-action-full-btn ${isFontDeleteMode ? 'active' : ''}`}
+                    onClick={() => setIsFontDeleteMode(!isFontDeleteMode)}
+                  >
+                    {isFontDeleteMode ? '削除中' : '削除'}
+                  </button>
+                  <button
+                    className="right-toolbar-popup-action-btn delete-all font-delete-all-btn"
+                    onClick={() => setIsClearAllFontsConfirmOpen(true)}
+                    disabled={fonts.length === 0}
+                  >
+                    すべて削除
                   </button>
                 </div>
               </div>
@@ -722,15 +740,19 @@ export const RightToolbar: React.FC = () => {
             {isHistoryOpen && popupPosition && (
               <div className="right-toolbar-popup" style={{ position: 'fixed', top: popupPosition.top, right: popupPosition.right }}>
                 <div className="right-toolbar-history-list">
-                  {displayHistory.map(item => (
-                    <button
-                      key={item.index}
-                      className={`right-toolbar-popup-item ${item.isCurrent ? 'active' : ''}`}
-                      onClick={() => handleHistoryClick(item.index)}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
+                  {displayHistory.length === 0 ? (
+                    <div className="right-toolbar-popup-empty">作業履歴がありません</div>
+                  ) : (
+                    displayHistory.map(item => (
+                      <button
+                        key={item.index}
+                        className={`right-toolbar-popup-item ${item.isCurrent ? 'active' : ''}`}
+                        onClick={() => handleHistoryClick(item.index)}
+                      >
+                        {item.label}
+                      </button>
+                    ))
+                  )}
                 </div>
                 {history.length > 1 && (
                   <button
@@ -850,6 +872,50 @@ export const RightToolbar: React.FC = () => {
                 disabled={!modalFontName.trim()}
               >
                 {editingFont ? '更新' : '登録'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* フォントすべて削除確認モーダル */}
+      {isClearAllFontsConfirmOpen && (
+        <div className="clear-history-confirm-overlay" onClick={() => setIsClearAllFontsConfirmOpen(false)}>
+          <div className="clear-history-confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="clear-history-confirm-header">
+              <span className="clear-history-confirm-title">確認</span>
+            </div>
+            <div className="clear-history-confirm-body">
+              <p>フォントをすべて削除しますか？</p>
+            </div>
+            <div className="clear-history-confirm-actions">
+              <button className="clear-history-confirm-btn cancel" onClick={() => setIsClearAllFontsConfirmOpen(false)}>
+                キャンセル
+              </button>
+              <button className="clear-history-confirm-btn confirm" onClick={() => { setIsClearAllFontsConfirmOpen(false); clearFonts(); }}>
+                すべて削除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 文字サイズすべて削除確認モーダル */}
+      {isClearAllSizesConfirmOpen && (
+        <div className="clear-history-confirm-overlay" onClick={() => setIsClearAllSizesConfirmOpen(false)}>
+          <div className="clear-history-confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="clear-history-confirm-header">
+              <span className="clear-history-confirm-title">確認</span>
+            </div>
+            <div className="clear-history-confirm-body">
+              <p>文字サイズをすべて削除しますか？</p>
+            </div>
+            <div className="clear-history-confirm-actions">
+              <button className="clear-history-confirm-btn cancel" onClick={() => setIsClearAllSizesConfirmOpen(false)}>
+                キャンセル
+              </button>
+              <button className="clear-history-confirm-btn confirm" onClick={() => { setIsClearAllSizesConfirmOpen(false); clearFontSizes(); setIsSizeDeleteMode(false); }}>
+                すべて削除
               </button>
             </div>
           </div>

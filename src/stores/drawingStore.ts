@@ -206,6 +206,9 @@ interface DrawingStore extends DrawingState {
   // Rotation operations
   rotateSelected: (rotation: number) => void;
 
+  // Resize operations
+  resizeSelected: (origBounds: SelectionBounds, newBounds: { x: number; y: number; width: number; height: number }, origStrokes: Stroke[], origShapes: Shape[], origTexts: TextElement[], origImages: ImageElement[]) => void;
+
   // Z-ordering operations
   bringToFront: () => void;
   sendToBack: () => void;
@@ -2852,6 +2855,116 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     };
 
     set({ pages: updatedPages });
+  },
+
+  resizeSelected: (origBounds, newBounds, origStrokes, origShapes, origTexts, origImages) => {
+    const state = get();
+    const currentPageState = state.pages[state.currentPage];
+    if (!currentPageState) return;
+
+    const scaleX = origBounds.width > 0 ? newBounds.width / origBounds.width : 1;
+    const scaleY = origBounds.height > 0 ? newBounds.height / origBounds.height : 1;
+
+    const mapPoint = (p: { x: number; y: number }) => ({
+      x: newBounds.x + (p.x - origBounds.x) * scaleX,
+      y: newBounds.y + (p.y - origBounds.y) * scaleY,
+    });
+
+    const updatedLayers = currentPageState.layers.map((layer) => ({
+      ...layer,
+      strokes: layer.strokes.map((stroke) => {
+        const orig = origStrokes.find(s => s.id === stroke.id);
+        if (!orig) return stroke;
+        return {
+          ...stroke,
+          points: orig.points.map(p => mapPoint(p)),
+        };
+      }),
+      shapes: layer.shapes.map((shape) => {
+        const orig = origShapes.find(s => s.id === shape.id);
+        if (!orig) return shape;
+        const updated: Shape = {
+          ...shape,
+          startPos: mapPoint(orig.startPos),
+          endPos: mapPoint(orig.endPos),
+        };
+        if (orig.points) {
+          updated.points = orig.points.map(p => mapPoint(p));
+        }
+        if (orig.size) {
+          updated.size = orig.size * Math.min(scaleX, scaleY);
+        }
+        if (orig.annotation) {
+          updated.annotation = {
+            ...shape.annotation!,
+            x: newBounds.x + (orig.annotation.x - origBounds.x) * scaleX,
+            y: newBounds.y + (orig.annotation.y - origBounds.y) * scaleY,
+            leaderLine: {
+              start: mapPoint(orig.annotation.leaderLine.start),
+              end: mapPoint(orig.annotation.leaderLine.end),
+            },
+          };
+        }
+        if (orig.leaderLine) {
+          updated.leaderLine = {
+            start: mapPoint(orig.leaderLine.start),
+            end: mapPoint(orig.leaderLine.end),
+          };
+        }
+        if (orig.fontLabel) {
+          updated.fontLabel = {
+            ...shape.fontLabel!,
+            textX: newBounds.x + (orig.fontLabel.textX - origBounds.x) * scaleX,
+            textY: newBounds.y + (orig.fontLabel.textY - origBounds.y) * scaleY,
+          };
+        }
+        return updated;
+      }),
+      texts: layer.texts.map((text) => {
+        const orig = origTexts.find(t => t.id === text.id);
+        if (!orig) return text;
+        const mapped = mapPoint({ x: orig.x, y: orig.y });
+        const updated: TextElement = {
+          ...text,
+          x: mapped.x,
+          y: mapped.y,
+          fontSize: (orig.fontSize || 16) * Math.min(scaleX, scaleY),
+        };
+        if (orig.leaderLine) {
+          updated.leaderLine = {
+            start: mapPoint(orig.leaderLine.start),
+            end: mapPoint(orig.leaderLine.end),
+          };
+        }
+        return updated;
+      }),
+      images: layer.images.map((image) => {
+        const orig = origImages.find(i => i.id === image.id);
+        if (!orig) return image;
+        return {
+          ...image,
+          startPos: mapPoint(orig.startPos),
+          endPos: mapPoint(orig.endPos),
+        };
+      }),
+    }));
+
+    const updatedPages = [...state.pages];
+    updatedPages[state.currentPage] = {
+      ...currentPageState,
+      layers: updatedLayers,
+    };
+
+    // selectionBoundsも更新
+    set({
+      pages: updatedPages,
+      selectionBounds: {
+        x: newBounds.x,
+        y: newBounds.y,
+        width: newBounds.width,
+        height: newBounds.height,
+      },
+    });
   },
 
   // === Z-ordering operations ===
