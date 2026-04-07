@@ -53,7 +53,6 @@ export const DrawingCanvas: React.FC = () => {
     showAnnotationModal,
     handleAnnotationSubmit,
     handleAnnotationCancel,
-    annotationState,
     getEditingAnnotation,
     hoverAnnotationType,
     isDraggingAnnotation,

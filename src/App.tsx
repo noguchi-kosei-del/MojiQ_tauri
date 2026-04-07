@@ -15,6 +15,7 @@ import { HeaderBar } from './components/HeaderBar';
 import { TabBar } from './components/TabBar';
 import { PageNav } from './components/PageNav';
 import { LoadingOverlay } from './components/LoadingOverlay';
+import { SplashScreen } from './components/SplashScreen';
 import { ViewerModeOverlay } from './components/ViewerMode';
 import { ProofreadingPanel } from './components/ProofreadingPanel';
 import { ProofreadingToolbar } from './components/ProofreadingToolbar';
@@ -30,6 +31,7 @@ import { useCommentVisibilityStore } from './stores/commentVisibilityStore';
 import { useTextLayerStore } from './stores/textLayerStore';
 import { useModeStore } from './stores/modeStore';
 import { useSidebarStore } from './stores/sidebarStore';
+import { useSettingsStore } from './stores/settingsStore';
 import { LoadedDocument, FileMetadata, ToolType } from './types';
 import { renderPdfToImages } from './utils/pdfRenderer';
 import { preloadAllBackgroundImages, backgroundImageCache } from './utils/backgroundImageCache';
@@ -41,7 +43,7 @@ const ZOOM_ANIMATION_DURATION = 300;
 const NAVIGATE_COOLDOWN_MS = 150;
 
 function App() {
-  const { loadDocument, loadDocumentWithAnnotations, loadDocumentWithLinks, loadAllPageImages, undo, redo, pages, currentPage, setCurrentPage, tool, setTool, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedImageIds, deleteSelectedStrokes, clearAllDrawings, getDocumentState, restoreDocumentState, activeProofreadingText, clearActiveProofreadingText, copySelected, cutSelected, pasteClipboard, hasClipboard, selectAll, moveSelectedByDelta, pdfAnnotations } = useDrawingStore();
+  const { loadDocument, loadDocumentWithAnnotations, loadDocumentWithLinks, loadAllPageImages, undo, redo, pages, currentPage, setCurrentPage, tool, setTool, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedImageIds, deleteSelectedStrokes, clearAllDrawings, getDocumentState, restoreDocumentState, activeProofreadingText, clearActiveProofreadingText, copySelected, cutSelected, pasteClipboard, hasClipboard, selectAll, moveSelectedByDelta } = useDrawingStore();
   const {
     activeDocumentId,
     syncFromDrawingStore,
@@ -101,6 +103,9 @@ function App() {
 
   // ページジャンプダイアログの状態（Ctrl+J用）
   const [isPageJumpOpen, setIsPageJumpOpen] = useState(false);
+
+  // スプラッシュスクリーンの状態
+  const [showSplash, setShowSplash] = useState(true);
 
   // Initialize theme on mount and sync with window title bar
   useEffect(() => {
@@ -646,15 +651,20 @@ function App() {
         }
 
         // 矢印キー: ページ送り（右から左）
-        if (e.key === 'ArrowLeft') {
-          e.preventDefault();
-          navigatePageInViewerMode(1); // 次のページ（右から左）
-          return;
-        }
-        if (e.key === 'ArrowRight') {
-          e.preventDefault();
-          navigatePageInViewerMode(-1); // 前のページ
-          return;
+        {
+          const inverted = useSettingsStore.getState().getArrowKeyInverted();
+          const leftDelta = inverted ? -1 : 1;
+          const rightDelta = inverted ? 1 : -1;
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            navigatePageInViewerMode(leftDelta);
+            return;
+          }
+          if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            navigatePageInViewerMode(rightDelta);
+            return;
+          }
         }
 
         // Home/End キー
@@ -758,30 +768,22 @@ function App() {
         // Arrow keys for page navigation
         // 右綴じ: 左矢印で前のページ（小さい番号）、右矢印で次のページ（大きい番号）
         // 左綴じ: 右矢印で次のページ（大きい番号）、左矢印で前のページ（小さい番号）
-        else if (e.key === 'ArrowLeft' && pages.length > 1) {
+        else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && pages.length > 1) {
           e.preventDefault();
+          const inverted = useSettingsStore.getState().getArrowKeyInverted();
+          const isLeft = e.key === 'ArrowLeft';
+          // デフォルト: 左=次ページ(+1), 右=前ページ(-1)。反転時は逆。
+          const goNext = inverted ? !isLeft : isLeft;
+
           if (isSpreadView) {
-            if (bindingDirection === 'right') {
-              // 右綴じ: 左矢印で前の見開きへ（小さいページ番号方向）
-              prevSpread();
+            if (goNext) {
+              nextSpread();
             } else {
-              // 左綴じ: 左矢印で前の見開きへ（小さいページ番号方向）
               prevSpread();
             }
-          } else if (currentPage < pages.length - 1) {
+          } else if (goNext && currentPage < pages.length - 1) {
             setCurrentPage(currentPage + 1);
-          }
-        } else if (e.key === 'ArrowRight' && pages.length > 1) {
-          e.preventDefault();
-          if (isSpreadView) {
-            if (bindingDirection === 'right') {
-              // 右綴じ: 右矢印で次の見開きへ（大きいページ番号方向）
-              nextSpread();
-            } else {
-              // 左綴じ: 右矢印で次の見開きへ（大きいページ番号方向）
-              nextSpread();
-            }
-          } else if (currentPage > 0) {
+          } else if (!goNext && currentPage > 0) {
             setCurrentPage(currentPage - 1);
           }
         }
@@ -1000,6 +1002,10 @@ function App() {
     };
   }, [handleFileDrop]);
 
+  if (showSplash) {
+    return <SplashScreen onComplete={() => setShowSplash(false)} />;
+  }
+
   return (
     <div className={`app ${isViewerMode ? 'viewer-mode' : ''} ${isFlipped ? 'workspace-flipped' : ''} ${mode === 'proofreading' ? 'proofreading-mode' : ''} ${mode === 'proofreading' && isProofreadingPanelCollapsed ? 'proofreading-panel-collapsed' : ''} ${modeTransition}`}>
       <LoadingOverlay />
@@ -1020,16 +1026,16 @@ function App() {
         // 編集画面
         <>
           <div className="app-body">
-            {!isSpreadView && mode === 'instruction' && <DrawingSettingsBar />}
-            {!isSpreadView && mode === 'instruction' && <DrawingToolbar />}
+            {mode === 'instruction' && <DrawingSettingsBar />}
+            {mode === 'instruction' && <DrawingToolbar />}
             <div className="main-content">
               <div className="canvas-area">
                 {isSpreadView ? <SpreadCanvas /> : <DrawingCanvas />}
               </div>
             </div>
-            {!isSpreadView && mode === 'instruction' && <RightToolbar />}
-            {!isSpreadView && mode === 'proofreading' && <ProofreadingToolbar />}
-            {!isSpreadView && mode === 'proofreading' && <ProofreadingPanel />}
+            {mode === 'instruction' && <RightToolbar />}
+            {mode === 'proofreading' && <ProofreadingToolbar />}
+            {mode === 'proofreading' && <ProofreadingPanel />}
           </div>
           {!isSpreadView && pages.length > 1 && <PageNav />}
         </>

@@ -80,7 +80,6 @@
 
 .panel-load-section {
   padding: 8px 12px;
-  background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
 }
@@ -94,7 +93,7 @@
   padding: 10px 12px;
   border: 1px solid #1976d2;
   border-radius: 4px;
-  background: transparent;
+  background: rgba(25, 118, 210, 0.08);
   color: #1976d2;
   font-size: 12px;
   cursor: pointer;
@@ -110,6 +109,7 @@
 .proofreading-panel.dark .panel-load-btn {
   border-color: #64b5f6;
   color: #64b5f6;
+  background: rgba(100, 181, 246, 0.1);
 }
 
 .proofreading-panel.dark .panel-load-btn:hover {
@@ -127,13 +127,19 @@
 /* ========================================= */
 
 .panel-color-section {
-  padding: 0 12px 10px;
+  padding: 0 12px;
+  padding-bottom: 0;
   flex-shrink: 0;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 12px;
-  align-items: flex-start;
+  align-items: stretch;
   border-bottom: 1px solid var(--border-color);
+}
+
+.panel-color-column,
+.panel-linewidth-column {
+  padding-bottom: 10px;
 }
 
 .panel-color-column {
@@ -142,6 +148,13 @@
   gap: 8px;
   flex: 1;
   min-width: 100px;
+}
+
+.panel-color-linewidth-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-color);
+  flex-shrink: 0;
 }
 
 .panel-linewidth-column {

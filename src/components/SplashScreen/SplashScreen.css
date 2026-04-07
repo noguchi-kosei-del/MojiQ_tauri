@@ -1,0 +1,61 @@
+.splash-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  opacity: 1;
+  transition: opacity 0.4s ease-out;
+}
+
+.splash-screen.splash-fade-out {
+  opacity: 0;
+}
+
+.splash-screen-top {
+  flex: 0 0 30%;
+  background: #111111;
+  display: flex;
+  align-items: center;
+  padding: 0 48px;
+}
+
+.splash-screen-logo {
+  height: 48px;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.splash-screen-progress-track {
+  height: 4px;
+  background: #e0e0e0;
+  flex-shrink: 0;
+}
+
+.splash-screen-progress-fill {
+  height: 100%;
+  background: #0078d4;
+  transition: width 0.15s ease-out;
+}
+
+.splash-screen-bottom {
+  flex: 1;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 60px;
+}
+
+.splash-screen-message {
+  font-size: 18px;
+  color: #333;
+  line-height: 1.8;
+}
+
+.splash-screen-percent {
+  font-size: 48px;
+  font-weight: 700;
+  color: #999;
+}

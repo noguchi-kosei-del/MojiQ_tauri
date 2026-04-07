@@ -164,13 +164,7 @@ const PrintIcon = () => (
 );
 
 // ページ挿入アイコン
-const InsertPageIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="4" y="2" width="16" height="20" rx="2"/>
-    <line x1="12" y1="8" x2="12" y2="16"/>
-    <line x1="8" y1="12" x2="16" y2="12"/>
-  </svg>
-);
+
 
 // ページ削除アイコン
 const DeletePageIcon = () => (
@@ -229,7 +223,7 @@ const CloseIcon = () => (
 
 // デフォルトレイヤーを作成するヘルパー関数
 export const HeaderBar: React.FC = () => {
-  const { loadDocument, loadDocumentWithAnnotations, getDocumentState, pages, currentPage, undo, redo, historyIndex, history, clearAllDrawings, deleteCurrentPage, insertBlankPage, setPages } = useDrawingStore();
+  const { loadDocument, loadDocumentWithAnnotations, getDocumentState, pages, currentPage, undo, redo, historyIndex, history, clearAllDrawings, deleteCurrentPage, setPages } = useDrawingStore();
   const {
     registerLoadedDocument,
     loadIntoActiveDocument,
@@ -1450,23 +1444,6 @@ export const HeaderBar: React.FC = () => {
                 {isSpreadView && bindingDirection === 'left' && <span className="spread-menu-check"><CheckIcon /></span>}
               </button>
               <div className="spread-menu-divider"></div>
-              <div className="spread-menu-header">ページ操作</div>
-              <button
-                className="spread-menu-item"
-                onClick={() => { insertBlankPage('before'); setIsSpreadMenuOpen(false); }}
-                disabled={pages.length === 0}
-              >
-                <InsertPageIcon />
-                <span>前に空白ページ挿入</span>
-              </button>
-              <button
-                className="spread-menu-item"
-                onClick={() => { insertBlankPage('after'); setIsSpreadMenuOpen(false); }}
-                disabled={pages.length === 0}
-              >
-                <InsertPageIcon />
-                <span>後に空白ページ挿入</span>
-              </button>
               <button
                 className="spread-menu-item danger"
                 onClick={handleDeleteCurrentPage}

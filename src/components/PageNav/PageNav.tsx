@@ -108,9 +108,11 @@ export const PageNav: React.FC = () => {
   };
 
   // Handle drag end
-  const handleDragEnd = () => {
+  const handleDragEnd = (e: React.MouseEvent | React.TouchEvent) => {
     setIsDragging(false);
     setCurrentPage(sliderValue - 1);
+    // スライダーからフォーカスを外して方向キーがページ送りに使えるようにする
+    (e.target as HTMLElement).blur();
   };
 
   // Handle prev button (right-to-left: prev = +1)
@@ -176,14 +178,14 @@ export const PageNav: React.FC = () => {
         </div>
         <div className="nav-buttons">
           <button
-            onClick={handlePrev}
+            onClick={(e) => { handlePrev(); (e.target as HTMLElement).blur(); }}
             disabled={currentPage === totalPages - 1}
             title="次のページ"
           >
             <PrevIcon />
           </button>
           <button
-            onClick={handleNext}
+            onClick={(e) => { handleNext(); (e.target as HTMLElement).blur(); }}
             disabled={currentPage === 0}
             title="前のページ"
           >

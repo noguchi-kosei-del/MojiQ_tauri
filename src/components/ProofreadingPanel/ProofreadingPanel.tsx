@@ -11,15 +11,9 @@ import { ProofreadingCheckItem, StampType } from '../../types';
 import { isLandscapeDocument, pdfPageToNombreRange } from '../../utils/pageNumberUtils';
 import './ProofreadingPanel.css';
 
-// プリセットカラー（赤、青）
-const PRESET_COLORS = ['#ff0000', '#0000ff'];
+// プリセットカラー（黒、赤、青）
+const PRESET_COLORS = ['#000000', '#ff0000', '#0000ff'];
 
-// グラデーションカラー（指示入れモードと同じ）
-const GRADIENT_COLORS = [
-  '#ff0000', '#ff8000', '#ffff00', '#80ff00', '#00ff00',
-  '#00ff80', '#00ffff', '#0080ff', '#0000ff', '#8000ff',
-  '#ff00ff', '#ff0080',
-];
 
 // Comment item for PDF annotations and MojiQ texts
 interface CommentItem {
@@ -987,18 +981,9 @@ export const ProofreadingPanel: React.FC = () => {
                   </button>
                 )}
               </div>
-              {/* グラデーションバー */}
-              <div className="panel-color-gradient">
-                {GRADIENT_COLORS.map((gradColor, index) => (
-                  <button
-                    key={index}
-                    className="panel-gradient-segment"
-                    style={{ backgroundColor: gradColor }}
-                    onClick={() => handleColorSelect(gradColor)}
-                  />
-                ))}
-              </div>
             </div>
+            {/* 区切り線 */}
+            <div className="panel-color-linewidth-divider" />
             {/* 線の太さ列 */}
             <div className="panel-linewidth-column">
               <h3 className="panel-section-title">線の太さ</h3>

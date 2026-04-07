@@ -1050,3 +1050,51 @@ MojiQ_Pro_1.0/
   - `useCanvas.ts` - `annotationState === 2`のとき`keydown`リスナーを登録
   - Escキーで`annotationState`/`isDrawingLeader`/各refをリセット
   - `capture: true`で他のESCハンドラへの伝播を防止
+
+### 2026-04-07
+#### アイコン更新（MojiQ Pro対応）
+- **アプリアイコン全面更新**: MojiQ Proの新アイコンに置き換え
+  - `logo/MojiQ_icon.png` - 新MojiQ Proアイコンに更新
+  - `src-tauri/icons/` - 全サイズPNG（32x32〜512x512）とICOをPillowで再生成
+  - Windowsタスクバー・タイトルバー・インストーラーすべてに反映
+- **不要ファイル削除**: `logo/` 配下の未使用ファイルを整理
+  - `MojiQ_favicon.ico`, `MojiQ_icon.ico`, `MojiQ_logo.png` を削除
+  - `pdf-icons/` ディレクトリ（`MojiQ-jpeg_256.ico`, `MojiQ-pdf_256.ico`）を削除
+
+#### スプラッシュスクリーン
+- **起動時スプラッシュ表示**: HTML事前スプラッシュ + React SplashScreenコンポーネントのハイブリッド方式
+  - `index.html` - インラインHTML/CSS/JSでReactロード前からスプラッシュ表示（0%→30%）
+  - `src/components/SplashScreen/` - Reactコンポーネント新規作成
+    - HTMLスプラッシュの進捗値を引き継ぎ、30%→100%まで2秒でease-in-outアニメーション
+    - 100%到達後に400msフェードアウト
+  - `public/logo/MojiQ Pro_logo_WH.png` - スプラッシュ用ロゴ（静的アセット）
+  - `<link rel="preload">` でロゴ画像を優先読み込み
+- **デザイン**: 上部30%黒背景（ロゴ上下中央）、青プログレスバー、下部70%白背景（メッセージ+進捗%）
+- **ウィンドウドラッグ対応**: `data-tauri-drag-region`属性でスプラッシュ上部からドラッグ可能
+
+#### 方向キー設定の反映修正
+- **環境設定の方向キー設定が反映されないバグを修正**
+  - `src/App.tsx` - `useSettingsStore`をインポート、`getArrowKeyInverted()`で設定を参照
+  - 通常モード・閲覧モード両方で方向キー反転設定に対応
+- **ページバー操作後の方向キー設定反映修正**
+  - `src/components/PageNav/PageNav.tsx` - スライダー・ボタン操作後に`blur()`でフォーカスを外す
+  - フォーカスがスライダーに残りブラウザデフォルト動作が優先される問題を解消
+
+#### 校正チェックパネルUI改善
+- **読み込みボタン背景色**: `background: var(--bg-tertiary)` を削除し、カラー/線の太さセクションと統一
+- **カラー・線の太さ間の区切り線**: 縦の区切り線（`panel-color-linewidth-divider`）を追加
+  - `flex-wrap: nowrap` + `align-items: stretch` で区切り線がborder-bottomまで連続
+- **プリセットカラーに黒を追加**: `PRESET_COLORS`に`#000000`を追加（黒、赤、青の3色）
+- **レインボーパレット削除**: 指示入れモード・校正チェックモード両方から`GRADIENT_COLORS`とグラデーションバーUIを削除
+
+#### 見開き表示の修正
+- **サイドバー消失バグ修正**: 見開き表示時も全サイドバーを表示するように変更
+  - `src/App.tsx` - `!isSpreadView &&` 条件を削除（DrawingSettingsBar, DrawingToolbar, RightToolbar, ProofreadingToolbar, ProofreadingPanel）
+  - PageNavのみ見開き時は非表示（SpreadCanvasが独自ナビを持つため）
+- **空白ページ挿入機能の削除**: 「前に空白ページ挿入」「後に空白ページ挿入」ボタンを削除
+  - `src/components/HeaderBar/HeaderBar.tsx` - ページ操作セクションから挿入ボタンとInsertPageIconを削除
+  - ページ削除ボタンは維持
+
+#### その他
+- **start-dev.bat**: 表示名を「MojiQ 3.0」→「MojiQ Pro 1.0」に更新
+- **未使用変数の修正**: `App.tsx`の`pdfAnnotations`、`DrawingCanvas.tsx`の`annotationState`を削除（TypeScriptエラー修正）

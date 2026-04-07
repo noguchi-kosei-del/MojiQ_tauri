@@ -64,12 +64,6 @@ const PRESET_COLORS = [
   '#000000', '#ff0000', '#0000ff', '#ffff00',
 ];
 
-// 拡張カラーパレット（グラデーション用）
-const GRADIENT_COLORS = [
-  '#ff0000', '#ff8000', '#ffff00', '#80ff00', '#00ff00',
-  '#00ff80', '#00ffff', '#0080ff', '#0000ff', '#8000ff',
-  '#ff00ff', '#ff0080',
-];
 
 export const DrawingSettingsBar: React.FC = () => {
   const { color, setColor, strokeWidth, setStrokeWidth, pages, pdfAnnotations, updateSelectedColor, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedAnnotationShapeId } = useDrawingStore();
@@ -199,17 +193,6 @@ export const DrawingSettingsBar: React.FC = () => {
             onInput={handleColorInput as unknown as React.FormEventHandler<HTMLInputElement>}
             onChange={handleColorInput}
           />
-        </div>
-        {/* グラデーションバー */}
-        <div className="color-gradient">
-          {GRADIENT_COLORS.map((gradColor, index) => (
-            <button
-              key={index}
-              className="gradient-segment"
-              style={{ backgroundColor: gradColor }}
-              onClick={() => handleColorSelect(gradColor)}
-            />
-          ))}
         </div>
       </div>
 
