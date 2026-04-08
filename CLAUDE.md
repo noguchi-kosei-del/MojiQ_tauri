@@ -1173,3 +1173,87 @@ MojiQ_Pro_1.0/
   - 提案タブ: 「提案チェック項目がありません。校正チェックを読み込みから読み込んで下さい。」
   - コメントタブ: 「コメント項目がありません。」
 - **空メッセージ左揃え**: `.panel-empty`を`text-align: left`に変更
+
+### 2026-04-08（続き）
+#### 旧MojiQ ver_2.17からの未実装機能移植
+
+##### ツール別の線幅保存 (Per-tool line width)
+- **ツールごとの線幅をlocalStorageに永続化**: ツール切替時に前ツールの線幅を保存し、新ツールの線幅を復元
+  - `src/stores/settingsStore.ts` - `ToolLineWidths`型、`toolLineWidths`設定、`getToolLineWidth`/`setToolLineWidth`メソッド追加
+  - `src/stores/drawingStore.ts` - `setTool()`で線幅の保存・復元、`setStrokeWidth()`で現在ツールの線幅を自動保存
+  - デフォルト値: ペン=2, マーカー=8, 消しゴム=5、その他=2
+  - Annotated系は基本ツールと線幅を共有（`replace('Annotated', '')`）
+
+##### ページにフィットするズーム (Zoom to Fit)
+- **`zoomToFit()`**: ページ全体がビューポートに収まるようズーム調整
+  - `src/stores/zoomStore.ts` - `zoomToFit(pageWidth, pageHeight, containerWidth, containerHeight)`メソッド追加
+  - `src/components/HeaderBar/HeaderBar.tsx` - ズーム表示の`%`クリックでページフィットズーム実行
+
+##### 元の位置に貼り付け (Ctrl+Shift+V)
+- **`pasteClipboardInPlace()`**: オフセットなしで元の位置にペースト
+  - `src/stores/drawingStore.ts` - `_pasteWithOffset(offset)`に内部リファクタ、`pasteClipboardInPlace()`追加
+  - `src/App.tsx` - `Ctrl+Shift+V`ショートカットハンドラ追加
+  - `src/stores/settingsStore.ts` - `pasteInPlace`ショートカット定義追加
+
+##### ウィンドウ位置・サイズの永続化
+- **localStorage永続化**: ウィンドウの位置・サイズ・最大化状態を保存し、次回起動時に復元
+  - `src/App.tsx` - Tauri Window API (`onResized`/`onMoved`) + `LogicalPosition`/`LogicalSize`で保存・復元
+  - デバウンス500msで保存、画面外チェック付き
+
+##### オブジェクト複製 (Duplicate Selected)
+- **`duplicateSelected()`**: 選択中オブジェクトをコピー→20pxオフセットで貼り付けのワンアクション
+  - `src/stores/drawingStore.ts` - `duplicateSelected()`メソッド追加
+
+##### 右クリックコンテキストメニュー
+- **キャンバス右クリックメニュー**: オブジェクト操作のコンテキストメニュー
+  - `src/components/Canvas/DrawingCanvas.tsx` - コンテキストメニューUI追加
+  - メニュー項目: コピー、カット、ペースト、同じ位置にペースト、複製、削除、前面へ移動、背面へ移動
+  - ショートカットキー表示、disabled状態対応、ダークモード対応
+  - `src/components/Canvas/DrawingCanvas.css` - `.canvas-context-menu`スタイル追加
+
+##### 最近開いたファイル一覧 (Recent Files)
+- **`recentFilesStore`**: 最近開いたファイル（最大10件）をlocalStorageに保存
+  - `src/stores/recentFilesStore.ts` - 新規作成（`addRecentFile`/`removeRecentFile`/`clearRecentFiles`）
+  - `src/stores/documentStore.ts` - `registerLoadedDocument`/`loadIntoActiveDocument`でファイルパスを自動記録
+  - `src/components/HamburgerMenu/HamburgerMenu.tsx` - 最近開いたファイル一覧UI、クリックで直接読み込み
+  - `src/components/HamburgerMenu/HamburgerMenu.css` - `.recent-files-section`スタイル追加
+  - `src/components/HeaderBar/HeaderBar.tsx` - `mojiq-open-file`イベントリスナーでPDF/画像読み込み
+
+#### 致命的バグ修正
+
+##### clearAllDrawings — 画像クリア漏れ修正
+- **`images: []`と`selectedImageIds: []`追加**: 全消去時に画像もクリアするように修正
+  - `src/stores/drawingStore.ts` - `clearAllDrawings()`にimagesとselectedImageIdsのクリアを追加
+
+##### renderCurrentPdfPage — 非同期レース条件修正
+- **ページインデックス検証**: await後に最新状態を`get()`で取得し、ページ削除済みならスキップ
+  - `src/stores/drawingStore.ts` - `targetPageIndex`を保存、非同期完了後に`freshState`で検証
+
+##### getPageImageAsync — 非同期レース条件修正
+- **ページ数検証**: await後にページが削除されていないか確認してから`updatePageBackgroundImage`を呼ぶ
+  - `src/stores/drawingStore.ts` - `pageNumber < freshState.pages.length`チェック追加
+
+##### renderCurrentPdfPage — saveToHistory削除
+- **Undo履歴汚染防止**: PDFレンダリングはユーザー操作でないため`saveToHistory()`呼び出しを削除
+  - `src/stores/drawingStore.ts` - `renderCurrentPdfPage()`から`get().saveToHistory()`を除去
+
+##### atomic_save_pdf — バックアップ復元エラーハンドリング
+- **復元失敗時の詳細エラー**: `.ok()`を`if let Err`に変更、バックアップファイルパスを含むエラーメッセージ表示
+  - `src-tauri/src/pdf.rs` - バックアップ復元失敗時にCRITICALログ出力＋ユーザー向けエラーメッセージ
+
+##### deleteCurrentPage — pdfPageInfos不整合修正
+- **pageNumber再割り当て**: ページ削除後に`pdfPageInfos`の`pageNumber`フィールドを連番に修正
+  - `src/stores/drawingStore.ts` - `.map((info, index) => ({ ...info, pageNumber: index + 1 }))`追加
+
+##### deepClone — エラーハンドリング追加
+- **フォールバック対応**: `structuredClone`失敗時に`JSON.parse(JSON.stringify())`にフォールバック
+  - `src/stores/drawingStore.ts` - try-catch追加、エラーログ出力
+
+##### Base64デコード失敗ログ追加
+- **デコードエラーの可視化**: `decode_data_url`で失敗時にデータ長とエラー詳細をeprintln出力
+  - `src-tauri/src/pdf.rs` - `decode_data_url()`にmatchベースのエラーログ追加
+
+#### モード切替時のキャンバス表示修正
+- **ResizeObserverでコンテナサイズ変化を検知**: モード切替でサイドバー幅が変わった際にbaseScaleを再計算
+  - `src/components/Canvas/DrawingCanvas.tsx` - `ResizeObserver`を`containerRef`に追加
+  - 従来は`window.resize`のみ検知。flexレイアウト内部の変化（サイドバー表示/非表示）を確実に検知

@@ -4,6 +4,7 @@ import { renderPdfPage } from '../utils/pdfRenderer';
 import { imageCache } from '../utils/imageCache';
 import { useDisplayScaleStore } from './displayScaleStore';
 import { useGridStore } from './gridStore';
+import { useSettingsStore } from './settingsStore';
 import { OBJECT_LIMITS } from '../constants/loadingLimits';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
@@ -12,7 +13,14 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
  * JSON.parse/stringifyより高速で、より多くのデータ型をサポート
  * 将来的にimmerの完全導入を検討する場合は、zustand/middleware/immerを使用
  */
-const deepClone = <T>(obj: T): T => structuredClone(obj);
+const deepClone = <T>(obj: T): T => {
+  try {
+    return structuredClone(obj);
+  } catch (e) {
+    console.error('[drawingStore] deepClone failed, falling back to JSON clone:', e);
+    return JSON.parse(JSON.stringify(obj));
+  }
+};
 
 /**
  * ページ内の総オブジェクト数を取得（ストローク + 図形 + テキスト + 画像）
@@ -221,6 +229,9 @@ interface DrawingStore extends DrawingState {
   copySelected: () => void;
   cutSelected: () => void;
   pasteClipboard: () => void;
+  pasteClipboardInPlace: () => void;
+  duplicateSelected: () => void;
+  _pasteWithOffset: (offset: number) => void;
   hasClipboard: () => boolean;
 
   // 校正チェック直接描画用
@@ -370,8 +381,11 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     // リンク方式の場合はキャッシュから取得
     if (page.imageLink?.type === 'file') {
       const imageData = await imageCache.getImage(page.imageLink);
-      // 取得した画像をページに設定（キャッシュとして保持）
-      get().updatePageBackgroundImage(pageNumber, imageData);
+      // 非同期完了後、ページが削除されていないか検証
+      const freshState = get();
+      if (pageNumber < freshState.pages.length) {
+        freshState.updatePageBackgroundImage(pageNumber, imageData);
+      }
       return imageData;
     }
 
@@ -483,29 +497,38 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
 
   renderCurrentPdfPage: async () => {
     const state = get();
-    const { pdfDocument, pdfPageInfos, currentPage, pages } = state;
+    const { pdfDocument, pdfPageInfos, currentPage } = state;
 
     if (!pdfDocument || pdfPageInfos.length === 0) return;
 
     const pageInfo = pdfPageInfos[currentPage];
     if (!pageInfo || pageInfo.rendered) return;
 
+    // レンダリング対象のページインデックスを保存（非同期中にcurrentPageが変わる可能性がある）
+    const targetPageIndex = currentPage;
+
     try {
       // ページをレンダリング
-      const imageData = await renderPdfPage(pdfDocument as PDFDocumentProxy, currentPage);
+      const imageData = await renderPdfPage(pdfDocument as PDFDocumentProxy, targetPageIndex);
+
+      // 非同期完了後、ページが削除されていないか検証
+      const freshState = get();
+      if (targetPageIndex >= freshState.pages.length || targetPageIndex >= freshState.pdfPageInfos.length) {
+        return; // ページが削除されていた場合はスキップ
+      }
 
       // ページ情報を更新
-      const updatedPageInfos = [...pdfPageInfos];
-      updatedPageInfos[currentPage] = {
-        ...pageInfo,
+      const updatedPageInfos = [...freshState.pdfPageInfos];
+      updatedPageInfos[targetPageIndex] = {
+        ...freshState.pdfPageInfos[targetPageIndex],
         rendered: true,
         imageData,
       };
 
       // ページステートを更新
-      const updatedPages = [...pages];
-      updatedPages[currentPage] = {
-        ...pages[currentPage],
+      const updatedPages = [...freshState.pages];
+      updatedPages[targetPageIndex] = {
+        ...freshState.pages[targetPageIndex],
         backgroundImage: imageData,
       };
 
@@ -514,8 +537,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
         pages: updatedPages,
       });
 
-      // 履歴に保存
-      get().saveToHistory();
+      // 注意: ページレンダリングはユーザー操作ではないため、saveToHistory()を呼ばない
     } catch (error) {
       console.error('Failed to render PDF page:', error);
     }
@@ -638,8 +660,10 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     const newCurrentPage = currentIndex >= newPages.length ? newPages.length - 1 : currentIndex;
     const newCurrentLayerId = newPageNumbers[newCurrentPage]?.layers[0]?.id || '';
 
-    // PDF関連の情報も更新
-    const newPdfPageInfos = state.pdfPageInfos.filter((_, index) => index !== currentIndex);
+    // PDF関連の情報も更新（pageNumberを再割り当て）
+    const newPdfPageInfos = state.pdfPageInfos
+      .filter((_, index) => index !== currentIndex)
+      .map((info, index) => ({ ...info, pageNumber: index + 1 }));
     const newPdfAnnotations = state.pdfAnnotations.filter((_, index) => index !== currentIndex);
 
     set({
@@ -719,10 +743,35 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       gridState.clearPageGrids(currentPage);
       gridState.exitGridMode();
     }
-    set({ tool, selectedStrokeIds: [], selectedShapeIds: [], selectedTextIds: [], selectedAnnotationShapeId: null, selectionBounds: null });
+
+    // ツール別線幅の保存・復元
+    const lineWidthTools = ['pen', 'marker', 'eraser', 'line', 'arrow', 'doubleArrow', 'doubleArrowAnnotated', 'rect', 'rectAnnotated', 'ellipse', 'ellipseAnnotated', 'lineAnnotated', 'polyline', 'semicircle', 'chevron', 'lshape', 'zshape', 'bracket'];
+    const prevTool = get().tool;
+    const settings = useSettingsStore.getState();
+
+    // 現在のツールの線幅を保存
+    if (lineWidthTools.includes(prevTool)) {
+      settings.setToolLineWidth(prevTool, get().strokeWidth);
+    }
+
+    // 新しいツールの線幅を復元
+    let newStrokeWidth = get().strokeWidth;
+    if (lineWidthTools.includes(tool)) {
+      newStrokeWidth = settings.getToolLineWidth(tool);
+    }
+
+    set({ tool, strokeWidth: newStrokeWidth, selectedStrokeIds: [], selectedShapeIds: [], selectedTextIds: [], selectedAnnotationShapeId: null, selectionBounds: null });
   },
   setColor: (color) => set({ color }),
-  setStrokeWidth: (width) => set({ strokeWidth: width }),
+  setStrokeWidth: (width) => {
+    set({ strokeWidth: width });
+    // 現在のツールの線幅も設定に保存
+    const lineWidthTools = ['pen', 'marker', 'eraser', 'line', 'arrow', 'doubleArrow', 'doubleArrowAnnotated', 'rect', 'rectAnnotated', 'ellipse', 'ellipseAnnotated', 'lineAnnotated', 'polyline', 'semicircle', 'chevron', 'lshape', 'zshape', 'bracket'];
+    const currentTool = get().tool;
+    if (lineWidthTools.includes(currentTool)) {
+      useSettingsStore.getState().setToolLineWidth(currentTool, width);
+    }
+  },
 
   addLayer: () => {
     const state = get();
@@ -871,6 +920,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
         strokes: [],
         shapes: [],
         texts: [],
+        images: [],
       })),
     }));
 
@@ -879,6 +929,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       selectedStrokeIds: [],
       selectedShapeIds: [],
       selectedTextIds: [],
+      selectedImageIds: [],
       selectionBounds: null,
     });
     get().saveToHistory();
@@ -3106,14 +3157,33 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     state.deleteSelectedStrokes();
   },
 
+  pasteClipboardInPlace: () => {
+    if (!clipboard || (clipboard.strokes.length === 0 && clipboard.shapes.length === 0 && clipboard.texts.length === 0 && clipboard.images.length === 0)) return;
+    // 元の位置に貼り付け（オフセットなし）
+    get()._pasteWithOffset(0);
+  },
+
+  duplicateSelected: () => {
+    const state = get();
+    // コピー→20pxオフセットで貼り付け
+    state.copySelected();
+    if (clipboard) {
+      get()._pasteWithOffset(20);
+    }
+  },
+
   pasteClipboard: () => {
     if (!clipboard || (clipboard.strokes.length === 0 && clipboard.shapes.length === 0 && clipboard.texts.length === 0 && clipboard.images.length === 0)) return;
+    const offset = clipboard.isCut ? 0 : 20;
+    get()._pasteWithOffset(offset);
+  },
+
+  _pasteWithOffset: (offset: number) => {
+    if (!clipboard) return;
 
     const state = get();
     const currentPageState = state.pages[state.currentPage];
     if (!currentPageState) return;
-
-    const offset = clipboard.isCut ? 0 : 20;
     const newStrokeIds: string[] = [];
     const newShapeIds: string[] = [];
     const newTextIds: string[] = [];

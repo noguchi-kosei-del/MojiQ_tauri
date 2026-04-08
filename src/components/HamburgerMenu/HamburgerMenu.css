@@ -150,6 +150,81 @@
   margin: 8px 20px;
 }
 
+/* Recent files section */
+.recent-files-section {
+  padding: 8px 0;
+  border-top: 1px solid var(--border-color);
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.recent-files-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 20px 4px 20px;
+}
+
+.recent-files-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.recent-files-clear {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.recent-files-clear:hover {
+  color: var(--text-primary);
+}
+
+.recent-files-list {
+  overflow-y: auto;
+  max-height: 200px;
+}
+
+.recent-file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 20px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.recent-file-item:hover {
+  background: var(--bg-hover);
+}
+
+.recent-file-icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  display: flex;
+}
+
+.recent-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Menu footer (icon buttons) */
 .hamburger-menu-footer {
   padding: 16px;

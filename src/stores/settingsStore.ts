@@ -12,10 +12,30 @@ export interface ShortcutConfig {
   description: string;
 }
 
+// ツール別線幅の型
+export interface ToolLineWidths {
+  pen: number;
+  marker: number;
+  eraser: number;
+  line: number;
+  arrow: number;
+  doubleArrow: number;
+  rect: number;
+  ellipse: number;
+  polyline: number;
+  semicircle: number;
+  chevron: number;
+  lshape: number;
+  zshape: number;
+  bracket: number;
+  [key: string]: number;  // Annotated系など動的アクセス用
+}
+
 // 設定の型
 export interface MojiQSettings {
   version: number;
   shortcuts: Record<string, ShortcutConfig>;
+  toolLineWidths: ToolLineWidths;
   scroll: {
     direction: 'normal' | 'inverted';
   };
@@ -30,9 +50,28 @@ export interface MojiQSettings {
   };
 }
 
+// デフォルトツール別線幅
+export const DEFAULT_TOOL_LINE_WIDTHS: ToolLineWidths = {
+  pen: 2,
+  marker: 8,
+  eraser: 5,
+  line: 2,
+  arrow: 2,
+  doubleArrow: 2,
+  rect: 2,
+  ellipse: 2,
+  polyline: 2,
+  semicircle: 2,
+  chevron: 2,
+  lshape: 2,
+  zshape: 2,
+  bracket: 2,
+};
+
 // デフォルト設定
 export const DEFAULT_SETTINGS: MojiQSettings = {
   version: 1,
+  toolLineWidths: { ...DEFAULT_TOOL_LINE_WIDTHS },
   shortcuts: {
     // ズーム操作
     zoomIn: { key: '=', modifiers: ['ctrl'], description: '拡大' },
@@ -68,6 +107,7 @@ export const DEFAULT_SETTINGS: MojiQSettings = {
     toolDoubleArrow: { key: 'd', modifiers: [], description: '両矢印' },
     toolPolyline: { key: 'y', modifiers: [], description: '折れ線' },
     toolImage: { key: 'i', modifiers: [], description: '画像' },
+    pasteInPlace: { key: 'v', modifiers: ['ctrl', 'shift'], description: '同じ位置にペースト' },
   },
   scroll: {
     direction: 'normal',
@@ -109,6 +149,10 @@ interface SettingsState {
   getArrowKeyInverted: () => boolean;
   setArrowKeyInverted: (inverted: boolean) => void;
 
+  // ツール別線幅
+  getToolLineWidth: (toolName: string) => number;
+  setToolLineWidth: (toolName: string, width: number) => void;
+
   // 描画データ自動エクスポート
   getExportDrawingWithPdf: () => boolean;
   setExportDrawingWithPdf: (withPdf: boolean) => void;
@@ -124,12 +168,20 @@ interface SettingsState {
 function migrate(oldSettings: Partial<MojiQSettings>): MojiQSettings {
   const settings: MojiQSettings = {
     version: oldSettings.version || 1,
+    toolLineWidths: { ...DEFAULT_TOOL_LINE_WIDTHS },
     shortcuts: { ...DEFAULT_SETTINGS.shortcuts },
     scroll: oldSettings.scroll || { direction: 'normal' },
     panel: oldSettings.panel || { closeOnSelect: false },
     arrowKey: oldSettings.arrowKey || { inverted: false },
     exportDrawing: oldSettings.exportDrawing || { withPdf: false },
   };
+
+  // 既存のツール別線幅をマージ
+  if (oldSettings.toolLineWidths) {
+    for (const [tool, width] of Object.entries(oldSettings.toolLineWidths)) {
+      settings.toolLineWidths[tool] = width;
+    }
+  }
 
   // 既存のショートカット設定をマージ
   if (oldSettings.shortcuts) {
@@ -267,6 +319,31 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const newSettings = {
         ...state.settings,
         arrowKey: { inverted },
+      };
+      saveSettings(newSettings);
+      return { settings: newSettings };
+    });
+  },
+
+  getToolLineWidth: (toolName: string) => {
+    const { settings } = get();
+    // Annotated系は基本ツールと同じ線幅を共有
+    const baseName = toolName.replace('Annotated', '');
+    if (settings.toolLineWidths && settings.toolLineWidths[baseName] !== undefined) {
+      return settings.toolLineWidths[baseName];
+    }
+    return DEFAULT_TOOL_LINE_WIDTHS[baseName] ?? 2;
+  },
+
+  setToolLineWidth: (toolName: string, width: number) => {
+    const baseName = toolName.replace('Annotated', '');
+    set((state) => {
+      const newSettings = {
+        ...state.settings,
+        toolLineWidths: {
+          ...state.settings.toolLineWidths,
+          [baseName]: width,
+        },
       };
       saveSettings(newSettings);
       return { settings: newSettings };

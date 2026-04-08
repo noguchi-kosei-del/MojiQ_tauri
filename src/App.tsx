@@ -3,6 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { setTheme as setTauriTheme } from '@tauri-apps/api/app';
 import { ask, message } from '@tauri-apps/plugin-dialog';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 import { CloseConfirmDialog, CloseConfirmResult } from './components/CloseConfirmDialog';
 import { SettingsModal } from './components/SettingsModal/SettingsModal';
 import { ProofreadingCheckModal } from './components/ProofreadingCheckModal';
@@ -42,7 +44,7 @@ const ZOOM_ANIMATION_DURATION = 300;
 const NAVIGATE_COOLDOWN_MS = 150;
 
 function App() {
-  const { loadDocument, loadDocumentWithAnnotations, loadDocumentWithLinks, loadAllPageImages, undo, redo, pages, currentPage, setCurrentPage, tool, setTool, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedImageIds, deleteSelectedStrokes, clearAllDrawings, getDocumentState, restoreDocumentState, activeProofreadingText, clearActiveProofreadingText, copySelected, cutSelected, pasteClipboard, hasClipboard, selectAll, moveSelectedByDelta } = useDrawingStore();
+  const { loadDocument, loadDocumentWithAnnotations, loadDocumentWithLinks, loadAllPageImages, undo, redo, pages, currentPage, setCurrentPage, tool, setTool, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedImageIds, deleteSelectedStrokes, clearAllDrawings, getDocumentState, restoreDocumentState, activeProofreadingText, clearActiveProofreadingText, copySelected, cutSelected, pasteClipboard, pasteClipboardInPlace, hasClipboard, selectAll, moveSelectedByDelta } = useDrawingStore();
   const {
     activeDocumentId,
     syncFromDrawingStore,
@@ -830,6 +832,13 @@ function App() {
             cutSelected();
           }
         }
+        // Paste in Place: Ctrl+Shift+V
+        else if ((e.key === 'v' || e.key === 'V') && e.shiftKey) {
+          if (hasClipboard()) {
+            e.preventDefault();
+            pasteClipboardInPlace();
+          }
+        }
         // Paste: Ctrl+V
         else if (e.key === 'v') {
           if (hasClipboard()) {
@@ -1021,6 +1030,77 @@ function App() {
       unlistenPromise.then((unlisten) => unlisten());
     };
   }, [handleFileDrop]);
+
+  // ウィンドウ位置・サイズの復元・保存
+  useEffect(() => {
+    const WINDOW_STATE_KEY = 'mojiq_window_state';
+    const appWindow = getCurrentWindow();
+
+    // 前回のウィンドウ状態を復元
+    const restoreWindowState = async () => {
+      try {
+        const saved = localStorage.getItem(WINDOW_STATE_KEY);
+        if (!saved) return;
+        const state = JSON.parse(saved);
+        if (state.isMaximized) {
+          await appWindow.maximize();
+        } else if (state.width && state.height) {
+          // 有効なサイズかチェック（最小幅以上）
+          const width = Math.max(state.width, 1100);
+          const height = Math.max(state.height, 600);
+          await appWindow.setSize(new LogicalSize(width, height));
+          if (state.x !== undefined && state.y !== undefined) {
+            // 画面外に出ていないかチェック（負のオフセットは許容するが極端な値は拒否）
+            if (state.x > -width && state.y > -height) {
+              await appWindow.setPosition(new LogicalPosition(state.x, state.y));
+            }
+          }
+        }
+      } catch {
+        // 復元失敗時は無視
+      }
+    };
+
+    restoreWindowState();
+
+    // ウィンドウ状態を保存（リサイズ・移動時）
+    let saveTimer: ReturnType<typeof setTimeout> | null = null;
+    const saveWindowState = async () => {
+      try {
+        const isMaximized = await appWindow.isMaximized();
+        if (isMaximized) {
+          localStorage.setItem(WINDOW_STATE_KEY, JSON.stringify({ isMaximized: true }));
+          return;
+        }
+        const size = await appWindow.innerSize();
+        const position = await appWindow.outerPosition();
+        const scaleFactor = await appWindow.scaleFactor();
+        localStorage.setItem(WINDOW_STATE_KEY, JSON.stringify({
+          x: Math.round(position.x / scaleFactor),
+          y: Math.round(position.y / scaleFactor),
+          width: Math.round(size.width / scaleFactor),
+          height: Math.round(size.height / scaleFactor),
+          isMaximized: false,
+        }));
+      } catch {
+        // 保存失敗時は無視
+      }
+    };
+
+    const debouncedSave = () => {
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveWindowState, 500);
+    };
+
+    const unlistenResized = appWindow.onResized(debouncedSave);
+    const unlistenMoved = appWindow.onMoved(debouncedSave);
+
+    return () => {
+      if (saveTimer) clearTimeout(saveTimer);
+      unlistenResized.then(fn => fn());
+      unlistenMoved.then(fn => fn());
+    };
+  }, []);
 
   // Reactロード完了後にスプラッシュを閉じてメインウィンドウを表示
   useEffect(() => {

@@ -5,6 +5,7 @@ import { useZoomStore } from './zoomStore';
 import { cacheManager } from '../utils/cacheManager';
 import { useTextLayerStore } from './textLayerStore';
 import { useProofreadingCheckStore } from './proofreadingCheckStore';
+import { useRecentFilesStore } from './recentFilesStore';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
 // メモリにフル保持するドキュメント数の上限
@@ -423,6 +424,11 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     // メモリ管理
     get().unloadOldDocuments();
 
+    // 最近開いたファイルに追加
+    if (filePath) {
+      useRecentFilesStore.getState().addRecentFile(filePath);
+    }
+
     return newDoc.id;
   },
 
@@ -466,6 +472,11 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
 
     // メモリ管理
     get().unloadOldDocuments();
+
+    // 最近開いたファイルに追加
+    if (filePath) {
+      useRecentFilesStore.getState().addRecentFile(filePath);
+    }
   },
 
   unloadOldDocuments: () => {

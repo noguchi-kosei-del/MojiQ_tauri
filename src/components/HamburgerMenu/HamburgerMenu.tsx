@@ -4,6 +4,7 @@ import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { useDrawingStore } from '../../stores/drawingStore';
 import { useDocumentStore } from '../../stores/documentStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useRecentFilesStore } from '../../stores/recentFilesStore';
 import './HamburgerMenu.css';
 
 // SVG Icons
@@ -89,12 +90,20 @@ interface HamburgerMenuProps {
   onToggle: () => void;
 }
 
+const FileIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+    <polyline points="14 2 14 8 20 8"/>
+  </svg>
+);
+
 export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ isOpen, onToggle }) => {
   const { theme, toggleTheme } = useThemeStore();
   const { isFlipped, toggleFlipped } = useWorkspaceStore();
   const { pages, clearDocument } = useDrawingStore();
   const { tabOrder, closeDocument } = useDocumentStore();
   const { openModal: openSettingsModal } = useSettingsStore();
+  const { recentFiles, clearRecentFiles } = useRecentFilesStore();
 
   const handleOpenSettings = useCallback(() => {
     onToggle(); // メニューを閉じる
@@ -140,6 +149,12 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ isOpen, onToggle }
     setIsGoHomeConfirmOpen(false);
   }, []);
 
+  const handleOpenRecentFile = useCallback((path: string) => {
+    onToggle(); // メニューを閉じる
+    // HeaderBarのファイル読み込みイベントを発火
+    window.dispatchEvent(new CustomEvent('mojiq-open-file', { detail: { path } }));
+  }, [onToggle]);
+
   return (
     <>
       {/* Overlay */}
@@ -174,6 +189,29 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ isOpen, onToggle }
             </a>
           ))}
         </nav>
+
+        {/* 最近開いたファイル */}
+        {recentFiles.length > 0 && (
+          <div className="recent-files-section">
+            <div className="recent-files-header">
+              <span className="recent-files-title">最近開いた���ァイル</span>
+              <button className="recent-files-clear" onClick={clearRecentFiles} title="履歴をクリア">&times;</button>
+            </div>
+            <div className="recent-files-list">
+              {recentFiles.map((file, i) => (
+                <button
+                  key={i}
+                  className="recent-file-item"
+                  onClick={() => handleOpenRecentFile(file.path)}
+                  title={file.path}
+                >
+                  <span className="recent-file-icon"><FileIcon /></span>
+                  <span className="recent-file-name">{file.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="hamburger-menu-footer">
           <button

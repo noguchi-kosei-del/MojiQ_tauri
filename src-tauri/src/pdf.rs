@@ -40,7 +40,14 @@ fn atomic_save_pdf(doc: PdfDocumentReference, save_path: &str) -> Result<(), Box
             }
             Err(e) => {
                 // リネーム失敗、バックアップを復元
-                std::fs::rename(&backup_path, path).ok();
+                if let Err(restore_err) = std::fs::rename(&backup_path, path) {
+                    eprintln!("CRITICAL: Failed to restore backup file '{}' -> '{}': {}",
+                        backup_path.display(), path.display(), restore_err);
+                    return Err(format!(
+                        "保存に失敗し、バックアップの復元にも失敗しました。\n元ファイル: {}\nバックアップ: {}\nエラー: {}",
+                        path.display(), backup_path.display(), e
+                    ).into());
+                }
                 std::fs::remove_file(&temp_path).ok();
                 return Err(format!("Failed to rename temp file: {}", e).into());
             }
@@ -261,8 +268,15 @@ pub fn create_pdf_with_drawings(
 fn decode_data_url(data_url: &str) -> Option<Vec<u8>> {
     if let Some(comma_pos) = data_url.find(',') {
         let base64_data = &data_url[comma_pos + 1..];
-        BASE64.decode(base64_data).ok()
+        match BASE64.decode(base64_data) {
+            Ok(bytes) => Some(bytes),
+            Err(e) => {
+                eprintln!("[pdf] Base64 decode failed (data length: {}): {}", base64_data.len(), e);
+                None
+            }
+        }
     } else {
+        eprintln!("[pdf] Invalid data URL format: missing comma separator (length: {})", data_url.len());
         None
     }
 }

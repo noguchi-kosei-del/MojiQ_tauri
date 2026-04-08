@@ -44,6 +44,13 @@ const FileOpenIcon = () => (
   </svg>
 );
 
+// コンテキストメニューの位置とメニュー項目
+interface ContextMenuState {
+  visible: boolean;
+  x: number;
+  y: number;
+}
+
 export const DrawingCanvas: React.FC = () => {
   const {
     canvasRef,
@@ -80,7 +87,14 @@ export const DrawingCanvas: React.FC = () => {
 
   // 画像ファイル入力用のref
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const { getCurrentPageState, tool, pages, currentPage, setCurrentPage, addShape, color, strokeWidth } = useDrawingStore();
+  // コンテキストメニュー
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0 });
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+  const { getCurrentPageState, tool, pages, currentPage, setCurrentPage, addShape, color, strokeWidth,
+    selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedImageIds,
+    copySelected, cutSelected, pasteClipboard, pasteClipboardInPlace, duplicateSelected, hasClipboard,
+    deleteSelectedStrokes, bringToFront, sendToBack,
+  } = useDrawingStore();
   const { loadIntoActiveDocument, createNewDocument } = useDocumentStore();
   const { setLoading, setProgress } = useLoadingStore();
   const { zoom, setZoom, minZoom, maxZoom, zoomStep } = useZoomStore();
@@ -292,6 +306,7 @@ export const DrawingCanvas: React.FC = () => {
   const originalHeight = pageState?.height || 600;
 
   // Calculate base scale to fit container (or screen in viewer mode)
+  // ResizeObserverでコンテナサイズ変化（モード切替によるサイドバー変化等）を検知
   useEffect(() => {
     const updateBaseScale = () => {
       if (!pageState) return;
@@ -320,8 +335,21 @@ export const DrawingCanvas: React.FC = () => {
     };
 
     updateBaseScale();
+
+    // ウィンドウリサイズ
     window.addEventListener('resize', updateBaseScale);
-    return () => window.removeEventListener('resize', updateBaseScale);
+
+    // コンテナサイズ変化を検知（モード切替によるサイドバー幅変化等）
+    let resizeObserver: ResizeObserver | null = null;
+    if (containerRef.current) {
+      resizeObserver = new ResizeObserver(updateBaseScale);
+      resizeObserver.observe(containerRef.current);
+    }
+
+    return () => {
+      window.removeEventListener('resize', updateBaseScale);
+      resizeObserver?.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [originalWidth, originalHeight, isViewerMode, pages.length, currentPage]);
 
@@ -827,6 +855,32 @@ export const DrawingCanvas: React.FC = () => {
     return null;
   };
 
+  // 右クリックコンテキストメニュー
+  const hasSelection = selectedStrokeIds.length > 0 || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedImageIds.length > 0;
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!pageState) return;
+    setContextMenu({ visible: true, x: e.clientX, y: e.clientY });
+  }, [pageState]);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu({ visible: false, x: 0, y: 0 });
+  }, []);
+
+  // コンテキストメニュー外クリックで閉じる
+  useEffect(() => {
+    if (!contextMenu.visible) return;
+    const handleClick = () => closeContextMenu();
+    window.addEventListener('click', handleClick);
+    window.addEventListener('contextmenu', handleClick);
+    return () => {
+      window.removeEventListener('click', handleClick);
+      window.removeEventListener('contextmenu', handleClick);
+    };
+  }, [contextMenu.visible, closeContextMenu]);
+
   return (
     <div className="canvas-container" ref={containerRef}>
       {pageState ? (
@@ -893,6 +947,7 @@ export const DrawingCanvas: React.FC = () => {
               width={originalWidth}
               height={originalHeight}
               className="drawing-canvas"
+              onContextMenu={handleContextMenu}
               style={{
                 cursor: getCursor(),
                 width: displayWidth,
@@ -967,6 +1022,75 @@ export const DrawingCanvas: React.FC = () => {
         style={{ display: 'none' }}
         onChange={handleImageFileChange}
       />
+
+      {/* 右クリックコンテキストメニュー */}
+      {contextMenu.visible && (
+        <div
+          ref={contextMenuRef}
+          className="canvas-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className="context-menu-item"
+            disabled={!hasSelection}
+            onClick={() => { copySelected(); closeContextMenu(); }}
+          >
+            コピー<span className="context-menu-shortcut">Ctrl+C</span>
+          </button>
+          <button
+            className="context-menu-item"
+            disabled={!hasSelection}
+            onClick={() => { cutSelected(); closeContextMenu(); }}
+          >
+            カット<span className="context-menu-shortcut">Ctrl+X</span>
+          </button>
+          <button
+            className="context-menu-item"
+            disabled={!hasClipboard()}
+            onClick={() => { pasteClipboard(); closeContextMenu(); }}
+          >
+            ペースト<span className="context-menu-shortcut">Ctrl+V</span>
+          </button>
+          <button
+            className="context-menu-item"
+            disabled={!hasClipboard()}
+            onClick={() => { pasteClipboardInPlace(); closeContextMenu(); }}
+          >
+            同じ位置にペースト<span className="context-menu-shortcut">Ctrl+Shift+V</span>
+          </button>
+          <div className="context-menu-separator" />
+          <button
+            className="context-menu-item"
+            disabled={!hasSelection}
+            onClick={() => { duplicateSelected(); closeContextMenu(); }}
+          >
+            複製
+          </button>
+          <button
+            className="context-menu-item"
+            disabled={!hasSelection}
+            onClick={() => { deleteSelectedStrokes(); closeContextMenu(); }}
+          >
+            削除<span className="context-menu-shortcut">Delete</span>
+          </button>
+          <div className="context-menu-separator" />
+          <button
+            className="context-menu-item"
+            disabled={!hasSelection}
+            onClick={() => { bringToFront(); closeContextMenu(); }}
+          >
+            前面へ移動
+          </button>
+          <button
+            className="context-menu-item"
+            disabled={!hasSelection}
+            onClick={() => { sendToBack(); closeContextMenu(); }}
+          >
+            背面へ移動
+          </button>
+        </div>
+      )}
 
       {/* 一文字入力モーダル（小文字指定用） */}
       {showLabelInputModal && (

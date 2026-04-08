@@ -245,7 +245,7 @@ export const HeaderBar: React.FC = () => {
   } = useSpreadViewStore();
   const { isActive: isViewerMode, enter: enterViewerMode, exit: exitViewerMode } = useViewerModeStore();
   const { theme, setTheme } = useThemeStore();
-  const { zoom, setZoom, minZoom, maxZoom } = useZoomStore();
+  const { zoom, setZoom, minZoom, maxZoom, zoomToFit } = useZoomStore();
   const { getExportDrawingWithPdf, setExportDrawingWithPdf } = useSettingsStore();
   const exportDrawingWithPdf = getExportDrawingWithPdf();
   const { mode, setMode } = useModeStore();
@@ -990,6 +990,94 @@ export const HeaderBar: React.FC = () => {
     };
   }, []);
 
+  // 最近開いたファイルからの読み込み（mojiq-open-fileイベント）
+  useEffect(() => {
+    const handleOpenFileEvent = async (e: Event) => {
+      const path = (e as CustomEvent).detail?.path;
+      if (!path) return;
+
+      disableSpreadView();
+      backgroundImageCache.clear();
+
+      setLoading(true, 'ファイルを読み込み中...');
+      setProgress(5);
+
+      let currentActiveId = useDocumentStore.getState().activeDocumentId;
+      if (!currentActiveId) {
+        currentActiveId = createNewDocument({ title: '新規ドキュメント' });
+      }
+
+      const currentPages = useDrawingStore.getState().pages || [];
+      const shouldLoadIntoExisting = currentPages.length === 0;
+
+      if (activeDocumentId && currentPages.length > 0) {
+        const currentState = getDocumentState();
+        syncFromDrawingStore(currentState);
+      }
+
+      try {
+        const isImage = ['.jpg', '.jpeg', '.png'].some(ext => path.toLowerCase().endsWith(ext));
+        const isPdf = path.toLowerCase().endsWith('.pdf');
+        const fileName = path.split(/[/\\]/).pop() || 'File';
+
+        setProgress(10);
+        const result = await invoke<LoadedDocument>('load_file', { path });
+
+        if (isPdf && result.pdf_data) {
+          setLoading(true, 'PDFをレンダリング中...');
+          const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
+            setProgress(30 + Math.floor(progress * 0.4));
+          });
+          setProgress(70);
+
+          setLoading(true, '画像をキャッシュ中...');
+          await preloadAllBackgroundImages(
+            (pageNumber) => pdfResult.pages[pageNumber]?.image_data || null,
+            pdfResult.pages.length,
+            (current, total) => { setProgress(70 + Math.floor((current / total) * 25)); }
+          );
+          setProgress(95);
+
+          loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations);
+          const loadedPages = useDrawingStore.getState().pages;
+
+          if (shouldLoadIntoExisting) {
+            loadIntoActiveDocument(fileName, path, 'pdf', loadedPages, null, [], pdfResult.annotations);
+          } else {
+            registerLoadedDocument(fileName, path, 'pdf', loadedPages, null, [], pdfResult.annotations);
+          }
+        } else if (isImage) {
+          setLoading(true, '画像をキャッシュ中...');
+          await preloadAllBackgroundImages(
+            (pageNumber) => result.pages[pageNumber]?.image_data || null,
+            result.pages.length,
+            (current, total) => { setProgress(50 + Math.floor((current / total) * 40)); }
+          );
+          setProgress(90);
+
+          loadDocument(result.pages);
+          const loadedPages = useDrawingStore.getState().pages;
+
+          if (shouldLoadIntoExisting) {
+            loadIntoActiveDocument(fileName, path, 'images', loadedPages, null, [], []);
+          } else {
+            registerLoadedDocument(fileName, path, 'images', loadedPages, null, [], []);
+          }
+        }
+
+        setProgress(100);
+      } catch (error) {
+        console.error('[HeaderBar] Failed to open recent file:', error);
+        await message(String(error), { title: 'エラー', kind: 'error' });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    window.addEventListener('mojiq-open-file', handleOpenFileEvent);
+    return () => window.removeEventListener('mojiq-open-file', handleOpenFileEvent);
+  }, [activeDocumentId, getDocumentState, syncFromDrawingStore]);
+
   const handleClearAllDrawings = () => {
     if (pages.length > 0) {
       setIsClearConfirmOpen(true);
@@ -1204,6 +1292,18 @@ export const HeaderBar: React.FC = () => {
     }
   };
 
+  // ページにフィットするズーム
+  const handleZoomToFit = () => {
+    const pageState = pages[currentPage];
+    if (!pageState) return;
+    // スクロールエリアのコンテナサイズを取得
+    const container = document.querySelector('.scroll-area') as HTMLElement;
+    if (!container) return;
+    const containerWidth = container.clientWidth - 40;
+    const containerHeight = container.clientHeight - 40;
+    zoomToFit(pageState.width, pageState.height, containerWidth, containerHeight);
+  };
+
   // 描画データ読み込み
   const handleImportDrawingData = async () => {
     if (pages.length === 0) {
@@ -1335,7 +1435,7 @@ export const HeaderBar: React.FC = () => {
             >
               <ZoomInIcon />
             </button>
-            <span className="zoom-value">{Math.round(zoom * 100)}%</span>
+            <span className="zoom-value" onClick={handleZoomToFit} title="ページにフィット" style={{ cursor: 'pointer' }}>{Math.round(zoom * 100)}%</span>
             <button
               onClick={() => window.dispatchEvent(new CustomEvent('canvas-zoom-out'))}
               disabled={zoom <= minZoom}
