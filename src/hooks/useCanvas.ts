@@ -1477,8 +1477,8 @@ export const useCanvas = () => {
     isAdjusting: boolean = false
   ) => {
     ctx.save();
-    ctx.strokeStyle = '#00c853'; // 緑色
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = isAdjusting ? '#00bcd4' : '#00c853'; // 選択中はシアン、通常は緑色
+    ctx.lineWidth = isAdjusting ? 2.5 : 1;
     ctx.setLineDash([]);
 
     const cellSize = grid.ptSize * MM_PER_PT * pixelsPerMm;
@@ -1757,10 +1757,10 @@ export const useCanvas = () => {
       drawImage(ctx, imageElement, isSelected);
     });
 
-    // Draw grids (写植グリッド) - 確定済みグリッドは常に表示
+    // Draw grids (写植グリッド) - グリッドモード中のみ表示
     const gridState = useGridStore.getState();
     const calibrationState = useCalibrationStore.getState();
-    {
+    if (gridState.isGridMode) {
       const pageGrids = gridState.getPageGrids(currentPage);
       pageGrids.forEach((grid) => {
         drawGrid(ctx, grid, calibrationState.pixelsPerMm, false);

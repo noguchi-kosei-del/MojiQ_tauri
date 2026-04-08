@@ -3,6 +3,7 @@ import { DrawingState, PageState, Layer, Stroke, Shape, Point, ToolType, Selecti
 import { renderPdfPage } from '../utils/pdfRenderer';
 import { imageCache } from '../utils/imageCache';
 import { useDisplayScaleStore } from './displayScaleStore';
+import { useGridStore } from './gridStore';
 import { OBJECT_LIMITS } from '../constants/loadingLimits';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
@@ -520,21 +521,24 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     }
   },
 
-  clearDocument: () => set({
-    pages: [],
-    currentPage: 0,
-    currentLayerId: '',
-    history: [],
-    historyIndex: -1,
-    selectedStrokeIds: [],
-    selectedShapeIds: [],
-    selectedTextIds: [],
-    selectedAnnotationShapeId: null,
-    selectionBounds: null,
-    pdfDocument: null,
-    pdfPageInfos: [],
-    pdfAnnotations: [],
-  }),
+  clearDocument: () => {
+    useGridStore.getState().resetAll();
+    set({
+      pages: [],
+      currentPage: 0,
+      currentLayerId: '',
+      history: [],
+      historyIndex: -1,
+      selectedStrokeIds: [],
+      selectedShapeIds: [],
+      selectedTextIds: [],
+      selectedAnnotationShapeId: null,
+      selectionBounds: null,
+      pdfDocument: null,
+      pdfPageInfos: [],
+      pdfAnnotations: [],
+    });
+  },
 
   // ドキュメント状態を復元（マルチタブ対応用）
   restoreDocumentState: (docState) => {
@@ -707,7 +711,16 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     get().saveToHistory();
   },
 
-  setTool: (tool) => set({ tool, selectedStrokeIds: [], selectedShapeIds: [], selectedTextIds: [], selectedAnnotationShapeId: null, selectionBounds: null }),
+  setTool: (tool) => {
+    // グリッドモード中にツール切り替え → グリッドをすべてクリアしてモードを抜ける
+    const gridState = useGridStore.getState();
+    if (gridState.isGridMode || gridState.pendingGrid) {
+      const currentPage = get().currentPage;
+      gridState.clearPageGrids(currentPage);
+      gridState.exitGridMode();
+    }
+    set({ tool, selectedStrokeIds: [], selectedShapeIds: [], selectedTextIds: [], selectedAnnotationShapeId: null, selectionBounds: null });
+  },
   setColor: (color) => set({ color }),
   setStrokeWidth: (width) => set({ strokeWidth: width }),
 

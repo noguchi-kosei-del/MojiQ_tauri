@@ -1098,3 +1098,27 @@ MojiQ_Pro_1.0/
 #### その他
 - **start-dev.bat**: 表示名を「MojiQ 3.0」→「MojiQ Pro 1.0」に更新
 - **未使用変数の修正**: `App.tsx`の`pdfAnnotations`、`DrawingCanvas.tsx`の`annotationState`を削除（TypeScriptエラー修正）
+
+### 2026-04-08
+#### Alt+スクロールでポインター中心ズーム
+- **Alt+ホイール**: ポインター位置を中心にズームイン/アウト
+  - `src/components/Canvas/DrawingCanvas.tsx` - wheelハンドラの条件に`e.altKey`を追加
+  - 既存のCtrl+ホイールと同じポインター中心ズームロジックを共有
+
+#### 写植シミュレーター グリッド選択時の視覚強調
+- **選択中グリッドの線を太く**: `isAdjusting`（pendingGrid）時に線幅を強調
+  - `src/hooks/useCanvas.ts` - `drawGrid`関数で`isAdjusting`時に`lineWidth: 2.5`、色を`#00bcd4`（シアン）に変更
+  - 通常の確定済みグリッドは従来通り緑色・1px
+
+#### 写植シミュレーター グリッドのツール切り替え時リセット
+- **ツール切り替え時にグリッドをクリア**: 別のツールに切り替えるとグリッドを全消去してグリッドモードを終了
+  - `src/stores/drawingStore.ts` - `setTool`に`clearPageGrids`+`exitGridMode`呼び出しを追加
+  - `src/stores/drawingStore.ts` - `useGridStore`をインポート
+- **グリッド表示をグリッドモード中のみに制限**: グリッドモード外では描画しない
+  - `src/hooks/useCanvas.ts` - グリッド描画を`gridState.isGridMode`条件でラップ
+
+#### 写植シミュレーター ホーム画面遷移時の全リセット
+- **`resetAll()`関数追加**: gridStoreの全状態を初期化
+  - `src/stores/gridStore.ts` - `resetAll()`を追加（モード、pendingGrid、全ページグリッド、サンプルテキスト、undo/redoスタックをクリア）
+  - `src/stores/drawingStore.ts` - `clearDocument`内で`gridStore.resetAll()`を呼び出し
+  - ホーム画面遷移時に写植シミュレーターの状態が完全にリセットされる

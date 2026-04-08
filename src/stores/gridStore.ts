@@ -95,6 +95,9 @@ interface GridStoreActions {
   setDensity: (density: DensityMode) => void;
   setSampleText: (text: string) => void;
 
+  // 全リセット
+  resetAll: () => void;
+
   // ダッシュボード
   setShowDashboard: (show: boolean) => void;
 
@@ -177,6 +180,20 @@ export const useGridStore = create<GridStoreState & GridStoreActions>()((set, ge
       gridMode: null,
       pendingGrid: null,
       showDashboard: false,
+    });
+  },
+
+  resetAll: () => {
+    set({
+      isGridMode: false,
+      isGridAdjusting: false,
+      gridMode: null,
+      pendingGrid: null,
+      pageGrids: new Map(),
+      sampleText: '',
+      showDashboard: false,
+      undoStacks: new Map(),
+      redoStacks: new Map(),
     });
   },
 

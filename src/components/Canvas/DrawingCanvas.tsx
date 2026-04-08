@@ -666,8 +666,8 @@ export const DrawingCanvas: React.FC = () => {
     if (!scrollArea) return;
 
     const handleWheel = (e: WheelEvent) => {
-      // 1. Ctrl/Cmd + wheel = ズーム
-      if (e.ctrlKey || e.metaKey) {
+      // 1. Ctrl/Cmd + wheel or Alt + wheel = ポインター中心ズーム
+      if (e.ctrlKey || e.metaKey || e.altKey) {
         e.preventDefault();
 
         const rect = scrollArea.getBoundingClientRect();
