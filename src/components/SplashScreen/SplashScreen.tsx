@@ -80,11 +80,11 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onComplete }) => {
         />
       </div>
       <div className="splash-screen-bottom">
+        <div className="splash-screen-percent">{progress}%</div>
         <div className="splash-screen-message">
           MojiQ Proを起動しています<br />
           しばらくお待ちください…
         </div>
-        <div className="splash-screen-percent">{progress}%</div>
       </div>
     </div>
   );

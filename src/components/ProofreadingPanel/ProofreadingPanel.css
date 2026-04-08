@@ -951,10 +951,10 @@
 .panel-empty {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 32px 16px;
-  text-align: center;
+  text-align: left;
   color: var(--text-secondary);
   gap: 12px;
 }

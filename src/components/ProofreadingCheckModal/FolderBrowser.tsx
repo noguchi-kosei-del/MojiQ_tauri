@@ -1,6 +1,5 @@
 import React, { useEffect, useCallback, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { message } from '@tauri-apps/plugin-dialog';
 import { useProofreadingCheckStore } from '../../stores/proofreadingCheckStore';
 import { FolderEntry, ProofreadingCheckData } from '../../types';
 
@@ -39,6 +38,7 @@ export const FolderBrowser: React.FC = () => {
     isLoading,
   } = useProofreadingCheckStore();
   const [entries, setEntries] = useState<FolderEntry[]>([]);
+  const [isLoadCompleteOpen, setIsLoadCompleteOpen] = useState(false);
 
   // Load folder contents when path changes
   useEffect(() => {
@@ -57,6 +57,14 @@ export const FolderBrowser: React.FC = () => {
         path: currentPath,
         basePath: basePath,
       });
+
+      // 「校正チェックデータ」フォルダの自動スキップ（旧MojiQ準拠）
+      const subFolders = items.filter(i => i.is_dir);
+      if (subFolders.length === 1 && subFolders[0].name === '校正チェックデータ') {
+        navigateToFolder(subFolders[0].path);
+        return;
+      }
+
       setEntries(items);
     } catch (e) {
       setError(`フォルダの読み込みに失敗: ${e}`);
@@ -64,7 +72,7 @@ export const FolderBrowser: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentPath, basePath, setLoading, setError]);
+  }, [currentPath, basePath, setLoading, setError, navigateToFolder]);
 
   const handleFolderClick = useCallback((path: string) => {
     navigateToFolder(path);
@@ -96,8 +104,8 @@ export const FolderBrowser: React.FC = () => {
       // モーダルを閉じる
       closeModal();
 
-      // 読み込み完了メッセージを表示
-      await message('校正チェックデータを読み込みました', { title: '完了', kind: 'info' });
+      // 読み込み完了ダイアログを表示
+      setIsLoadCompleteOpen(true);
     } catch (e) {
       console.error('[ProofreadingCheck] JSONファイルの読み込みエラー:', e);
       setError(`ファイルの読み込みに失敗: ${e}`);
@@ -174,6 +182,22 @@ export const FolderBrowser: React.FC = () => {
           ))
         )}
       </div>
+
+      {/* 読み込み完了ダイアログ */}
+      {isLoadCompleteOpen && (
+        <div className="load-complete-overlay" onClick={() => setIsLoadCompleteOpen(false)}>
+          <div className="load-complete-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="load-complete-body">
+              <p>校正チェックデータを読み込みました</p>
+            </div>
+            <div className="load-complete-actions">
+              <button className="load-complete-btn" onClick={() => setIsLoadCompleteOpen(false)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

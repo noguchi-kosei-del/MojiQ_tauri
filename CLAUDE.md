@@ -1122,3 +1122,54 @@ MojiQ_Pro_1.0/
   - `src/stores/gridStore.ts` - `resetAll()`を追加（モード、pendingGrid、全ページグリッド、サンプルテキスト、undo/redoスタックをクリア）
   - `src/stores/drawingStore.ts` - `clearDocument`内で`gridStore.resetAll()`を呼び出し
   - ホーム画面遷移時に写植シミュレーターの状態が完全にリセットされる
+
+#### 横長原稿時の右綴じ・左綴じグレーアウト
+- **見開きPDF判定**: 横長原稿（幅 > 高さ）読み込み時、ページ編集メニューの右綴じ・左綴じボタンを無効化
+  - `src/components/HeaderBar/HeaderBar.tsx` - `isLandscapeDocument(pages)`をdisabled条件に追加
+  - `src/utils/pageNumberUtils.ts`の`isLandscapeDocument`を利用
+
+#### 閲覧モード改善
+- **校正チェックモードのサイドバー非表示**: 閲覧モード時に全サイドバー・ツールバーを非表示
+  - `src/App.tsx` - 全サイドバーコンポーネントに`!isViewerMode &&`条件を追加
+- **閲覧モードのbaseScale計算修正**: コンテナサイズ基準に統一（校正チェックモードでのズームアウトしすぎを修正）
+  - `src/components/Canvas/DrawingCanvas.tsx` - `window.innerWidth`からコンテナサイズに変更
+- **閲覧モードのキーボードショートカット拡充**:
+  - Ctrl+J: ページジャンプダイアログ
+  - Ctrl+↑: 最後のページへジャンプ（方向キー反転設定対応）
+  - Ctrl+↓: 最初のページへジャンプ（方向キー反転設定対応）
+  - Ctrl+←/→: 方向キー反転設定に対応するよう修正
+  - `src/App.tsx` - 閲覧モード・通常モード両方で方向キー設定を反映
+
+#### 校正チェック「校正チェックデータ」フォルダ自動スキップ
+- **旧MojiQ準拠**: フォルダブラウザでサブフォルダが「校正チェックデータ」1つだけの場合、自動的にそのフォルダ内へ遷移
+  - `src/components/ProofreadingCheckModal/FolderBrowser.tsx` - `loadFolderContents`に自動スキップロジック追加
+
+#### 読み込み完了カスタムダイアログ
+- **校正チェックデータ**: ネイティブ`message()`をカスタムダイアログに置換
+  - `src/components/ProofreadingCheckModal/FolderBrowser.tsx` - カスタムダイアログUI追加
+- **作品仕様読み込み**: JSONファイル選択後にカスタムダイアログを表示
+  - `src/components/RightToolbar/RightToolbar.tsx` - 読み込み完了ダイアログ追加
+- **共通CSS**: `.load-complete-*`スタイル追加（ダークモード対応）
+  - `src/components/ProofreadingCheckModal/ProofreadingCheckModal.css`
+
+#### スプラッシュスクリーン改善（別ウィンドウ方式）
+- **旧MojiQ準拠**: スプラッシュを別ウィンドウとして表示し、完了後にメインウィンドウを起動
+  - `src-tauri/tauri.conf.json` - メインウィンドウを`visible: false`で起動
+  - `src-tauri/src/lib.rs` - `setup`フックでスプラッシュウィンドウ作成（660x500、フレームなし、中央配置、常に最前面）
+  - `src-tauri/src/lib.rs` - `close_splash`コマンド追加（段階的プログレス更新→100%到達後にメインウィンドウ表示→スプラッシュ閉じ）
+  - `public/splash.html` - スプラッシュ用HTML新規作成
+  - `index.html` - HTMLスプラッシュ削除（シンプル化）
+  - `src/App.tsx` - `SplashScreen`コンポーネント削除、React初回マウント時に`close_splash`呼び出し
+
+#### 校正指示ツール3列グリッド配置
+- **レイアウト変更**: 校正指示ツール・写植指示スタンプを3列CSSグリッドに変更
+  - `src/components/RightToolbar/RightToolbar.css` - `.right-toolbar-popup-section-grid`を`display: grid; grid-template-columns: repeat(3, 1fr)`に変更
+  - 校正記号ツール(`.symbol-grid`)は元のflexレイアウトを維持
+
+#### 校正チェックパネルUI改善
+- **タブ常時表示**: 正誤・提案・コメントタブを常に表示（`showTabs = true`）
+- **タブ別空メッセージ**: 各タブで適切なメッセージを表示
+  - 正誤タブ: 「正誤チェック項目がありません。校正チェックを読み込みから読み込んで下さい。」
+  - 提案タブ: 「提案チェック項目がありません。校正チェックを読み込みから読み込んで下さい。」
+  - コメントタブ: 「コメント項目がありません。」
+- **空メッセージ左揃え**: `.panel-empty`を`text-align: left`に変更

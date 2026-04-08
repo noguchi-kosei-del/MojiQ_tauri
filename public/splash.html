@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .splash {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .splash-top {
+      flex: 0 0 40%;
+      background: #111111;
+      display: flex;
+      align-items: center;
+      padding: 0 36px;
+    }
+    .splash-logo {
+      height: 40px;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+    .splash-progress-track {
+      height: 4px;
+      background: #e0e0e0;
+      flex-shrink: 0;
+    }
+    .splash-progress-fill {
+      height: 100%;
+      width: 0%;
+      background: #0078d4;
+      transition: width 0.3s ease-out;
+    }
+    .splash-bottom {
+      flex: 1;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 36px;
+    }
+    .splash-percent {
+      font-size: 24px;
+      font-weight: 700;
+      color: #999;
+      margin-bottom: 12px;
+    }
+    .splash-message {
+      font-size: 16px;
+      font-weight: 500;
+      color: #333;
+      line-height: 1.8;
+    }
+  </style>
+</head>
+<body>
+  <div class="splash">
+    <div class="splash-top" data-tauri-drag-region>
+      <img src="/logo/MojiQ Pro_logo_WH.png" class="splash-logo" alt="MojiQ Pro" />
+    </div>
+    <div class="splash-progress-track">
+      <div class="splash-progress-fill" id="progress-fill"></div>
+    </div>
+    <div class="splash-bottom">
+      <div class="splash-percent" id="splash-percent">0%</div>
+      <div class="splash-message">
+        MojiQ Proを起動しています<br>しばらくお待ちください...
+      </div>
+    </div>
+  </div>
+  <script>
+    var fill = document.getElementById('progress-fill');
+    var pct = document.getElementById('splash-percent');
+    var p = 0;
+    var autoIv = setInterval(function() {
+      p += Math.random() * 3 + 1;
+      if (p > 50) { p = 50; clearInterval(autoIv); }
+      fill.style.width = p + '%';
+      pct.textContent = Math.round(p) + '%';
+    }, 120);
+    // Rust側からevalで呼ばれる進捗更新関数
+    window.__splashSetProgress = function(v) {
+      clearInterval(autoIv);
+      p = v;
+      fill.style.width = v + '%';
+      pct.textContent = v + '%';
+    };
+  </script>
+</body>
+</html>

@@ -107,6 +107,7 @@ export const RightToolbar: React.FC = () => {
   const [editingFont, setEditingFont] = useState<FontPreset | null>(null);
   const [modalFontName, setModalFontName] = useState('');
   const [modalFontColor, setModalFontColor] = useState('#FF0000');
+  const [isSpecLoadCompleteOpen, setIsSpecLoadCompleteOpen] = useState(false);
 
   const dropdownRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const buttonRefs = useRef<{ [key: string]: HTMLButtonElement | null }>({});
@@ -261,6 +262,7 @@ export const RightToolbar: React.FC = () => {
     } else {
       loadJsonFile(entry.path);
       setIsFolderBrowserOpen(false);
+      setIsSpecLoadCompleteOpen(true);
     }
   }, [loadFolder, loadJsonFile]);
 
@@ -939,6 +941,22 @@ export const RightToolbar: React.FC = () => {
               </button>
               <button className="clear-history-confirm-btn confirm" onClick={() => { setIsClearHistoryConfirmOpen(false); clearHistory(); }}>
                 クリア
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 作品仕様読み込み完了ダイアログ */}
+      {isSpecLoadCompleteOpen && (
+        <div className="load-complete-overlay" onClick={() => setIsSpecLoadCompleteOpen(false)}>
+          <div className="load-complete-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="load-complete-body">
+              <p>作品仕様を読み込みました</p>
+            </div>
+            <div className="load-complete-actions">
+              <button className="load-complete-btn" onClick={() => setIsSpecLoadCompleteOpen(false)}>
+                OK
               </button>
             </div>
           </div>

@@ -15,7 +15,6 @@ import { HeaderBar } from './components/HeaderBar';
 import { TabBar } from './components/TabBar';
 import { PageNav } from './components/PageNav';
 import { LoadingOverlay } from './components/LoadingOverlay';
-import { SplashScreen } from './components/SplashScreen';
 import { ViewerModeOverlay } from './components/ViewerMode';
 import { ProofreadingPanel } from './components/ProofreadingPanel';
 import { ProofreadingToolbar } from './components/ProofreadingToolbar';
@@ -105,7 +104,7 @@ function App() {
   const [isPageJumpOpen, setIsPageJumpOpen] = useState(false);
 
   // スプラッシュスクリーンの状態
-  const [showSplash, setShowSplash] = useState(true);
+  const [appReady, setAppReady] = useState(false);
 
   // Initialize theme on mount and sync with window title bar
   useEffect(() => {
@@ -650,7 +649,34 @@ function App() {
           return;
         }
 
-        // 矢印キー: ページ送り（右から左）
+        // Ctrl+J: ページジャンプ
+        if ((e.ctrlKey || e.metaKey) && e.key === 'j') {
+          e.preventDefault();
+          if (pages.length > 1) {
+            setIsPageJumpOpen(true);
+          }
+          return;
+        }
+
+        // Ctrl+矢印: 最初/最後のページへジャンプ（方向キー設定対応）
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+          e.preventDefault();
+          const inverted = useSettingsStore.getState().getArrowKeyInverted();
+          const isLeft = e.key === 'ArrowLeft';
+          const goLast = inverted ? !isLeft : isLeft;
+          setCurrentPage(goLast ? pages.length - 1 : 0);
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+          e.preventDefault();
+          const inverted = useSettingsStore.getState().getArrowKeyInverted();
+          const isUp = e.key === 'ArrowUp';
+          const goLast = inverted ? !isUp : isUp;
+          setCurrentPage(goLast ? pages.length - 1 : 0);
+          return;
+        }
+
+        // 矢印キー: ページ送り
         {
           const inverted = useSettingsStore.getState().getArrowKeyInverted();
           const leftDelta = inverted ? -1 : 1;
@@ -670,22 +696,10 @@ function App() {
         // Home/End キー
         if (e.key === 'Home') {
           e.preventDefault();
-          setCurrentPage(pages.length - 1); // 最後のページ（右から左）
-          return;
-        }
-        if (e.key === 'End') {
-          e.preventDefault();
-          setCurrentPage(0); // 最初のページ（右から左）
-          return;
-        }
-
-        // Ctrl+矢印: 最初/最後のページへジャンプ
-        if ((e.ctrlKey || e.metaKey) && e.key === 'ArrowLeft') {
-          e.preventDefault();
           setCurrentPage(pages.length - 1);
           return;
         }
-        if ((e.ctrlKey || e.metaKey) && e.key === 'ArrowRight') {
+        if (e.key === 'End') {
           e.preventDefault();
           setCurrentPage(0);
           return;
@@ -937,11 +951,17 @@ function App() {
             const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
             moveSelectedByDelta(dx, dy);
           } else {
-            // 選択なし: 最初/最後のページへジャンプ
-            if (e.key === 'ArrowLeft') {
-              setCurrentPage(pages.length - 1);
-            } else if (e.key === 'ArrowRight') {
-              setCurrentPage(0);
+            // 選択なし: 最初/最後のページへジャンプ（方向キー設定対応）
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+              const inverted = useSettingsStore.getState().getArrowKeyInverted();
+              const isLeft = e.key === 'ArrowLeft';
+              const goLast = inverted ? !isLeft : isLeft;
+              setCurrentPage(goLast ? pages.length - 1 : 0);
+            } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+              const inverted = useSettingsStore.getState().getArrowKeyInverted();
+              const isUp = e.key === 'ArrowUp';
+              const goLast = inverted ? !isUp : isUp;
+              setCurrentPage(goLast ? pages.length - 1 : 0);
             }
           }
         }
@@ -1002,8 +1022,17 @@ function App() {
     };
   }, [handleFileDrop]);
 
-  if (showSplash) {
-    return <SplashScreen onComplete={() => setShowSplash(false)} />;
+  // Reactロード完了後にスプラッシュを閉じてメインウィンドウを表示
+  useEffect(() => {
+    invoke('close_splash').then(() => {
+      setAppReady(true);
+    }).catch(() => {
+      setAppReady(true);
+    });
+  }, []);
+
+  if (!appReady) {
+    return null;
   }
 
   return (
@@ -1026,16 +1055,16 @@ function App() {
         // 編集画面
         <>
           <div className="app-body">
-            {mode === 'instruction' && <DrawingSettingsBar />}
-            {mode === 'instruction' && <DrawingToolbar />}
+            {!isViewerMode && mode === 'instruction' && <DrawingSettingsBar />}
+            {!isViewerMode && mode === 'instruction' && <DrawingToolbar />}
             <div className="main-content">
               <div className="canvas-area">
                 {isSpreadView ? <SpreadCanvas /> : <DrawingCanvas />}
               </div>
             </div>
-            {mode === 'instruction' && <RightToolbar />}
-            {mode === 'proofreading' && <ProofreadingToolbar />}
-            {mode === 'proofreading' && <ProofreadingPanel />}
+            {!isViewerMode && mode === 'instruction' && <RightToolbar />}
+            {!isViewerMode && mode === 'proofreading' && <ProofreadingToolbar />}
+            {!isViewerMode && mode === 'proofreading' && <ProofreadingPanel />}
           </div>
           {!isSpreadView && pages.length > 1 && <PageNav />}
         </>

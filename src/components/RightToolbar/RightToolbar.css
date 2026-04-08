@@ -915,8 +915,8 @@
 }
 
 .right-toolbar-popup-section-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 4px;
 }
 
@@ -946,6 +946,8 @@
 
 /* 校正記号ツールボタン */
 .right-toolbar-popup-section-grid.symbol-grid {
+  display: flex;
+  flex-wrap: wrap;
   gap: 4px;
 }
 

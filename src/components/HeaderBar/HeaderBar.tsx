@@ -27,6 +27,7 @@ import { backgroundImageCache, preloadAllBackgroundImages } from '../../utils/ba
 import { acquireSaveLock, releaseSaveLock } from '../../utils/saveLock';
 import { useProofreadingCheckStore } from '../../stores/proofreadingCheckStore';
 import { useCommentVisibilityStore } from '../../stores/commentVisibilityStore';
+import { isLandscapeDocument } from '../../utils/pageNumberUtils';
 import MojiQLogo from '../../../logo/MojiQ_icon.png';
 import './HeaderBar.css';
 
@@ -1428,7 +1429,7 @@ export const HeaderBar: React.FC = () => {
               <button
                 className={`spread-menu-item ${isSpreadView && bindingDirection === 'right' ? 'selected' : ''}`}
                 onClick={() => handleEnableSpreadView('right')}
-                disabled={pages.length < 2}
+                disabled={pages.length < 2 || isLandscapeDocument(pages)}
               >
                 <BindingRightIcon />
                 <span>右綴じ</span>
@@ -1437,7 +1438,7 @@ export const HeaderBar: React.FC = () => {
               <button
                 className={`spread-menu-item ${isSpreadView && bindingDirection === 'left' ? 'selected' : ''}`}
                 onClick={() => handleEnableSpreadView('left')}
-                disabled={pages.length < 2}
+                disabled={pages.length < 2 || isLandscapeDocument(pages)}
               >
                 <BindingLeftIcon />
                 <span>左綴じ</span>

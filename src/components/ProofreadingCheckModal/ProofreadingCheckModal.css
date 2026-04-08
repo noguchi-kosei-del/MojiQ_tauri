@@ -598,3 +598,59 @@
 .proofreading-modal-content.dark .data-viewer-content::-webkit-scrollbar-thumb:hover {
   background: #666;
 }
+
+/* 読み込み完了ダイアログ */
+.load-complete-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20000;
+}
+
+.load-complete-dialog {
+  background: var(--bg-primary);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  min-width: 320px;
+  max-width: 420px;
+  overflow: hidden;
+}
+
+.load-complete-body {
+  padding: 24px 20px 16px;
+  text-align: center;
+}
+
+.load-complete-body p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.load-complete-actions {
+  display: flex;
+  justify-content: center;
+  padding: 0 20px 20px;
+}
+
+.load-complete-btn {
+  padding: 8px 32px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: var(--accent-color);
+  border: 1px solid var(--accent-color);
+  color: #fff;
+}
+
+.load-complete-btn:hover {
+  opacity: 0.85;
+}

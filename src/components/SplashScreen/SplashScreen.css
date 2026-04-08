@@ -43,19 +43,20 @@
   flex: 1;
   background: #ffffff;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 60px;
-}
-
-.splash-screen-message {
-  font-size: 18px;
-  color: #333;
-  line-height: 1.8;
+  flex-direction: column;
+  padding: 20px 48px;
 }
 
 .splash-screen-percent {
-  font-size: 48px;
+  font-size: 28px;
   font-weight: 700;
   color: #999;
+  margin-bottom: 16px;
+}
+
+.splash-screen-message {
+  font-size: 22px;
+  font-weight: 600;
+  color: #333;
+  line-height: 1.8;
 }

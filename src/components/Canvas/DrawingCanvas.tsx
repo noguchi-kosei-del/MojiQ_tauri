@@ -299,8 +299,8 @@ export const DrawingCanvas: React.FC = () => {
       let containerWidth: number;
       let containerHeight: number;
 
-      if (isViewerMode) {
-        // 閲覧モード時は画面サイズの95%にフィット
+      if (isViewerMode && !containerRef.current) {
+        // 閲覧モードでコンテナ未取得時のフォールバック
         containerWidth = window.innerWidth * 0.95;
         containerHeight = window.innerHeight * 0.95;
       } else {

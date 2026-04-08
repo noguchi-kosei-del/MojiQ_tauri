@@ -483,10 +483,12 @@ export const ProofreadingPanel: React.FC = () => {
     return items;
   }, [pdfAnnotations, pages, getPageDisplay]);
 
-  // JSON未読み込みでPDF注釈コメントがある場合、自動でコメントタブに切り替え
+  // JSON未読み込みでPDF注釈コメントがある場合、初回のみコメントタブに切り替え
+  const hasAutoSwitchedRef = useRef(false);
   useEffect(() => {
-    if (!currentData && commentItems.length > 0 && currentTab !== 'comments') {
+    if (!currentData && commentItems.length > 0 && !hasAutoSwitchedRef.current) {
       setCurrentTab('comments');
+      hasAutoSwitchedRef.current = true;
     }
   }, [currentData, commentItems.length, currentTab, setCurrentTab]);
 
@@ -739,8 +741,8 @@ export const ProofreadingPanel: React.FC = () => {
 
   // Check if any items have checkKind
   const hasCheckKind = allItems.some(item => item.checkKind);
-  // Always show tabs when we have data or comments
-  const showTabs = (hasCheckKind && allItems.length > 0) || commentItems.length > 0 || currentData;
+  // タブは常に表示
+  const showTabs = true;
 
   // すべてのコメントがチェックされているか
   const allCommentsChecked = commentItems.length > 0 && checkedComments.size === commentItems.length;
@@ -804,7 +806,7 @@ export const ProofreadingPanel: React.FC = () => {
   // Render comments tab content
   const renderCommentsContent = () => {
     if (commentItems.length === 0) {
-      return <div className="panel-empty-small">コメントがありません</div>;
+      return <div className="panel-empty"><p>コメント項目がありません。</p></div>;
     }
 
     const displayComments = searchQuery ? filteredCommentItems : commentItems;
@@ -858,9 +860,12 @@ export const ProofreadingPanel: React.FC = () => {
 
     // Check tabs - need data
     if (!currentData || allItems.length === 0) {
+      const emptyMessage = currentTab === 'correctness'
+        ? '正誤チェック項目がありません。校正チェックを読み込みから読み込んで下さい。'
+        : '提案チェック項目がありません。校正チェックを読み込みから読み込んで下さい。';
       return (
         <div className="panel-empty">
-          <p>校正チェックJSONを選択してください</p>
+          <p>{emptyMessage}</p>
         </div>
       );
     }
