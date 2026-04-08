@@ -6,6 +6,7 @@ import { useDisplayScaleStore } from './displayScaleStore';
 import { useGridStore } from './gridStore';
 import { useSettingsStore } from './settingsStore';
 import { OBJECT_LIMITS } from '../constants/loadingLimits';
+import { formatFontFamily } from '../utils/fontService';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
 /**
@@ -1731,10 +1732,10 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     const { x, y, fontSize, text, isVertical, align } = annotation;
     if (!text) return null;
 
-    // displayScaleを取得してrenderScaleを計算
-    const displayScale = useDisplayScaleStore.getState().displayScale;
-    const renderScale = displayScale > 0 ? 1 / displayScale : 1;
-    const scaledFontSize = fontSize * renderScale;
+    // 旧MojiQ準拠: baseScaleのみ補正（ズーム非依存）
+    const bs = useDisplayScaleStore.getState().baseScale;
+    const textScale = bs > 0 ? 1 / bs : 1;
+    const scaledFontSize = fontSize * textScale;
 
     const lines = text.split('\n');
     let textWidth: number, textHeight: number;
@@ -1753,7 +1754,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       // 横書きの場合 - Canvasで正確な幅を測定
       const lineHeight = scaledFontSize * 1.2;
       if (ctx) {
-        ctx.font = `${scaledFontSize}px sans-serif`;
+        ctx.font = `${scaledFontSize}px ${formatFontFamily(annotation.fontFamily)}`;
         const measuredWidths = lines.map(line => ctx.measureText(line).width);
         textWidth = Math.max(...measuredWidths, scaledFontSize);
       } else {
@@ -2143,11 +2144,10 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     const { x, y, fontSize, text: content, isVertical } = text;
     const lines = content.split('\n');
 
-    // displayScaleを取得してrenderScaleを計算
-    // 描画時は scaledFontSize = fontSize * renderScale で描画されている
-    const displayScale = useDisplayScaleStore.getState().displayScale;
-    const renderScale = displayScale > 0 ? 1 / displayScale : 1;
-    const scaledFontSize = fontSize * renderScale;
+    // 旧MojiQ準拠: baseScaleのみ補正（ズーム非依存）
+    const bs = useDisplayScaleStore.getState().baseScale;
+    const textScale = bs > 0 ? 1 / bs : 1;
+    const scaledFontSize = fontSize * textScale;
 
     let textWidth: number, textHeight: number;
 
@@ -2166,8 +2166,8 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       const lineHeight = scaledFontSize * 1.2;
 
       if (ctx) {
-        // Canvasで正確な幅を測定（スケーリングされたフォントサイズを使用）
-        ctx.font = `${scaledFontSize}px sans-serif`;
+        // Canvasで正確な幅を測定
+        ctx.font = `${scaledFontSize}px ${formatFontFamily(text.fontFamily)}`;
         const measuredWidths = lines.map(line => ctx.measureText(line).width);
         textWidth = Math.max(...measuredWidths, scaledFontSize);
       } else {

@@ -381,7 +381,12 @@ pub async fn save_pdf_v2(
     save_path: String,
     request: SaveRequestV2,
 ) -> Result<(), String> {
-    crate::pdf::create_pdf_with_overlays(&save_path, &request).map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || {
+        crate::pdf::create_pdf_with_overlays(&save_path, &request)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 #[tauri::command]
@@ -813,4 +818,59 @@ pub async fn save_drawing_json(path: String, data: String) -> Result<(), String>
 #[tauri::command]
 pub async fn load_drawing_json(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| format!("Failed to load drawing data: {}", e))
+}
+
+// システムにインストールされているフォント一覧を取得（Windowsレジストリから）
+#[tauri::command]
+pub async fn list_system_fonts() -> Result<Vec<String>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::collections::BTreeSet;
+
+        let fonts_key = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
+
+        let hklm = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE);
+        let mut families = BTreeSet::new();
+
+        if let Ok(key) = hklm.open_subkey(fonts_key) {
+            for (name, _value) in key.enum_values().filter_map(|r| r.ok()) {
+                // レジストリのキー名は "Font Name (TrueType)" のような形式
+                // 括弧の前の部分がフォント名
+                let family = if let Some(pos) = name.rfind('(') {
+                    name[..pos].trim().to_string()
+                } else {
+                    name.trim().to_string()
+                };
+                if !family.is_empty() {
+                    families.insert(family);
+                }
+            }
+        }
+
+        // 現在のユーザーのフォントも取得
+        let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
+        if let Ok(key) = hkcu.open_subkey(fonts_key) {
+            for (name, _value) in key.enum_values().filter_map(|r| r.ok()) {
+                let family = if let Some(pos) = name.rfind('(') {
+                    name[..pos].trim().to_string()
+                } else {
+                    name.trim().to_string()
+                };
+                if !family.is_empty() {
+                    families.insert(family);
+                }
+            }
+        }
+
+        Ok(families.into_iter().collect())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(vec![
+            "sans-serif".to_string(),
+            "serif".to_string(),
+            "monospace".to_string(),
+        ])
+    }
 }

@@ -17,7 +17,7 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   width: 400px;
   max-width: 90vw;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .annotation-modal-header {
@@ -27,6 +27,7 @@
   padding: 12px 16px;
   background: var(--bg-secondary, #f5f5f5);
   border-bottom: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 8px 8px 0 0;
 }
 
 .annotation-modal-header h3 {
@@ -77,6 +78,7 @@
   gap: 20px;
   margin-top: 12px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .annotation-checkbox {
@@ -120,6 +122,121 @@
   border-color: var(--accent-color, #2196F3);
 }
 
+.annotation-font-family {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text-primary, #333);
+  font-size: 14px;
+  margin-top: 8px;
+  width: 100%;
+}
+
+.annotation-font-family > label {
+  padding-top: 6px;
+  white-space: nowrap;
+}
+
+.font-dropdown-container {
+  flex: 1;
+  position: relative;
+  max-width: 300px;
+}
+
+.font-dropdown-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  font-size: 14px;
+  background: var(--bg-primary, #ffffff);
+  color: var(--text-primary, #333);
+  cursor: pointer;
+  text-align: left;
+  min-height: 28px;
+}
+
+.font-dropdown-trigger:hover {
+  border-color: var(--accent-color, #2196F3);
+}
+
+.font-dropdown-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.font-dropdown-arrow {
+  font-size: 10px;
+  margin-left: 6px;
+  color: var(--text-secondary, #666);
+}
+
+.font-dropdown-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 2px;
+  background: var(--bg-primary, #ffffff);
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+  overflow: hidden;
+}
+
+.font-dropdown-search {
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+  font-size: 13px;
+  background: var(--bg-primary, #ffffff);
+  color: var(--text-primary, #333);
+  box-sizing: border-box;
+  outline: none;
+}
+
+.font-dropdown-search:focus {
+  background: var(--bg-secondary, #f5f5f5);
+}
+
+.font-dropdown-list {
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.font-dropdown-item {
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary, #333);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.font-dropdown-item:hover {
+  background: var(--bg-hover, #f0f0f0);
+}
+
+.font-dropdown-item.selected {
+  background: rgba(33, 150, 243, 0.1);
+  color: var(--accent-color, #2196F3);
+}
+
+.font-dropdown-empty {
+  padding: 8px;
+  text-align: center;
+  color: var(--text-secondary, #999);
+  font-size: 13px;
+}
+
 .annotation-modal-footer {
   display: flex;
   justify-content: flex-end;
@@ -127,6 +244,7 @@
   padding: 12px 16px;
   background: var(--bg-secondary, #f5f5f5);
   border-top: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 0 0 8px 8px;
 }
 
 .annotation-btn-cancel,

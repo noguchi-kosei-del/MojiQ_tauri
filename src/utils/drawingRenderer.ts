@@ -4,6 +4,8 @@
  */
 
 import { PageState, Stroke, Shape, TextElement, ImageElement, Annotation, StampType } from '../types';
+import { formatFontFamily } from './fontService';
+import { useDisplayScaleStore } from '../stores/displayScaleStore';
 
 /**
  * 矢頭を描画するヘルパー関数
@@ -171,22 +173,23 @@ function drawStamp(ctx: CanvasRenderingContext2D, x: number, y: number, stampTyp
 /**
  * アノテーション（引出線 + テキスト）を描画
  */
-function drawAnnotation(ctx: CanvasRenderingContext2D, annotation: Annotation, shapeColor: string): void {
-  const { leaderLine, text, x, y, fontSize, isVertical, align, color: annColor } = annotation;
+function drawAnnotation(ctx: CanvasRenderingContext2D, annotation: Annotation, shapeColor: string, rs: number = 1): void {
+  const { leaderLine, text, x, y, fontSize, isVertical, align, color: annColor, fontFamily } = annotation;
   const color = annColor || shapeColor;
+  const scaledFontSize = fontSize * rs;
 
   // 引出線を描画
   ctx.save();
   ctx.beginPath();
   ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2 * rs;
   ctx.moveTo(leaderLine.start.x, leaderLine.start.y);
   ctx.lineTo(leaderLine.end.x, leaderLine.end.y);
   ctx.stroke();
 
   // 引出線の起点に●を描画
   ctx.beginPath();
-  ctx.arc(leaderLine.start.x, leaderLine.start.y, 3, 0, 2 * Math.PI);
+  ctx.arc(leaderLine.start.x, leaderLine.start.y, 3 * rs, 0, 2 * Math.PI);
   ctx.fillStyle = color;
   ctx.fill();
   ctx.restore();
@@ -195,15 +198,16 @@ function drawAnnotation(ctx: CanvasRenderingContext2D, annotation: Annotation, s
   if (text) {
     ctx.save();
     ctx.fillStyle = color;
-    ctx.font = `${fontSize}px sans-serif`;
+    ctx.font = `${scaledFontSize}px ${formatFontFamily(fontFamily)}`;
 
     const lines = text.split('\n');
-    const lineHeight = fontSize * 1.2;
+    const lineHeight = scaledFontSize * 1.2;
 
     // 白い縁取り付きでテキストを描画
+    const outlineWidth = Math.max(2, scaledFontSize * 0.22);
     const drawWithOutline = (char: string, px: number, py: number) => {
       ctx.save();
-      ctx.lineWidth = 3;
+      ctx.lineWidth = outlineWidth;
       ctx.strokeStyle = '#ffffff';
       ctx.strokeText(char, px, py);
       ctx.restore();
@@ -214,7 +218,7 @@ function drawAnnotation(ctx: CanvasRenderingContext2D, annotation: Annotation, s
       // 縦書き
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const verticalLineHeight = fontSize * 1.1;
+      const verticalLineHeight = scaledFontSize * 1.1;
       const punctuationChars = ['、', '。', '，', '．', '｡', '､'];
 
       lines.forEach((line, colIndex) => {
@@ -223,9 +227,9 @@ function drawAnnotation(ctx: CanvasRenderingContext2D, annotation: Annotation, s
         const chars = Array.from(line);
 
         chars.forEach((char) => {
-          const currentY = y + cursorY + fontSize / 2;
+          const currentY = y + cursorY + scaledFontSize / 2;
           if (char === ' ') {
-            cursorY += fontSize * 0.3;
+            cursorY += scaledFontSize * 0.3;
             return;
           }
 
@@ -239,14 +243,14 @@ function drawAnnotation(ctx: CanvasRenderingContext2D, annotation: Annotation, s
             drawWithOutline(char, 0, 0);
             ctx.restore();
           } else if (isPunctuation) {
-            const offsetX = fontSize * 0.7;
-            const offsetY = -fontSize * 0.55;
+            const offsetX = scaledFontSize * 0.7;
+            const offsetY = -scaledFontSize * 0.55;
             drawWithOutline(char, currentX + offsetX, currentY + offsetY);
           } else {
             drawWithOutline(char, currentX, currentY);
           }
 
-          cursorY += fontSize;
+          cursorY += scaledFontSize;
         });
       });
     } else {
@@ -267,7 +271,7 @@ function drawAnnotation(ctx: CanvasRenderingContext2D, annotation: Annotation, s
 /**
  * ストロークを描画
  */
-function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke): void {
+function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, rs: number = 1): void {
   if (stroke.points.length < 2) return;
 
   ctx.save();
@@ -277,6 +281,8 @@ function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke): void {
     ctx.globalAlpha = stroke.opacity || 0.3;
     ctx.globalCompositeOperation = 'multiply';
   }
+
+  const scaledWidth = stroke.width * rs;
 
   ctx.beginPath();
   ctx.strokeStyle = stroke.color;
@@ -289,7 +295,7 @@ function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke): void {
   for (let i = 1; i < points.length; i++) {
     const point = points[i];
     const pressure = point.pressure || 0.5;
-    ctx.lineWidth = stroke.isMarker ? stroke.width : stroke.width * (0.5 + pressure);
+    ctx.lineWidth = stroke.isMarker ? scaledWidth : scaledWidth * (0.5 + pressure);
     ctx.lineTo(point.x, point.y);
   }
 
@@ -300,21 +306,21 @@ function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke): void {
 /**
  * 図形を描画
  */
-function drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
+function drawShape(ctx: CanvasRenderingContext2D, shape: Shape, rs: number = 1): void {
   ctx.save();
 
   const { startPos, endPos, type } = shape;
 
   // スタンプの場合
   if (type === 'stamp' && shape.stampType) {
-    const stampSize = shape.size || 20;
+    const stampSize = (shape.size || 20) * rs;
     const stampColor = shape.color;
 
     // 引出線がある場合は描画
     if (shape.leaderLine) {
       ctx.beginPath();
       ctx.strokeStyle = stampColor;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2 * rs;
       ctx.moveTo(shape.leaderLine.start.x, shape.leaderLine.start.y);
       ctx.lineTo(shape.leaderLine.end.x, shape.leaderLine.end.y);
       ctx.stroke();
@@ -341,9 +347,11 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
     ctx.translate(-cx, -cy);
   }
 
+  const scaledWidth = shape.width * rs;
+
   ctx.beginPath();
   ctx.strokeStyle = shape.color;
-  ctx.lineWidth = shape.width;
+  ctx.lineWidth = scaledWidth;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
@@ -358,7 +366,7 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
     // フォントラベルを描画（フォント指定枠線の場合）
     if (shape.fontLabel) {
       const { fontName, textX, textY, textAlign } = shape.fontLabel;
-      const labelFontSize = 16;
+      const labelFontSize = 16 * rs;
       ctx.font = `bold ${labelFontSize}px sans-serif`;
       ctx.fillStyle = shape.color;
       ctx.textAlign = textAlign;
@@ -366,7 +374,7 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
 
       // 白い縁取り
       ctx.save();
-      ctx.lineWidth = 4;
+      ctx.lineWidth = 4 * rs;
       ctx.strokeStyle = '#ffffff';
       ctx.strokeText(fontName, textX, textY);
       ctx.restore();
@@ -390,7 +398,7 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
     ctx.lineTo(endPos.x, endPos.y);
     ctx.stroke();
 
-    const headLen = Math.max(8, shape.width * 3);
+    const headLen = Math.max(8 * rs, scaledWidth * 3);
     const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x);
     drawArrowHead(ctx, endPos.x, endPos.y, angle, headLen);
   } else if (baseType === 'doubleArrow') {
@@ -398,7 +406,7 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
     ctx.lineTo(endPos.x, endPos.y);
     ctx.stroke();
 
-    const headLen = Math.max(8, shape.width * 3);
+    const headLen = Math.max(8 * rs, scaledWidth * 3);
     const angle = Math.atan2(endPos.y - startPos.y, endPos.x - startPos.x);
     drawArrowHead(ctx, endPos.x, endPos.y, angle, headLen);
     drawArrowHead(ctx, startPos.x, startPos.y, angle + Math.PI, headLen);
@@ -422,7 +430,7 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
       ctx.stroke();
 
       // 先端に●を描画
-      const dotRadius = Math.max(shape.width, 2);
+      const dotRadius = Math.max(scaledWidth, 2 * rs);
       ctx.beginPath();
       ctx.arc(shape.leaderLine.start.x, shape.leaderLine.start.y, dotRadius, 0, 2 * Math.PI);
       ctx.fillStyle = shape.color;
@@ -443,8 +451,8 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
     // ラベルを右下に描画
     const label = shape.label || '小';
     if (label) {
-      const labelFontSize = Math.max(10, Math.min(16, size * 0.4));
-      const padding = 3;
+      const labelFontSize = Math.max(10 * rs, Math.min(16 * rs, size * 0.4));
+      const padding = 3 * rs;
       const labelX = minX + size - padding;
       const labelY = minY + size - padding;
 
@@ -455,7 +463,7 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
       // 白フチを描画
       ctx.save();
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 3 * rs;
       ctx.lineJoin = 'round';
       ctx.strokeText(label, labelX, labelY);
       ctx.restore();
@@ -617,29 +625,32 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
 
   // アノテーション（引出線 + テキスト）を描画
   if (shape.annotation) {
-    drawAnnotation(ctx, shape.annotation, shape.color);
+    drawAnnotation(ctx, shape.annotation, shape.color, rs);
   }
 }
 
 /**
  * テキストを描画
  */
-function drawText(ctx: CanvasRenderingContext2D, textElement: TextElement): void {
-  const { text, x, y, fontSize, isVertical, color: textColor } = textElement;
+function drawText(ctx: CanvasRenderingContext2D, textElement: TextElement, rs: number = 1): void {
+  const { text, x, y, fontSize, isVertical, color: textColor, fontFamily } = textElement;
 
   if (!text) return;
 
+  const scaledFontSize = fontSize * rs;
+
   ctx.save();
   ctx.fillStyle = textColor;
-  ctx.font = `${fontSize}px sans-serif`;
+  ctx.font = `${scaledFontSize}px ${formatFontFamily(fontFamily)}`;
 
   const lines = text.split('\n');
-  const lineHeight = fontSize * 1.2;
+  const lineHeight = scaledFontSize * 1.2;
 
   // 白い縁取り付きでテキストを描画
+  const outlineWidth = Math.max(2, scaledFontSize * 0.22);
   const drawWithOutline = (char: string, px: number, py: number) => {
     ctx.save();
-    ctx.lineWidth = 3;
+    ctx.lineWidth = outlineWidth;
     ctx.strokeStyle = '#ffffff';
     ctx.strokeText(char, px, py);
     ctx.restore();
@@ -650,7 +661,7 @@ function drawText(ctx: CanvasRenderingContext2D, textElement: TextElement): void
     // 縦書き
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const verticalLineHeight = fontSize * 1.1;
+    const verticalLineHeight = scaledFontSize * 1.1;
     const punctuationChars = ['、', '。', '，', '．', '｡', '､'];
 
     lines.forEach((line, colIndex) => {
@@ -659,9 +670,9 @@ function drawText(ctx: CanvasRenderingContext2D, textElement: TextElement): void
       const chars = Array.from(line);
 
       chars.forEach((char) => {
-        const currentY = y + cursorY + fontSize / 2;
+        const currentY = y + cursorY + scaledFontSize / 2;
         if (char === ' ') {
-          cursorY += fontSize * 0.3;
+          cursorY += scaledFontSize * 0.3;
           return;
         }
 
@@ -675,14 +686,14 @@ function drawText(ctx: CanvasRenderingContext2D, textElement: TextElement): void
           drawWithOutline(char, 0, 0);
           ctx.restore();
         } else if (isPunctuation) {
-          const offsetX = fontSize * 0.7;
-          const offsetY = -fontSize * 0.55;
+          const offsetX = scaledFontSize * 0.7;
+          const offsetY = -scaledFontSize * 0.55;
           drawWithOutline(char, currentX + offsetX, currentY + offsetY);
         } else {
           drawWithOutline(char, currentX, currentY);
         }
 
-        cursorY += fontSize;
+        cursorY += scaledFontSize;
       });
     });
   } else {
@@ -739,6 +750,31 @@ async function loadImage(imageData: string): Promise<HTMLImageElement> {
 }
 
 /**
+ * 描画データで使用されているカスタムフォントをプリロードする
+ * 保存処理の前に1回だけ呼ぶ
+ */
+export async function preloadDrawingFonts(pages: PageState[]): Promise<void> {
+  if (!document.fonts) return;
+  const families = new Set<string>();
+  const generic = new Set(['sans-serif', 'serif', 'monospace', 'cursive', 'fantasy', 'system-ui']);
+  for (const page of pages) {
+    for (const layer of page.layers) {
+      for (const t of layer.texts) {
+        if (t.fontFamily && !generic.has(t.fontFamily)) families.add(t.fontFamily);
+      }
+      for (const s of layer.shapes) {
+        if (s.annotation?.fontFamily && !generic.has(s.annotation.fontFamily)) families.add(s.annotation.fontFamily);
+      }
+    }
+  }
+  if (families.size > 0) {
+    await Promise.all(
+      Array.from(families).map(f => document.fonts.load(`16px "${f}"`).catch(() => {}))
+    );
+  }
+}
+
+/**
  * ページの描画データをCanvasにレンダリング
  */
 export async function renderPageDrawingsToCanvas(
@@ -763,6 +799,12 @@ export async function renderPageDrawingsToCanvas(
 
   // スケール変換を適用
   ctx.scale(scale, scale);
+
+  // 画面描画時はストロークwidth・テキストfontSizeにrenderScale(1/baseScale)を掛けているが、
+  // 座標はキャンバス内部解像度のままなので、ctx.scale()での全体補正は不可。
+  // 代わりに各描画関数にrenderScaleを渡して線幅・フォントサイズを個別補正する。
+  const bs = useDisplayScaleStore.getState().baseScale;
+  const renderScale = bs > 0 ? 1 / bs : 1;
 
   // 表示レイヤーの全要素を収集
   const visibleLayers = pageState.layers.filter((l) => l.visible);
@@ -794,12 +836,12 @@ export async function renderPageDrawingsToCanvas(
 
     // ストロークを描画
     for (const stroke of layer.strokes) {
-      drawStroke(ctx, stroke);
+      drawStroke(ctx, stroke, renderScale);
     }
 
     // 図形を描画
     for (const shape of layer.shapes) {
-      drawShape(ctx, shape);
+      drawShape(ctx, shape, renderScale);
     }
 
     // テキストを描画
@@ -808,12 +850,23 @@ export async function renderPageDrawingsToCanvas(
       if (hideComments && textElement.pdfAnnotationSource) {
         continue;
       }
-      drawText(ctx, textElement);
+      drawText(ctx, textElement, renderScale);
     }
   }
 
-  // PNGとしてBase64エンコード
-  return canvas.toDataURL('image/png');
+  // PNGとしてBase64エンコード（toBlobで非同期化しメインスレッドブロックを軽減）
+  return new Promise<string>((resolve) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        // フォールバック
+        resolve(canvas.toDataURL('image/png'));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    }, 'image/png');
+  });
 }
 
 /**

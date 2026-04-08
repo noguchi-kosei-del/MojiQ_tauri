@@ -2405,6 +2405,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tokio",
  "urlencoding",
+ "winreg",
 ]
 
 [[package]]

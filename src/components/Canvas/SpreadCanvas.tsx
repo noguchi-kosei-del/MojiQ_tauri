@@ -4,6 +4,7 @@ import { useZoomStore } from '../../stores/zoomStore';
 import { useSpreadViewStore } from '../../stores/spreadViewStore';
 import { usePageNavStore } from '../../stores/pageNavStore';
 import { renderPdfPage } from '../../utils/pdfRenderer';
+import { formatFontFamily } from '../../utils/fontService';
 import { PageState, Shape } from '../../types';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import './DrawingCanvas.css';
@@ -432,7 +433,7 @@ export const SpreadCanvas: React.FC = () => {
       // テキストを描画
       for (const text of layer.texts) {
         ctx.fillStyle = text.color;
-        ctx.font = `${text.fontSize}px sans-serif`;
+        ctx.font = `${text.fontSize}px ${formatFontFamily(text.fontFamily)}`;
         ctx.textBaseline = 'top';
 
         if (text.isVertical) {

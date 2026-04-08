@@ -9,6 +9,7 @@ import { useGridStore } from '../stores/gridStore';
 import { useDisplayScaleStore } from '../stores/displayScaleStore';
 import { getVisibleViewport, isStrokeVisible, isShapeVisible, isTextVisible, isImageVisible, ViewportRect } from '../utils/viewportCulling';
 import { STROKE_LIMITS } from '../constants/loadingLimits';
+import { formatFontFamily } from '../utils/fontService';
 
 // アノテーションモード: 0=通常, 1=図形描画中, 2=引出線描画中
 type AnnotationState = 0 | 1 | 2;
@@ -82,8 +83,10 @@ export const useCanvas = () => {
   const currentImageEndRef = useRef<Point | null>(null);
   // 画像キャッシュ（imageData URLからHTMLImageElementへのマッピング）
   const imageCache = useRef<Map<string, HTMLImageElement>>(new Map());
-  // 現在の描画スケール（1/displayScale）
+  // 現在の描画スケール（1/displayScale）— ストローク・図形のUI要素用
   const currentRenderScaleRef = useRef<number>(1.0);
+  // テキスト用スケール（1/baseScale）— ズームに依存しない、旧MojiQ準拠
+  const textRenderScaleRef = useRef<number>(1.0);
   const currentStrokeRef = useRef<Point[]>([]);
   const selectionStartRef = useRef<Point | null>(null);
   const dragStartRef = useRef<Point | null>(null);
@@ -170,7 +173,7 @@ export const useCanvas = () => {
   const { isHidden: isCommentHidden } = useCommentVisibilityStore();
 
   // 表示スケール（DrawingCanvasから設定される）
-  const { displayScale } = useDisplayScaleStore();
+  const { displayScale, baseScale } = useDisplayScaleStore();
 
   const getCurrentPageState = useCallback(() => {
     return pages[currentPage];
@@ -812,9 +815,10 @@ export const useCanvas = () => {
   // 引出線とアノテーションテキストを描画
   const drawAnnotation = useCallback(
     (ctx: CanvasRenderingContext2D, annotation: Annotation, shapeColor: string) => {
-      const { leaderLine, text, x, y, fontSize, isVertical, align, color: annColor } = annotation;
+      const { leaderLine, text, x, y, fontSize, isVertical, align, color: annColor, fontFamily } = annotation;
       const color = annColor || shapeColor;
-      const scaledFontSize = fontSize * currentRenderScaleRef.current;
+      const scaledFontSize = fontSize * textRenderScaleRef.current;
+      const fontStr = formatFontFamily(fontFamily);
 
       // 引出線を描画
       ctx.save();
@@ -832,11 +836,11 @@ export const useCanvas = () => {
       ctx.fill();
       ctx.restore();
 
-      // テキストを描画
+      // テキストを描画（旧MojiQ準拠: baseScaleのみ補正、ズーム非依存）
       if (text) {
         ctx.save();
         ctx.fillStyle = color;
-        ctx.font = `${scaledFontSize}px sans-serif`;
+        ctx.font = `${scaledFontSize}px ${fontStr}`;
 
         const lines = text.split('\n');
         const lineHeight = scaledFontSize * 1.2;
@@ -914,15 +918,17 @@ export const useCanvas = () => {
   // テキスト要素を描画
   const drawText = useCallback(
     (ctx: CanvasRenderingContext2D, textElement: TextElement, isSelected = false) => {
-      const { text, x, y, fontSize, isVertical, color: textColor } = textElement;
+      const { text, x, y, fontSize, isVertical, color: textColor, fontFamily } = textElement;
 
       if (!text) return;
 
-      const scaledFontSize = fontSize * currentRenderScaleRef.current;
+      // 旧MojiQ準拠: baseScaleのみ補正し、ズームでは変化しない
+      const scaledFontSize = fontSize * textRenderScaleRef.current;
+      const fontStr = formatFontFamily(fontFamily);
 
       ctx.save();
       ctx.fillStyle = isSelected ? '#0078d4' : textColor;
-      ctx.font = `${scaledFontSize}px sans-serif`;
+      ctx.font = `${scaledFontSize}px ${fontStr}`;
 
       const lines = text.split('\n');
       const lineHeight = scaledFontSize * 1.2;
@@ -1716,6 +1722,8 @@ export const useCanvas = () => {
     // これにより、画面上で常に一定のサイズで表示される
     const renderScale = displayScale > 0 ? 1 / displayScale : 1;
     currentRenderScaleRef.current = renderScale;
+    // テキスト用: baseScaleのみ補正（ズームに依存しない）
+    textRenderScaleRef.current = baseScale > 0 ? 1 / baseScale : 1;
 
     // ビューポートカリング: 画面外オブジェクトの描画をスキップ
     let viewport: ViewportRect | null = null;
@@ -3519,7 +3527,7 @@ export const useCanvas = () => {
 
   // アノテーションテキスト入力完了時のコールバック
   const handleAnnotationSubmit = useCallback(
-    (text: string, isVertical: boolean, fontSize: number) => {
+    (text: string, isVertical: boolean, fontSize: number, fontFamily: string) => {
       if (!pendingAnnotatedShapeRef.current || !leaderStartRef.current || !leaderEndRef.current) {
         return;
       }
@@ -3543,6 +3551,7 @@ export const useCanvas = () => {
         color,
         fontSize,
         isVertical,
+        fontFamily,
         align,
         leaderLine: {
           start: { x: leaderStart.x, y: leaderStart.y },
@@ -3606,10 +3615,10 @@ export const useCanvas = () => {
 
   // テキスト入力完了時のコールバック
   const handleTextSubmit = useCallback(
-    (text: string, isVertical: boolean, fontSize: number) => {
+    (text: string, isVertical: boolean, fontSize: number, fontFamily: string) => {
       if (editingTextId) {
         // 編集モード
-        updateText(editingTextId, { text, isVertical, fontSize });
+        updateText(editingTextId, { text, isVertical, fontSize, fontFamily });
       } else if (pendingTextPosRef.current) {
         // 新規作成モード
         addText({
@@ -3619,6 +3628,7 @@ export const useCanvas = () => {
           color,
           fontSize,
           isVertical,
+          fontFamily,
         });
       }
 

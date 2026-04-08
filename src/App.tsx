@@ -223,6 +223,7 @@ function App() {
 
               // プリロード完了後にストアを更新
               loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations);
+              resetZoom();
 
               // アクティブなドキュメントのタイトルとファイル情報を更新
               const currentActiveId = useDocumentStore.getState().activeDocumentId;
@@ -367,6 +368,7 @@ function App() {
 
               // プリロード完了後にストアを更新
               loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations);
+              resetZoom();
 
               // アクティブなドキュメントのタイトルとファイル情報を更新
               const currentActiveId = useDocumentStore.getState().activeDocumentId;

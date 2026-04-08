@@ -101,7 +101,7 @@ export const DrawingCanvas: React.FC = () => {
   const { isActive: isViewerMode } = useViewerModeStore();
   const { bgOpacity } = useBgOpacityStore();
   const { mode } = useModeStore();
-  const { setDisplayScale } = useDisplayScaleStore();
+  const { setDisplayScale, setBaseScale: setBaseScaleStore } = useDisplayScaleStore();
   const { isVisible: isTextLayerVisible, getPageTextItems, setPageTextItems, setExtracting } = useTextLayerStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -477,6 +477,11 @@ export const DrawingCanvas: React.FC = () => {
 
   // 描画キャンバスの再描画（ページ変更時）
   useEffect(() => {
+    // ページ変更時にスクロール位置をリセット
+    if (scrollAreaRef.current) {
+      scrollAreaRef.current.scrollLeft = 0;
+      scrollAreaRef.current.scrollTop = 0;
+    }
     redrawCanvas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, pages.length, redrawCanvas, originalWidth, originalHeight]);
@@ -577,10 +582,11 @@ export const DrawingCanvas: React.FC = () => {
   const displayWidth = originalWidth * displayScale;
   const displayHeight = originalHeight * displayScale;
 
-  // displayScaleをストアに保存（useCanvasで使用）
+  // displayScale・baseScaleをストアに保存（useCanvasで使用）
   useEffect(() => {
     setDisplayScale(displayScale);
-  }, [displayScale, setDisplayScale]);
+    setBaseScaleStore(baseScale);
+  }, [displayScale, baseScale, setDisplayScale, setBaseScaleStore]);
 
   // Pan handlers
   const handlePanStart = useCallback((e: React.PointerEvent) => {
@@ -1009,6 +1015,7 @@ export const DrawingCanvas: React.FC = () => {
           color: getEditingText()!.color,
           fontSize: getEditingText()!.fontSize,
           isVertical: getEditingText()!.isVertical,
+          fontFamily: getEditingText()!.fontFamily,
           align: 'left',
           leaderLine: { start: { x: 0, y: 0 }, end: { x: 0, y: 0 } },
         } : null}

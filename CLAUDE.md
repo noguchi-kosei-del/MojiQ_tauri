@@ -1257,3 +1257,57 @@ MojiQ_Pro_1.0/
 - **ResizeObserverでコンテナサイズ変化を検知**: モード切替でサイドバー幅が変わった際にbaseScaleを再計算
   - `src/components/Canvas/DrawingCanvas.tsx` - `ResizeObserver`を`containerRef`に追加
   - 従来は`window.resize`のみ検知。flexレイアウト内部の変化（サイドバー表示/非表示）を確実に検知
+
+### 2026-04-08（続き2）
+#### フォント選択機能
+- **テキスト入力ダイアログにフォント選択ドロップダウンを追加**
+  - `src/types/index.ts` - `TextElement`と`Annotation`に`fontFamily?: string`を追加
+  - `src/utils/fontService.ts` - 新規作成。システムフォント取得ユーティリティ
+    - Tauriコマンド`list_system_fonts`でWindowsレジストリからフォント一覧を取得
+    - 取得失敗時は日本語共通フォントのフォールバックリストを返す
+    - `formatFontFamily()` - Canvas APIの`ctx.font`に安全なフォント名文字列を生成
+    - `DEFAULT_FONT = 'sans-serif'` 定数
+  - `src-tauri/src/commands.rs` - `list_system_fonts`コマンド追加（HKLM/HKCUレジストリ読み取り）
+  - `src-tauri/Cargo.toml` - `winreg`クレート追加
+  - `src/components/AnnotationModal/AnnotationModal.tsx` - カスタム検索付きフォントドロップダウン
+    - フォント名のインクリメンタルサーチ
+    - 各フォント名をそのフォントでプレビュー表示
+    - 選択中フォントのハイライト、モーダル外にはみ出す表示
+    - テキストエリアに選択フォントを適用
+  - `src/components/AnnotationModal/AnnotationModal.css` - ドロップダウンスタイル（max-height: 150px、スクロールバー付き）
+  - `src/hooks/useCanvas.ts` - `drawText`/`drawAnnotation`でfontFamilyを使用
+  - `src/utils/drawingRenderer.ts` - PDFエクスポート用描画でfontFamilyを使用
+  - `src/stores/drawingStore.ts` - テキスト境界計算でfontFamilyを反映
+  - `src/components/Canvas/DrawingCanvas.tsx` - テキスト編集時の初期値にfontFamilyを含める
+  - `src/components/Canvas/SpreadCanvas.tsx` - 見開き描画でfontFamilyを使用
+
+#### テキスト描画のズーム非依存化（旧MojiQ準拠）
+- **テキストはズームイン/アウトでサイズが変化しない固定表示**
+  - `src/stores/displayScaleStore.ts` - `baseScale`を追加（ズーム非依存のベーススケール）
+  - `src/components/Canvas/DrawingCanvas.tsx` - `baseScale`をストアに保存
+  - `src/hooks/useCanvas.ts` - `textRenderScaleRef`（`1/baseScale`）を追加
+    - `drawText`: `fontSize * textRenderScaleRef`でベース解像度のみ補正
+    - `drawAnnotation`: 同様にテキスト部分のみtextRenderScale適用
+  - `src/stores/drawingStore.ts` - `calculateTextBounds`/`calculateAnnotationTextBounds`でbaseScaleベースのスケーリングに変更
+  - `src/utils/drawingRenderer.ts` - PDF保存用レンダラーに`renderScale`（`1/baseScale`）を導入
+    - `drawStroke`/`drawShape`/`drawAnnotation`/`drawText`に`rs`パラメータ追加
+    - 線幅・フォントサイズ・矢頭サイズ・引出線幅・スタンプサイズをrs補正
+
+#### PDF保存の最適化
+- **フォントプリロードの集約**: `preloadDrawingFonts()`で保存前に1回だけプリロード
+- **PNGエンコードの非同期化**: `canvas.toDataURL()`→`canvas.toBlob()`+`FileReader`でUIフリーズ軽減
+- **ページ間のUI制御返却**: `setTimeout(0)`でプログレスバー更新を確実に反映
+- **Rust側PDF生成を別スレッドに移動**: `tokio::task::spawn_blocking`でメインスレッドブロック回避
+
+#### PDF読み込み時のズームリセット
+- **ズームリセット**: `loadDocumentWithAnnotations()`後に`resetZoom()`を呼び出し（2箇所）
+- **スクロール位置リセット**: ページ変更時に`scrollLeft/scrollTop`を`0`にリセット
+
+#### Ctrl+S初回保存時の別名保存
+- **初回は必ず「名前を付けて保存」**: `savedPathRef`でセッション内の保存先パスを追跡
+  - 未保存（`null`）→ ファイルダイアログ表示
+  - 保存済み → 記録したパスに上書き保存
+  - ドキュメント切り替え時にリセット
+
+#### スプラッシュスクリーンUI修正
+- **%表示の色をメッセージと統一**: `#999` → `#333`に変更

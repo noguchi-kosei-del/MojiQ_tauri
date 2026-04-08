@@ -35,6 +35,7 @@ export interface TextElement {
   color: string;
   fontSize: number;
   isVertical: boolean;
+  fontFamily?: string;
   layerId: string;
   // PDF注釈由来の場合、注釈タイプを保持
   pdfAnnotationSource?: PdfAnnotationSourceType;
@@ -53,6 +54,7 @@ export interface Annotation {
   color: string;
   fontSize: number;
   isVertical: boolean;
+  fontFamily?: string;
   align: 'left' | 'right';
   leaderLine: {
     start: Point;  // 図形側の接続点

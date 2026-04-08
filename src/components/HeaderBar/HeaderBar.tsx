@@ -13,7 +13,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LoadedDocument } from '../../types';
 import { renderPdfToImages, renderPdfPage } from '../../utils/pdfRenderer';
-import { renderPageDrawingsToCanvas, hasDrawings } from '../../utils/drawingRenderer';
+import { renderPageDrawingsToCanvas, hasDrawings, preloadDrawingFonts } from '../../utils/drawingRenderer';
 import {
   prepareExportData,
   exportDataToJson,
@@ -259,6 +259,13 @@ export const HeaderBar: React.FC = () => {
   const spreadButtonRef = useRef<HTMLButtonElement>(null);
   const saveMenuRef = useRef<HTMLDivElement>(null);
   const saveButtonRef = useRef<HTMLButtonElement>(null);
+  // 今回のセッションでPDF保存済みのパス（初回はnull → 別名保存を強制）
+  const savedPathRef = useRef<string | null>(null);
+
+  // ドキュメント切り替え時に保存パスをリセット
+  useEffect(() => {
+    savedPathRef.current = null;
+  }, [activeDocumentId]);
 
   // ウィンドウ最大化状態を監視
   useEffect(() => {
@@ -763,6 +770,10 @@ export const HeaderBar: React.FC = () => {
 
       // 2. 描画データをPNGオーバーレイとしてレンダリング
       setLoading(true, '描画データをレンダリング中...');
+
+      // カスタムフォントを事前にプリロード（1回だけ）
+      await preloadDrawingFonts(pages);
+
       const pageDrawingsV2: Array<{
         page_number: number;
         drawing_overlay: string;
@@ -772,16 +783,18 @@ export const HeaderBar: React.FC = () => {
 
       for (let i = 0; i < totalPages; i++) {
         const page = pages[i];
-        setLoading(true, `描画をレンダリング中... (${i + 1}/${totalPages})`);
 
         let overlayPng = '';
         if (hasDrawings(page)) {
+          setLoading(true, `描画をレンダリング中... (${i + 1}/${totalPages})`);
           try {
             // PDF注釈テキストは非表示にして保存（元PDFに既にテキストがあるため重複を避ける）
             overlayPng = await renderPageDrawingsToCanvas(page, { hideComments: true });
           } catch (error) {
             console.error(`Failed to render drawings for page ${i}:`, error);
           }
+          // UIスレッドに制御を返す（プログレス表示更新のため）
+          await new Promise(r => setTimeout(r, 0));
         }
 
         pageDrawingsV2.push({
@@ -833,6 +846,9 @@ export const HeaderBar: React.FC = () => {
       if (activeDocumentId) {
         markAsSaved(activeDocumentId, savePath);
       }
+
+      // セッション内の保存先パスを記録（次回Ctrl+Sで上書き保存に使用）
+      savedPathRef.current = savePath;
 
       setProgress(100);
     } catch (error) {
@@ -943,8 +959,8 @@ export const HeaderBar: React.FC = () => {
     const handleSaveShortcut = async () => {
       const activeDoc = getActiveDocument();
 
-      // 保存パスがない場合は名前を付けて保存
-      if (!activeDoc?.filePath) {
+      // セッション内で一度もPDF保存していない場合は名前を付けて保存
+      if (!savedPathRef.current) {
         try {
           const defaultFileName = activeDoc?.title?.replace(/\.[^/.]+$/, '') || 'output';
           const savePath = await save({
@@ -962,7 +978,7 @@ export const HeaderBar: React.FC = () => {
         }
       } else {
         try {
-          await savePdfToPath(activeDoc.filePath);
+          await savePdfToPath(savedPathRef.current);
           await message('上書き保存しました', { title: '保存完了', kind: 'info' });
         } catch (error) {
           console.error('Failed to overwrite save PDF:', error);
