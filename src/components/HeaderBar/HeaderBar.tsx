@@ -254,6 +254,7 @@ export const HeaderBar: React.FC = () => {
   const [isSpreadMenuOpen, setIsSpreadMenuOpen] = useState(false);
   const [isSaveMenuOpen, setIsSaveMenuOpen] = useState(false);
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
+  const [saveResultModal, setSaveResultModal] = useState<{ message: string; isError: boolean } | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const spreadMenuRef = useRef<HTMLDivElement>(null);
   const spreadButtonRef = useRef<HTMLButtonElement>(null);
@@ -261,10 +262,12 @@ export const HeaderBar: React.FC = () => {
   const saveButtonRef = useRef<HTMLButtonElement>(null);
   // 今回のセッションでPDF保存済みのパス（初回はnull → 別名保存を強制）
   const savedPathRef = useRef<string | null>(null);
+  const [hasSavedOnce, setHasSavedOnce] = useState(false);
 
   // ドキュメント切り替え時に保存パスをリセット
   useEffect(() => {
     savedPathRef.current = null;
+    setHasSavedOnce(false);
   }, [activeDocumentId]);
 
   // ウィンドウ最大化状態を監視
@@ -707,7 +710,7 @@ export const HeaderBar: React.FC = () => {
     const totalObjects = pagesForLock.reduce((sum, page) =>
       sum + page.layers.reduce((s, l) => s + l.strokes.length + l.shapes.length + l.texts.length + l.images.length, 0), 0);
     if (!acquireSaveLock(pagesForLock.length, totalObjects)) {
-      await message('現在保存処理中です。完了までお待ちください。', { title: '処理中', kind: 'info' });
+      setSaveResultModal({ message: '現在保存処理中です。完了までお待ちください。', isError: false });
       return;
     }
 
@@ -849,6 +852,7 @@ export const HeaderBar: React.FC = () => {
 
       // セッション内の保存先パスを記録（次回Ctrl+Sで上書き保存に使用）
       savedPathRef.current = savePath;
+      setHasSavedOnce(true);
 
       setProgress(100);
     } catch (error) {
@@ -874,12 +878,11 @@ export const HeaderBar: React.FC = () => {
 
     try {
       await savePdfToPath(activeDoc.filePath);
-      await message('上書き保存しました', { title: '保存完了', kind: 'info' });
+      setSaveResultModal({ message: '上書き保存しました', isError: false });
     } catch (error) {
       console.error('Failed to overwrite save PDF:', error);
-      // setLoading(false)はsavePdfToPathのfinallyで呼ばれるので不要
       const errorMessage = error instanceof Error ? error.message : String(error);
-      await message('PDF保存に失敗しました: ' + errorMessage, { title: 'エラー', kind: 'error' });
+      setSaveResultModal({ message: 'PDF保存に失敗しました: ' + errorMessage, isError: true });
     }
   };
 
@@ -902,13 +905,12 @@ export const HeaderBar: React.FC = () => {
 
       if (savePath) {
         await savePdfToPath(savePath);
-        await message('PDFを保存しました', { title: '保存完了', kind: 'info' });
+        setSaveResultModal({ message: 'PDFを保存しました', isError: false });
       }
     } catch (error) {
       console.error('Failed to save PDF:', error);
-      // setLoading(false)はsavePdfToPathのfinallyで呼ばれるので不要
       const errorMessage = error instanceof Error ? error.message : String(error);
-      await message('PDF保存に失敗しました: ' + errorMessage, { title: 'エラー', kind: 'error' });
+      setSaveResultModal({ message: 'PDF保存に失敗しました: ' + errorMessage, isError: true });
     }
   };
 
@@ -969,21 +971,21 @@ export const HeaderBar: React.FC = () => {
           });
           if (savePath) {
             await savePdfToPath(savePath);
-            await message('PDFを保存しました', { title: '保存完了', kind: 'info' });
+            setSaveResultModal({ message: 'PDFを保存しました', isError: false });
           }
         } catch (error) {
           console.error('Failed to save PDF:', error);
           const errorMessage = error instanceof Error ? error.message : String(error);
-          await message('PDF保存に失敗しました: ' + errorMessage, { title: 'エラー', kind: 'error' });
+          setSaveResultModal({ message: 'PDF保存に失敗しました: ' + errorMessage, isError: true });
         }
       } else {
         try {
           await savePdfToPath(savedPathRef.current);
-          await message('上書き保存しました', { title: '保存完了', kind: 'info' });
+          setSaveResultModal({ message: '上書き保存しました', isError: false });
         } catch (error) {
           console.error('Failed to overwrite save PDF:', error);
           const errorMessage = error instanceof Error ? error.message : String(error);
-          await message('PDF保存に失敗しました: ' + errorMessage, { title: 'エラー', kind: 'error' });
+          setSaveResultModal({ message: 'PDF保存に失敗しました: ' + errorMessage, isError: true });
         }
       }
     };
@@ -1479,8 +1481,8 @@ export const HeaderBar: React.FC = () => {
 
             {(() => {
               const activeDoc = getActiveDocument();
-              // 上書き保存が無効な条件: 保存パスがない、または変更がない
-              const isOverwriteDisabled = !activeDoc?.filePath || !activeDoc?.isModified;
+              // 上書き保存が無効な条件: 保存パスがない、またはセッション内で一度も保存していない
+              const isOverwriteDisabled = !activeDoc?.filePath || !hasSavedOnce;
               return (
                 <div className={`save-menu ${isSaveMenuOpen ? 'open' : ''}`} ref={saveMenuRef}>
                   <div className="save-menu-header">保存</div>
@@ -1621,6 +1623,25 @@ export const HeaderBar: React.FC = () => {
         </div>
       </div>
       <HamburgerMenu isOpen={isMenuOpen} onToggle={toggleMenu} />
+
+      {/* 保存結果モーダル */}
+      {saveResultModal && (
+        <div className="clear-confirm-overlay" onClick={() => setSaveResultModal(null)}>
+          <div className="clear-confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="clear-confirm-header">
+              <span className="clear-confirm-title">{saveResultModal.isError ? 'エラー' : '保存完了'}</span>
+            </div>
+            <div className="clear-confirm-body">
+              <p>{saveResultModal.message}</p>
+            </div>
+            <div className="clear-confirm-actions">
+              <button className="clear-confirm-btn cancel" onClick={() => setSaveResultModal(null)}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 全消去確認モーダル */}
       {isClearConfirmOpen && (

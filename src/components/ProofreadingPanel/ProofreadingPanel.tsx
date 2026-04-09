@@ -7,6 +7,7 @@ import { useModeStore } from '../../stores/modeStore';
 import { usePageNavStore } from '../../stores/pageNavStore';
 import { useCommentVisibilityStore } from '../../stores/commentVisibilityStore';
 import { useDocumentStore } from '../../stores/documentStore';
+import { useDisplayScaleStore } from '../../stores/displayScaleStore';
 import { ProofreadingCheckItem, StampType } from '../../types';
 import { isLandscapeDocument, pdfPageToNombreRange } from '../../utils/pageNumberUtils';
 import './ProofreadingPanel.css';
@@ -24,6 +25,7 @@ interface CommentItem {
   source: 'pdf' | 'text' | 'annotation';  // コメントのソース種別
   x: number;  // 座標
   y: number;  // 座標
+  fontSize: number;  // テキストのフォントサイズ
 }
 
 // Parse page string and extract page number
@@ -438,6 +440,7 @@ export const ProofreadingPanel: React.FC = () => {
               source: 'pdf',
               x: annot.x,
               y: annot.y,
+              fontSize: annot.fontSize || 14,
             });
           }
         });
@@ -461,6 +464,7 @@ export const ProofreadingPanel: React.FC = () => {
               source: 'text',
               x: textEl.x,
               y: textEl.y,
+              fontSize: textEl.fontSize || 14,
             });
           }
         });
@@ -476,6 +480,7 @@ export const ProofreadingPanel: React.FC = () => {
               source: 'annotation',
               x: shape.annotation.x,
               y: shape.annotation.y,
+              fontSize: shape.annotation.fontSize || 14,
             });
           }
         });
@@ -537,8 +542,10 @@ export const ProofreadingPanel: React.FC = () => {
         });
       }
     } else {
-      // チェック → スタンプ追加
-      const stampId = addDoneStampToPage(comment.pageIndex, { x: comment.x, y: comment.y });
+      // チェック → スタンプ追加（テキストの縦中心に配置）
+      const baseScale = useDisplayScaleStore.getState().baseScale || 1;
+      const textHeightHalf = (comment.fontSize / baseScale) / 2;
+      const stampId = addDoneStampToPage(comment.pageIndex, { x: comment.x, y: comment.y + textHeightHalf });
       if (stampId) {
         setCommentDoneStamps(prev => {
           const next = new Map(prev);

@@ -1338,3 +1338,26 @@ MojiQ_Pro_1.0/
     - 末尾セミコロンの除去
   - `list_system_fonts`コマンドで`extract_font_families()`を使用するように変更
 - **原因**: Windowsレジストリのフォントキー名（例: `"Yu Gothic Regular (TrueType)"`）からスタイル名を除去せずにそのまま返していたため、Canvas APIの`ctx.font`で一部フォントが認識されなかった
+
+#### PDF保存メニューの上書き保存グレーアウト
+- **初回読み込み時は上書き保存を無効化**: セッション内で一度も保存していない場合、上書き保存ボタンをグレーアウト
+  - `src/components/HeaderBar/HeaderBar.tsx` - `hasSavedOnce` stateを追加
+    - 初回は`false`→名前を付けて保存を強制
+    - `savePdfToPath`成功時に`setHasSavedOnce(true)`で有効化
+    - ドキュメント切り替え時にリセット
+  - disabled条件: `!activeDoc?.filePath || !hasSavedOnce`
+
+#### 保存完了モーダルのカスタムモーダル化
+- **ネイティブダイアログ廃止**: PDF保存関連の`message()`をカスタムモーダルに置換
+  - `src/components/HeaderBar/HeaderBar.tsx` - `saveResultModal` stateを追加
+    - 保存完了（上書き保存/名前を付けて保存）、保存エラー、保存処理中の全メッセージを対応
+    - 既存の`clear-confirm`スタイルを再利用（ダークモード自動対応）
+    - オーバーレイクリック/OKボタンで閉じる
+
+#### コメントチェックボックスの済スタンプ位置修正
+- **テキストの縦中心にスタンプを配置**: チェック時の済スタンプがテキスト上に正しく重なるように修正
+  - `src/components/ProofreadingPanel/ProofreadingPanel.tsx`
+    - `CommentItem`に`fontSize`フィールドを追加（PDF注釈・テキスト・アノテーションから取得）
+    - スタンプ配置時のY座標を`y + fontSize / baseScale / 2`に補正
+    - `useDisplayScaleStore`からbaseScaleを取得
+  - **原因**: テキストは`(x, y)`を左上角（`textBaseline: 'top'`）として描画されるが、済スタンプは`(x, y)`を中心（`ctx.arc`）として描画されるため、テキスト本体と視覚的にずれていた
