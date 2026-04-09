@@ -1113,6 +1113,18 @@ function App() {
     });
   }, []);
 
+  // 起動時にファイルパスが渡された場合（アイコンへのドラッグ＆ドロップ、ファイル関連付け）
+  useEffect(() => {
+    const unlisten = listen<string[]>('file-open-request', (event) => {
+      const files = event.payload;
+      if (files && files.length > 0) {
+        // 最初のファイルを開く
+        window.dispatchEvent(new CustomEvent('mojiq-open-file', { detail: { path: files[0] } }));
+      }
+    });
+    return () => { unlisten.then(fn => fn()); };
+  }, []);
+
   if (!appReady) {
     return null;
   }

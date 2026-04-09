@@ -9,6 +9,33 @@ use commands::{
 };
 
 use tauri::Manager;
+use tauri::Emitter;
+use std::sync::Mutex;
+
+/// 起動時にCLI引数で渡されたファイルパスを保持する
+struct PendingFiles(Mutex<Vec<String>>);
+
+/// サポートされているファイル拡張子かどうかを判定する
+fn is_supported_file(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    lower.ends_with(".pdf") || lower.ends_with(".jpg") || lower.ends_with(".jpeg") || lower.ends_with(".png")
+}
+
+/// CLI引数からファイルパスを抽出する
+fn extract_file_paths_from_args() -> Vec<String> {
+    let args: Vec<String> = std::env::args().collect();
+    let mut files = Vec::new();
+    // 最初の引数はアプリ自体のパス、2番目以降がファイルパス
+    for arg in args.iter().skip(1) {
+        if arg.starts_with('-') {
+            continue;
+        }
+        if is_supported_file(arg) && std::path::Path::new(arg).exists() {
+            files.push(arg.clone());
+        }
+    }
+    files
+}
 
 /// スプラッシュのプログレスを指定値に更新する
 fn update_splash_progress(app: &tauri::AppHandle, value: u32) {
@@ -49,6 +76,18 @@ async fn close_splash(window: tauri::Window) -> Result<(), String> {
         splash_window.close().map_err(|e| e.to_string())?;
     }
 
+    // 起動時に渡されたファイルがあればフロントエンドに通知する
+    let pending = app.state::<PendingFiles>();
+    let files: Vec<String> = {
+        let mut lock = pending.0.lock().unwrap();
+        std::mem::take(&mut *lock)
+    };
+    if !files.is_empty() {
+        // 少し待ってフロントエンドの初期化完了を確実にする
+        tokio::time::sleep(delay(300)).await;
+        let _ = app.emit("file-open-request", files);
+    }
+
     Ok(())
 }
 
@@ -57,6 +96,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(PendingFiles(Mutex::new(extract_file_paths_from_args())))
         .setup(|app| {
             // スプラッシュウィンドウを作成
             let splash_url = tauri::WebviewUrl::App("splash.html".into());

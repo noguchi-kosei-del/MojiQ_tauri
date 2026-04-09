@@ -820,6 +820,66 @@ pub async fn load_drawing_json(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| format!("Failed to load drawing data: {}", e))
 }
 
+/// レジストリのフォントキー名からCSSフォントファミリー名を抽出する。
+/// 例: "Yu Gothic Bold & Yu Gothic UI Semibold (TrueType)" → ["Yu Gothic", "Yu Gothic UI"]
+/// 例: "Arial Bold Italic (TrueType)" → ["Arial"]
+#[cfg(target_os = "windows")]
+fn extract_font_families(registry_name: &str) -> Vec<String> {
+    // 括弧部分 "(TrueType)" 等を除去
+    let base = if let Some(pos) = registry_name.rfind('(') {
+        registry_name[..pos].trim()
+    } else {
+        registry_name.trim()
+    };
+    // 末尾のセミコロンを除去
+    let base = base.trim_end_matches(';').trim();
+
+    // "&" で分割（複合フォント名対応）
+    let parts: Vec<&str> = base.split('&').collect();
+
+    // スタイル名を除去するための既知サフィックス
+    let style_suffixes = [
+        " Extra Bold Italic", " Extra Bold",
+        " Extra Light Italic", " Extra Light",
+        " Semibold Italic", " Semibold",
+        " SemiLight Italic", " SemiLight",
+        " Semilight Italic", " Semilight",
+        " Demibold Italic", " Demibold",
+        " Bold Italic", " Bold",
+        " Light Italic", " Light",
+        " Medium Italic", " Medium",
+        " Regular Italic", " Regular",
+        " Thin Italic", " Thin",
+        " Heavy Italic", " Heavy",
+        " Black Italic", " Black",
+        " Condensed Italic", " Condensed",
+        " Demi Cond", " Demi",
+        " Book Italic", " Book",
+        " Italic",
+    ];
+
+    let mut result = Vec::new();
+    for part in parts {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let mut family = trimmed.to_string();
+        for suffix in &style_suffixes {
+            if let Some(stripped) = family.strip_suffix(suffix) {
+                if !stripped.is_empty() {
+                    family = stripped.to_string();
+                    break;
+                }
+            }
+        }
+        if !family.is_empty() {
+            result.push(family);
+        }
+    }
+    result
+}
+
 // システムにインストールされているフォント一覧を取得（Windowsレジストリから）
 #[tauri::command]
 pub async fn list_system_fonts() -> Result<Vec<String>, String> {
@@ -834,14 +894,7 @@ pub async fn list_system_fonts() -> Result<Vec<String>, String> {
 
         if let Ok(key) = hklm.open_subkey(fonts_key) {
             for (name, _value) in key.enum_values().filter_map(|r| r.ok()) {
-                // レジストリのキー名は "Font Name (TrueType)" のような形式
-                // 括弧の前の部分がフォント名
-                let family = if let Some(pos) = name.rfind('(') {
-                    name[..pos].trim().to_string()
-                } else {
-                    name.trim().to_string()
-                };
-                if !family.is_empty() {
+                for family in extract_font_families(&name) {
                     families.insert(family);
                 }
             }
@@ -851,12 +904,7 @@ pub async fn list_system_fonts() -> Result<Vec<String>, String> {
         let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
         if let Ok(key) = hkcu.open_subkey(fonts_key) {
             for (name, _value) in key.enum_values().filter_map(|r| r.ok()) {
-                let family = if let Some(pos) = name.rfind('(') {
-                    name[..pos].trim().to_string()
-                } else {
-                    name.trim().to_string()
-                };
-                if !family.is_empty() {
+                for family in extract_font_families(&name) {
                     families.insert(family);
                 }
             }

@@ -339,7 +339,11 @@ export const ProofreadingPanel: React.FC = () => {
   // カラー選択
   const handleColorSelect = useCallback((newColor: string) => {
     setColor(newColor);
-  }, [setColor]);
+    const hasSelection = selectedStrokeIds.length > 0 || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedAnnotationShapeId !== null;
+    if (hasSelection) {
+      updateSelectedColor(newColor);
+    }
+  }, [setColor, updateSelectedColor, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedAnnotationShapeId]);
 
   // 線の太さ変更（数値入力・スライダー共通）
   const handleStrokeWidthChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -367,11 +371,15 @@ export const ProofreadingPanel: React.FC = () => {
       const eyeDropper = new window.EyeDropper();
       const result = await eyeDropper.open();
       setColor(result.sRGBHex);
+      const hasSelection = selectedStrokeIds.length > 0 || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedAnnotationShapeId !== null;
+      if (hasSelection) {
+        updateSelectedColor(result.sRGBHex);
+      }
     } catch (e) {
       // User cancelled or error
       console.log('EyeDropper cancelled or error:', e);
     }
-  }, [setColor]);
+  }, [setColor, updateSelectedColor, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedAnnotationShapeId]);
 
   // Check if EyeDropper API is available
   const isEyeDropperSupported = typeof window !== 'undefined' && 'EyeDropper' in window;

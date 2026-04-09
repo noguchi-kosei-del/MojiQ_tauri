@@ -38,6 +38,23 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["pdf"],
+        "mimeType": "application/pdf",
+        "description": "PDF Document"
+      },
+      {
+        "ext": ["jpg", "jpeg"],
+        "mimeType": "image/jpeg",
+        "description": "JPEG Image"
+      },
+      {
+        "ext": ["png"],
+        "mimeType": "image/png",
+        "description": "PNG Image"
+      }
     ]
   }
 }

@@ -1311,3 +1311,30 @@ MojiQ_Pro_1.0/
 
 #### スプラッシュスクリーンUI修正
 - **%表示の色をメッセージと統一**: `#999` → `#333`に変更
+
+### 2026-04-09
+#### ファイル関連付け・アイコンドラッグ起動（旧MojiQ ver_2.17より移植）
+- **アプリアイコンへのドラッグ＆ドロップでファイルを開いて起動**
+  - `src-tauri/tauri.conf.json` - `bundle.fileAssociations`にPDF/JPG/JPEG/PNGを登録
+  - `src-tauri/src/lib.rs` - 起動時CLI引数からファイルパスを抽出
+    - `extract_file_paths_from_args()` - `std::env::args()`から対応ファイルを抽出
+    - `is_supported_file()` - 拡張子チェック（.pdf/.jpg/.jpeg/.png）
+    - `PendingFiles` - ファイルパスをMutexで保持、`close_splash`完了後にフロントエンドへイベント発行
+  - `src/App.tsx` - `file-open-request`Tauriイベントをリッスン、既存の`mojiq-open-file`フローでファイルを読み込み
+- **動作フロー**: ファイルドラッグ→Windows起動→CLI引数取得→スプラッシュ→メインウィンドウ表示→イベント発行→読み込み
+
+#### 選択オブジェクトのカラー変更修正
+- **プリセットカラースウォッチのクリック時に選択オブジェクトの色が変わらないバグを修正**
+  - `src/components/DrawingSettingsBar/DrawingSettingsBar.tsx` - `handleColorSelect`に`updateSelectedColor`呼び出しを追加
+  - `src/components/ProofreadingPanel/ProofreadingPanel.tsx` - 同様に`handleColorSelect`を修正
+  - `src/components/ProofreadingPanel/ProofreadingPanel.tsx` - スポイトツール（EyeDropper）にも`updateSelectedColor`を追加
+- **原因**: `handleColorSelect`は`setColor`（描画色の変更）のみで、選択中オブジェクトへの反映（`updateSelectedColor`）が欠落していた
+
+#### フォント一覧取得の修正
+- **一部フォントがCanvas APIで認識されないバグを修正**
+  - `src-tauri/src/commands.rs` - `extract_font_families()`関数を新規追加
+    - `&`で結合された複合フォント名を分割（例: `"Yu Gothic Bold & Yu Gothic UI Semibold"` → `["Yu Gothic", "Yu Gothic UI"]`）
+    - スタイルサフィックス（Bold, Regular, Light, Italic等）を除去してファミリー名のみ返す
+    - 末尾セミコロンの除去
+  - `list_system_fonts`コマンドで`extract_font_families()`を使用するように変更
+- **原因**: Windowsレジストリのフォントキー名（例: `"Yu Gothic Regular (TrueType)"`）からスタイル名を除去せずにそのまま返していたため、Canvas APIの`ctx.font`で一部フォントが認識されなかった

@@ -105,7 +105,11 @@ export const DrawingSettingsBar: React.FC = () => {
   // カラー選択
   const handleColorSelect = useCallback((newColor: string) => {
     setColor(newColor);
-  }, [setColor]);
+    const hasSelection = selectedStrokeIds.length > 0 || selectedShapeIds.length > 0 || selectedTextIds.length > 0 || selectedAnnotationShapeId !== null;
+    if (hasSelection) {
+      updateSelectedColor(newColor);
+    }
+  }, [setColor, updateSelectedColor, selectedStrokeIds, selectedShapeIds, selectedTextIds, selectedAnnotationShapeId]);
 
   // 線の太さ変更
   const handleStrokeWidthChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
