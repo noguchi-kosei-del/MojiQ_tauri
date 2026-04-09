@@ -62,31 +62,3 @@ export function getOptimalCacheSize(): number {
   );
 }
 
-/**
- * 現在のメモリ使用状況を取得（デバッグ用）
- */
-export function getMemoryInfo(): {
-  heapLimit?: number;
-  heapUsed?: number;
-  deviceMemory?: number;
-} {
-  const info: {
-    heapLimit?: number;
-    heapUsed?: number;
-    deviceMemory?: number;
-  } = {};
-
-  try {
-    if (performance.memory) {
-      info.heapLimit = performance.memory.jsHeapSizeLimit;
-      info.heapUsed = performance.memory.usedJSHeapSize;
-    }
-    if (navigator.deviceMemory) {
-      info.deviceMemory = navigator.deviceMemory;
-    }
-  } catch (e) {
-    // ignore
-  }
-
-  return info;
-}

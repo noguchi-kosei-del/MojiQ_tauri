@@ -1,9 +1,15 @@
 import React, { useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useProofreadingCheckStore } from '../../stores/proofreadingCheckStore';
-import { useThemeStore } from '../../stores/themeStore';
 import { FolderBrowser } from './FolderBrowser';
 import './ProofreadingCheckModal.css';
+
+const CloseIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18"/>
+    <line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>
+);
 
 export const ProofreadingCheckModal: React.FC = () => {
   const {
@@ -11,13 +17,10 @@ export const ProofreadingCheckModal: React.FC = () => {
     closeModal,
     basePath,
     setBasePath,
-    isLoading,
     error,
     setLoading,
     setError,
   } = useProofreadingCheckStore();
-
-  const { theme } = useThemeStore();
 
   // Load base path on mount
   useEffect(() => {
@@ -56,27 +59,25 @@ export const ProofreadingCheckModal: React.FC = () => {
   if (!isModalOpen) return null;
 
   return (
-    <div className="proofreading-modal-overlay" onClick={closeModal}>
+    <div
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}
+      onClick={closeModal}
+    >
       <div
-        className={`proofreading-modal-content browser-only ${theme === 'dark' ? 'dark' : ''}`}
+        style={{ width: 400, maxHeight: '80vh', background: 'var(--bg-primary)', borderRadius: 8, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="proofreading-modal-header">
-          <span className="proofreading-modal-title">校正チェック</span>
-          <button className="proofreading-modal-close" onClick={closeModal}>
-            &times;
+        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)', flexShrink: 0 }}>
+          <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>校正チェック</span>
+          <button onClick={closeModal} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--text-primary)' }}>
+            <CloseIcon />
           </button>
         </div>
 
-        <div className="proofreading-modal-body">
-          <FolderBrowser />
-          {isLoading && (
-            <div className="proofreading-loading">読み込み中...</div>
-          )}
-        </div>
+        <FolderBrowser />
 
         {error && (
-          <div className="proofreading-error">{error}</div>
+          <div style={{ padding: '8px 16px', fontSize: 12, color: '#f44336', borderTop: '1px solid var(--border-color)' }}>{error}</div>
         )}
       </div>
     </div>

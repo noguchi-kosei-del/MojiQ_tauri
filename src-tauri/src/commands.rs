@@ -95,11 +95,6 @@ pub struct SaveRequestV2 {
     pub background_images: Vec<String>,
 }
 
-#[tauri::command]
-pub async fn open_file_dialog() -> Result<Option<String>, String> {
-    Ok(None)
-}
-
 /// ファイルサイズを取得する（読み込み前のサイズチェック用）
 #[tauri::command]
 pub async fn get_file_size(path: String) -> Result<u64, String> {
@@ -459,43 +454,53 @@ pub async fn list_folder_entries(path: String, extension_filter: Option<String>)
     Ok(result)
 }
 
-// リンク方式: 単一ファイルのメタデータ取得（Base64なし、高速）
+/// 再帰的にJSONファイルを収集して検索
 #[tauri::command]
-pub async fn load_file_metadata(path: String) -> Result<FileMetadata, String> {
-    let path_buf = PathBuf::from(&path);
+pub async fn search_json_files_recursive(base_path: String, query: String) -> Result<Vec<SearchResult>, String> {
+    let base = PathBuf::from(&base_path);
+    if !base.exists() || !base.is_dir() {
+        return Err(format!("ベースパスが無効です: {}", base_path));
+    }
 
-    let extension = path_buf
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(|s| s.to_lowercase())
-        .unwrap_or_default();
+    let normalized_query = query.to_lowercase();
+    let mut results: Vec<SearchResult> = Vec::new();
 
-    // サポートするファイル形式のチェック
-    let mime_type = match extension.as_str() {
-        "jpg" | "jpeg" => "image/jpeg",
-        "png" => "image/png",
-        _ => return Err(format!("Unsupported file type: {}", extension)),
-    };
+    fn collect_files(dir: &Path, base: &Path, query: &str, results: &mut Vec<SearchResult>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    collect_files(&path, base, query, results);
+                } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    if ext.to_lowercase() == "json" {
+                        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                            let relative = path.strip_prefix(base)
+                                .map(|p| p.to_string_lossy().to_string())
+                                .unwrap_or_default();
+                            if name.to_lowercase().contains(query) || relative.to_lowercase().contains(query) {
+                                results.push(SearchResult {
+                                    name: name.to_string(),
+                                    path: path.to_string_lossy().to_string(),
+                                    relative_path: relative,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
-    // 画像サイズ取得
-    let (width, height) = ::image::image_dimensions(&path).map_err(|e| e.to_string())?;
+    collect_files(&base, &base, &normalized_query, &mut results);
+    results.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(results)
+}
 
-    // ファイル更新日時取得
-    let metadata = fs::metadata(&path).map_err(|e| e.to_string())?;
-    let modified_at = metadata
-        .modified()
-        .map_err(|e| e.to_string())?
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
-        .as_secs();
-
-    Ok(FileMetadata {
-        file_path: path,
-        mime_type: mime_type.to_string(),
-        width,
-        height,
-        modified_at,
-    })
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SearchResult {
+    pub name: String,
+    pub path: String,
+    pub relative_path: String,
 }
 
 // リンク方式: 複数ファイルのメタデータ取得（並列処理、高速）
@@ -685,48 +690,6 @@ pub async fn read_proofreading_check_file(
         .map_err(|e| format!("JSONのパースに失敗: {}", e))?;
 
     Ok(data)
-}
-
-// 校正チェック: ビューアーウィンドウを開く
-#[tauri::command]
-pub async fn open_proofreading_viewer(
-    app: tauri::AppHandle,
-    file_path: String,
-    base_path: String,
-    file_name: String,
-    dark_mode: bool,
-) -> Result<(), String> {
-    use tauri::WebviewWindowBuilder;
-    use tauri::WebviewUrl;
-
-    // URLパラメータを構築
-    let params = format!(
-        "file={}&basePath={}&darkMode={}",
-        urlencoding::encode(&file_path),
-        urlencoding::encode(&base_path),
-        if dark_mode { "true" } else { "false" }
-    );
-
-    let url = format!("/proofreading-viewer.html?{}", params);
-    let label = format!("proofreading-viewer-{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0));
-
-    // ウィンドウを作成
-    WebviewWindowBuilder::new(
-        &app,
-        &label,
-        WebviewUrl::App(url.into()),
-    )
-    .title(format!("校正チェック - {}", file_name))
-    .inner_size(840.0, 1080.0)
-    .resizable(true)
-    .center()
-    .build()
-    .map_err(|e| format!("ウィンドウの作成に失敗: {}", e))?;
-
-    Ok(())
 }
 
 // 印刷用PDFを生成してシステム印刷ダイアログを開く

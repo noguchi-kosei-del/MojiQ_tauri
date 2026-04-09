@@ -153,17 +153,11 @@ export const usePresetStore = create<PresetState>()(
       },
 
       appendWorkSpec: (spec) => {
-        const { fontSizes, fonts, fontColorIndex } = get();
+        // 既存の文字サイズ・フォントをリセットして新しいデータに置き換え
+        const allSizes = [...spec.fontSizes].sort((a, b) => a - b);
 
-        // 重複を除いて文字サイズを追加
-        const newSizes = spec.fontSizes.filter(s => !fontSizes.includes(s));
-        const allSizes = [...fontSizes, ...newSizes].sort((a, b) => a - b);
-
-        // 重複を除いてフォントを追加
-        const existingNames = new Set(fonts.map(f => f.name));
-        let colorIndex = fontColorIndex;
+        let colorIndex = 0;
         const newFonts = spec.fonts
-          .filter(f => !existingNames.has(f.name))
           .map(f => {
             const font: FontPreset = {
               id: `font-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -176,7 +170,7 @@ export const usePresetStore = create<PresetState>()(
 
         set({
           fontSizes: allSizes,
-          fonts: [...fonts, ...newFonts],
+          fonts: newFonts,
           fontColorIndex: colorIndex,
         });
       },

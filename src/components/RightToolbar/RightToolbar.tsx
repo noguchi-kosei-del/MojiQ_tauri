@@ -16,6 +16,12 @@ interface FolderEntry {
   is_dir: boolean;
 }
 
+interface SearchResult {
+  name: string;
+  path: string;
+  relative_path: string;
+}
+
 // アイコン
 const FolderIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -66,6 +72,28 @@ const FileIcon = () => (
   </svg>
 );
 
+const SearchIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-secondary)' }}>
+    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+  </svg>
+);
+
+/** テキスト内のクエリ一致部分をハイライトして返す */
+const highlightMatch = (text: string, query: string) => {
+  if (!query) return <>{text}</>;
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  const idx = lowerText.indexOf(lowerQuery);
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <span className="spec-search-highlight">{text.slice(idx, idx + query.length)}</span>
+      {text.slice(idx + query.length)}
+    </>
+  );
+};
+
 // メモストレージキー
 const MEMO_STORAGE_KEY = 'mojiq_memo';
 
@@ -108,6 +136,12 @@ export const RightToolbar: React.FC = () => {
   const [modalFontName, setModalFontName] = useState('');
   const [modalFontColor, setModalFontColor] = useState('#FF0000');
   const [isSpecLoadCompleteOpen, setIsSpecLoadCompleteOpen] = useState(false);
+
+  // 作品仕様検索
+  const [specSearchQuery, setSpecSearchQuery] = useState('');
+  const [specSearchResults, setSpecSearchResults] = useState<SearchResult[]>([]);
+  const [isSpecSearching, setIsSpecSearching] = useState(false);
+  const specSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const dropdownRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const buttonRefs = useRef<{ [key: string]: HTMLButtonElement | null }>({});
@@ -180,10 +214,11 @@ export const RightToolbar: React.FC = () => {
     }
   }, []);
 
-  // フォルダブラウザを開いた時に読み込み
+  // フォルダブラウザを開いた時に読み込み、閉じた時に検索リセット
   useEffect(() => {
     if (isFolderBrowserOpen) {
       loadFolder(JSON_FOLDER_BASE_PATH);
+      clearSpecSearch();
     }
   }, [isFolderBrowserOpen, loadFolder]);
 
@@ -198,6 +233,48 @@ export const RightToolbar: React.FC = () => {
       }
     }
   }, [currentPath, loadFolder]);
+
+  // 作品仕様検索
+  const performSpecSearch = useCallback(async (query: string) => {
+    if (!query) {
+      setSpecSearchResults([]);
+      setIsSpecSearching(false);
+      return;
+    }
+    setIsSpecSearching(true);
+    try {
+      const results = await invoke<SearchResult[]>('search_json_files_recursive', {
+        basePath: JSON_FOLDER_BASE_PATH,
+        query,
+      });
+      setSpecSearchResults(results);
+    } catch (e) {
+      console.error('検索エラー:', e);
+      setSpecSearchResults([]);
+    } finally {
+      setIsSpecSearching(false);
+    }
+  }, []);
+
+  const handleSpecSearchInput = useCallback((value: string) => {
+    setSpecSearchQuery(value);
+    if (specSearchTimeoutRef.current) clearTimeout(specSearchTimeoutRef.current);
+    if (!value) {
+      setSpecSearchResults([]);
+      setIsSpecSearching(false);
+      return;
+    }
+    specSearchTimeoutRef.current = setTimeout(() => {
+      performSpecSearch(value);
+    }, 300);
+  }, [performSpecSearch]);
+
+  const clearSpecSearch = useCallback(() => {
+    setSpecSearchQuery('');
+    setSpecSearchResults([]);
+    setIsSpecSearching(false);
+    if (specSearchTimeoutRef.current) clearTimeout(specSearchTimeoutRef.current);
+  }, []);
 
   // JSONファイルを読み込んでプリセットに追加
   const loadJsonFile = useCallback(async (filePath: string) => {
@@ -796,9 +873,9 @@ export const RightToolbar: React.FC = () => {
       {/* フォルダブラウザモーダル */}
       {isFolderBrowserOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setIsFolderBrowserOpen(false)}>
-          <div style={{ width: 400, maxHeight: '80vh', background: 'var(--bg-primary)', borderRadius: 8, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
-              <button onClick={handleBack} disabled={currentPath === JSON_FOLDER_BASE_PATH} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, marginRight: 8, opacity: currentPath === JSON_FOLDER_BASE_PATH ? 0.3 : 1 }}>
+          <div style={{ width: 400, maxHeight: '80vh', background: 'var(--bg-primary)', borderRadius: 8, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)', flexShrink: 0 }}>
+              <button onClick={handleBack} disabled={currentPath === JSON_FOLDER_BASE_PATH || !!specSearchQuery} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, marginRight: 8, opacity: (currentPath === JSON_FOLDER_BASE_PATH || !!specSearchQuery) ? 0.3 : 1 }}>
                 <BackIcon />
               </button>
               <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: 'var(--text-primary)' }}>{getCurrentFolderName()}</span>
@@ -806,27 +883,77 @@ export const RightToolbar: React.FC = () => {
                 <CloseIcon />
               </button>
             </div>
-            <div style={{ maxHeight: 400, overflowY: 'auto', padding: 8 }}>
-              {loading && <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-secondary)' }}>読み込み中...</div>}
-              {error && <div style={{ padding: 16, textAlign: 'center', color: '#f44336' }}>{error}</div>}
-              {!loading && !error && entries.length === 0 && (
-                <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-secondary)' }}>ファイルがありません</div>
+            {/* 検索バー */}
+            <div className="spec-search-bar">
+              <SearchIcon />
+              <input
+                type="text"
+                className="spec-search-input"
+                placeholder="検索..."
+                value={specSearchQuery}
+                onChange={(e) => handleSpecSearchInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') clearSpecSearch(); }}
+                autoComplete="off"
+              />
+              {specSearchQuery && (
+                <button className="spec-search-clear" onClick={clearSpecSearch}>&times;</button>
               )}
-              {!loading && !error && entries.map((entry, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleEntryClick(entry)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '10px 14px', background: 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer', textAlign: 'left', color: 'var(--text-primary)' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                >
-                  {entry.is_dir ? <FolderSmallIcon /> : <FileIcon />}
-                  <span style={{ flex: 1, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {entry.is_dir ? entry.name : entry.name.replace(/\.json$/i, '')}
-                  </span>
-                </button>
-              ))}
             </div>
+            {/* 検索結果 or フォルダ一覧 */}
+            {specSearchQuery ? (
+              <div style={{ maxHeight: 400, overflowY: 'auto', padding: 8, background: 'var(--folder-list-bg, #eee)' }}>
+                {isSpecSearching ? (
+                  <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-secondary)' }}>検索中...</div>
+                ) : specSearchResults.length === 0 ? (
+                  <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-secondary)' }}>一致する結果がありません</div>
+                ) : (
+                  <>
+                    <div className="spec-search-result-count">{specSearchResults.length}件</div>
+                    {specSearchResults.map((result) => (
+                      <button
+                        key={result.path}
+                        onClick={() => {
+                          loadJsonFile(result.path);
+                          setIsFolderBrowserOpen(false);
+                          setIsSpecLoadCompleteOpen(true);
+                        }}
+                        className="spec-search-result-item"
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <FileIcon />
+                        <div className="spec-search-result-info">
+                          <span className="spec-search-result-name">{highlightMatch(result.name.replace(/\.json$/i, ''), specSearchQuery)}</span>
+                          <span className="spec-search-result-path">{highlightMatch(result.relative_path, specSearchQuery)}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            ) : (
+              <div style={{ maxHeight: 400, overflowY: 'auto', padding: 8, background: 'var(--folder-list-bg, #eee)' }}>
+                {loading && <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-secondary)' }}>読み込み中...</div>}
+                {error && <div style={{ padding: 16, textAlign: 'center', color: '#f44336' }}>{error}</div>}
+                {!loading && !error && entries.length === 0 && (
+                  <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-secondary)' }}>ファイルがありません</div>
+                )}
+                {!loading && !error && entries.map((entry, index) => (
+                  <button
+                    key={index}
+                    onClick={() => handleEntryClick(entry)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '10px 14px', background: 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer', textAlign: 'left', color: 'var(--text-primary)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    {entry.is_dir ? <FolderSmallIcon /> : <FileIcon />}
+                    <span style={{ flex: 1, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {entry.is_dir ? entry.name : entry.name.replace(/\.json$/i, '')}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

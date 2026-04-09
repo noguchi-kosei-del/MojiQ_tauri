@@ -126,32 +126,6 @@ interface GridStoreActions {
   ) => GridState;
 }
 
-// ユニークIDを生成
-const generateGridId = () => `grid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-// デフォルトのグリッド状態を作成
-export const createDefaultGrid = (
-  centerPos: { x: number; y: number },
-  lines: number,
-  chars: number,
-  ptSize: number,
-  writingMode: WritingMode,
-  textData: string = ''
-): GridState => {
-  const id = generateGridId();
-  return {
-    id,
-    startPos: { x: centerPos.x, y: centerPos.y },
-    centerPos,
-    lines,
-    chars,
-    ptSize,
-    textData,
-    writingMode,
-    isLocked: false,
-  };
-};
-
 const MAX_UNDO_STACK = 20;
 
 export const useGridStore = create<GridStoreState & GridStoreActions>()((set, get) => ({

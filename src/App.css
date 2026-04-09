@@ -68,6 +68,7 @@ html, body, #root {
   --border-light: #555;
   --accent-color: #0078d4;
   --canvas-bg: #1e1e1e;
+  --folder-list-bg: #2c2c2c;
 
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 14px;
@@ -93,6 +94,7 @@ html, body, #root {
   --border-light: #ddd;
   --accent-color: #0078d4;
   --canvas-bg: #ffffff;
+  --folder-list-bg: #eee;
 }
 
 .app {

@@ -2,10 +2,11 @@ mod pdf;
 mod commands;
 
 use commands::{
-    open_file_dialog, get_file_size, check_disk_space, save_pdf, save_pdf_v2, load_file, load_files, read_text_file, list_folder_entries,
-    load_file_metadata, load_files_metadata, load_page_image, print_pdf,
+    get_file_size, check_disk_space, save_pdf, save_pdf_v2, load_file, load_files, read_text_file, list_folder_entries,
+    load_files_metadata, load_page_image, print_pdf,
     get_proofreading_check_base_path, list_proofreading_check_directory, read_proofreading_check_file,
-    open_proofreading_viewer, save_drawing_json, load_drawing_json, list_system_fonts
+    save_drawing_json, load_drawing_json, list_system_fonts,
+    search_json_files_recursive
 };
 
 use tauri::Manager;
@@ -115,7 +116,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             close_splash,
-            open_file_dialog,
             get_file_size,
             check_disk_space,
             save_pdf,
@@ -124,17 +124,16 @@ pub fn run() {
             load_files,
             read_text_file,
             list_folder_entries,
-            load_file_metadata,
             load_files_metadata,
             load_page_image,
             print_pdf,
             get_proofreading_check_base_path,
             list_proofreading_check_directory,
             read_proofreading_check_file,
-            open_proofreading_viewer,
             save_drawing_json,
             load_drawing_json,
-            list_system_fonts
+            list_system_fonts,
+            search_json_files_recursive
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1367,3 +1367,56 @@ MojiQ_Pro_1.0/
 - **文字化け修正**: `最近開いた���ァイル` → `最近開いたファイル`（UTF-8バイト列破損を修復）
 - **×ボタン削除**: 履歴クリアボタン（`&times;`）を削除し、最近開いたファイルセクションを常時表示に変更
   - `src/components/HamburgerMenu/HamburgerMenu.tsx` - `clearRecentFiles`の参照と×ボタンUIを除去
+
+### 2026-04-09（続き2）
+#### 作品仕様読み込み時のリセット動作変更
+- **既存データをリセットして置換**: 作品仕様を読み込み時、文字サイズ・フォント指定を追加ではなくリセットしてから新データに置換
+  - `src/stores/presetStore.ts` - `appendWorkSpec()`を「追加」から「リセット＆置換」方式に変更
+
+#### フォルダブラウザ検索機能（旧MojiQ ver_2.18より移植）
+- **作品仕様を読み込み・校正チェックを読み込みに検索バーを追加**
+  - `src-tauri/src/commands.rs` - `search_json_files_recursive` Tauriコマンド追加
+    - ベースパス配下のJSONファイルを再帰的に収集
+    - ファイル名・相対パスで部分一致検索（大文字小文字無視）
+  - `src/components/RightToolbar/RightToolbar.tsx` - 作品仕様フォルダブラウザに検索バー追加
+    - 300msデバウンスでリアルタイム検索
+    - 一致部分の黄色ハイライト表示、結果件数表示
+    - Escapeキー/×ボタンで検索クリア
+  - `src/components/ProofreadingCheckModal/FolderBrowser.tsx` - 校正チェックフォルダブラウザに同様の検索バー追加
+  - `src/components/RightToolbar/RightToolbar.css` - `.spec-search-*`スタイル追加
+  - `src/components/ProofreadingCheckModal/ProofreadingCheckModal.css` - `.folder-search-*`スタイル追加
+
+#### 校正チェックモーダルUI統一
+- **指示入れモードのフォルダブラウザと見た目を統一**
+  - `src/components/ProofreadingCheckModal/ProofreadingCheckModal.tsx` - インラインスタイル+CSS変数方式に書き換え
+    - 900x680の大型モーダル → 400px幅のコンパクトモーダル
+    - ハードコードされた色 → CSS変数（`var(--bg-primary)`等）で自動ダークモード対応
+  - `src/components/ProofreadingCheckModal/FolderBrowser.tsx` - インラインスタイル+CSS変数方式に書き換え
+    - パンくずナビゲーション → フォルダ名テキスト表示
+    - `<div>`エントリ → `<button>`エントリ（ホバーエフェクト統一）
+    - 検索UIのCSSクラスを`.spec-search-*`に統一
+
+#### フォルダブラウザのファイル一覧背景色
+- **ライトモードで薄いグレー背景**: ファイル一覧エリアに`--folder-list-bg`を適用
+  - `src/App.css` - `--folder-list-bg`変数追加（ライト: `#eee`、ダーク: `#2c2c2c`）
+  - 作品仕様・校正チェック両方のフォルダブラウザに適用
+
+#### デッドコード削除
+- **未使用コンポーネント削除**:
+  - `src/components/SplashScreen/` - 別ウィンドウ方式移行後の残骸
+  - `src/components/RelinkDialog/` - 未完成・未使用
+  - `src/components/ProofreadingCheckModal/DataViewer.tsx` - 旧2パネルモーダルの残骸
+  - `src/components/ProofreadingCheckModal/CategoryGroup.tsx` - DataViewer依存
+  - `src/components/ProofreadingCheckModal/CheckItemRow.tsx` - CategoryGroup依存
+- **未使用ユーティリティ削除**:
+  - `src/utils/imageCompression.ts` - ファイル全体が未使用（どこからもimportなし）
+  - `src/utils/drawingExportImport.ts` - `generateExportFileName()`、`FILE_EXTENSION`定数
+  - `src/utils/memoryUtils.ts` - `getMemoryInfo()`
+  - `src/stores/gridStore.ts` - `createDefaultGrid()`、`generateGridId()`
+- **未使用Tauriコマンド削除**:
+  - `open_file_dialog` - フロントエンドから未呼び出し
+  - `load_file_metadata` - `load_files_metadata`のみ使用
+  - `open_proofreading_viewer` - フロントエンドから未呼び出し
+  - `urlencoding`クレート - 上記コマンド削除で不要に
+- **未使用CSS削除（約600行）**:
+  - `ProofreadingCheckModal.css` - 旧モーダル構造・フォルダブラウザ・データビューア・カテゴリ・テーブルの全CSSを削除、`load-complete-*`のみ残存

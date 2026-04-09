@@ -62,7 +62,6 @@ export interface ExportedObject {
 }
 
 const VERSION = '1.2';
-const FILE_EXTENSION = '.mojiq.json';
 
 /**
  * オブジェクトの座標をスケーリング
@@ -576,11 +575,6 @@ export function parseImportJson(jsonString: string): MojiQExportData {
 /**
  * デフォルトのエクスポートファイル名を生成
  */
-export function generateExportFileName(documentTitle: string): string {
-  const baseName = documentTitle.replace(/\.(pdf|jpg|jpeg|png)$/i, '');
-  return `${baseName}_描画${FILE_EXTENSION}`;
-}
-
 /**
  * PDFパスから描画データJSONのパスを生成
  */
