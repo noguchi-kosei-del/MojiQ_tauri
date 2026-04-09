@@ -1361,3 +1361,9 @@ MojiQ_Pro_1.0/
     - スタンプ配置時のY座標を`y + fontSize / baseScale / 2`に補正
     - `useDisplayScaleStore`からbaseScaleを取得
   - **原因**: テキストは`(x, y)`を左上角（`textBaseline: 'top'`）として描画されるが、済スタンプは`(x, y)`を中心（`ctx.arc`）として描画されるため、テキスト本体と視覚的にずれていた
+
+### 2026-04-09（続き）
+#### ハンバーガーメニュー「最近開いたファイル」修正
+- **文字化け修正**: `最近開いた���ァイル` → `最近開いたファイル`（UTF-8バイト列破損を修復）
+- **×ボタン削除**: 履歴クリアボタン（`&times;`）を削除し、最近開いたファイルセクションを常時表示に変更
+  - `src/components/HamburgerMenu/HamburgerMenu.tsx` - `clearRecentFiles`の参照と×ボタンUIを除去

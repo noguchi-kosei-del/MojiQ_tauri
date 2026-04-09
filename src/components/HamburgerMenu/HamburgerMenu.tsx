@@ -103,7 +103,7 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ isOpen, onToggle }
   const { pages, clearDocument } = useDrawingStore();
   const { tabOrder, closeDocument } = useDocumentStore();
   const { openModal: openSettingsModal } = useSettingsStore();
-  const { recentFiles, clearRecentFiles } = useRecentFilesStore();
+  const { recentFiles } = useRecentFilesStore();
 
   const handleOpenSettings = useCallback(() => {
     onToggle(); // メニューを閉じる
@@ -194,8 +194,7 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ isOpen, onToggle }
         {recentFiles.length > 0 && (
           <div className="recent-files-section">
             <div className="recent-files-header">
-              <span className="recent-files-title">最近開いた���ァイル</span>
-              <button className="recent-files-clear" onClick={clearRecentFiles} title="履歴をクリア">&times;</button>
+              <span className="recent-files-title">最近開いたファイル</span>
             </div>
             <div className="recent-files-list">
               {recentFiles.map((file, i) => (
