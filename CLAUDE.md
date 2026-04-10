@@ -1420,3 +1420,53 @@ MojiQ_Pro_1.0/
   - `urlencoding`クレート - 上記コマンド削除で不要に
 - **未使用CSS削除（約600行）**:
   - `ProofreadingCheckModal.css` - 旧モーダル構造・フォルダブラウザ・データビューア・カテゴリ・テーブルの全CSSを削除、`load-complete-*`のみ残存
+
+### 2026-04-10
+#### 描画データ・コメントデータの分離保存（旧MojiQ準拠）
+- **描画データとコメントテキストを別ファイルに保存**
+  - `src/utils/drawingExportImport.ts` - 3関数追加
+    - `prepareDrawingExportData()` - PDF注釈由来テキストを除外して`_描画.json`用データ準備
+    - `prepareCommentExportData()` - PDF注釈由来テキストのみ抽出して`_コメント.json`用データ準備（`pdfAnnotationSource`プロパティ除去）
+    - `getCommentJsonPath()` - `document.pdf` → `document_コメント.json`のパス生成
+  - `src/components/HeaderBar/HeaderBar.tsx` - 保存時に2ファイル並列書き込み（`Promise.all`）
+  - 保存完了メッセージを旧MojiQ準拠に変更:
+    - 両方保存: 「PDFと描画＋コメントデータの保存が完了しました。」
+    - 描画のみ: 「PDFと描画データの保存が完了しました。」
+- **保存メニューチェックボックス名称変更**: 「描画データを保存」→「描画+コメントを追加保存」
+
+#### ネイティブダイアログ → カスタムモーダル一括置換
+- **Zustand + Promiseベースのグローバルモーダルシステム**
+  - `src/stores/modalStore.ts` - 新規作成
+    - `showAlert(message, options?)` → `Promise<void>` - アラートモーダル（OKボタンのみ）
+    - `showConfirm(message, options?)` → `Promise<boolean>` - 確認モーダル（キャンセル+OKボタン）
+    - 非Reactコード（Zustandストア等）からも`useModalStore.getState().showAlert()`で呼び出し可能
+  - `src/components/CustomModal/CustomModal.tsx` + `.css` - 新規作成
+    - CSS変数ベースのダークモード自動対応
+    - Escキー（alert→OK扱い、confirm→キャンセル扱い）、Enterキー対応
+    - `confirmDanger`オプションでOKボタンを赤色に（削除確認等）
+    - z-index: 20000
+  - `src/App.tsx` - `<CustomModal />`をマウント、6箇所の`message()`/`ask()`を置換
+  - `src/components/HeaderBar/HeaderBar.tsx` - 15箇所置換、`saveResultModal`インラインモーダルJSX削除
+  - `src/components/Canvas/DrawingCanvas.tsx` - 3箇所の`message()`を置換
+  - `src/components/SettingsModal/SettingsModal.tsx` - 1箇所の`ask()`を置換
+  - `src/stores/drawingStore.ts` - `window.alert()`を`useModalStore.getState().showAlert()`に置換
+  - Tauri `message`/`ask` インポートを全ファイルから削除（`open`/`save`のみ残存）
+
+#### PDF保存プログレスバー修正
+- **70%で停止する問題を修正**: PDF生成（Rust側`save_pdf_v2`）中にバーが動かなかった
+  - 進捗配分を見直し: 5-20%(画像読込) → 20-50%(描画レンダリング) → 50-90%(PDF生成) → 90-95%(JSONエクスポート) → 95-100%(後処理)
+  - PDF生成中に`setInterval`で300msごとに1%ずつ50→85%まで擬似進行（Rust側は中間進捗を返せないため）
+  - 完了後にタイマー停止→90%にジャンプ
+
+#### 選択ツールのカーソル変更
+- **四方向矢印カーソル**: 選択ツールのデフォルトカーソルを`default`→`move`に変更
+  - `src/components/Canvas/DrawingCanvas.tsx` - `getCursor()`の`select`ケースを修正
+
+#### 最近開いたファイルの上限変更
+- **上限を10→5に変更**: `src/stores/recentFilesStore.ts` - `MAX_RECENT_FILES`を5に
+
+#### ハンバーガーメニューのリンク更新
+- **「校正記号の入れ方/読み方」を削除**: `MENU_LINKS`から項目を削除
+- **「校正のやり方」リンク更新**: Notion URLを新しいページに変更
+- **リンクジャンプ修正**: `window.open()`→`openUrl()`（`@tauri-apps/plugin-opener`）に置換
+  - TauriのWebViewでは`window.open`で外部URLを開けないため

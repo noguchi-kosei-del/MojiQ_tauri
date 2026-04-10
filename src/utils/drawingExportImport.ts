@@ -433,7 +433,7 @@ export function validateImportData(data: unknown): { valid: boolean; error?: str
 }
 
 /**
- * 描画データをエクスポート形式に変換
+ * 描画データをエクスポート形式に変換（全オブジェクト含む）
  */
 export function prepareExportData(pages: PageState[], checkedState?: CheckedState): MojiQExportData {
   const data: Record<string, ExportedObject[]> = {};
@@ -471,6 +471,88 @@ export function prepareExportData(pages: PageState[], checkedState?: CheckedStat
   }
 
   return exportData;
+}
+
+/**
+ * 描画データをエクスポート形式に変換（PDF注釈由来テキストを除外）
+ * _描画.json用: コメントテキストは別ファイルに保存されるため除外する
+ */
+export function prepareDrawingExportData(pages: PageState[], checkedState?: CheckedState): MojiQExportData {
+  const data: Record<string, ExportedObject[]> = {};
+  const pageSizes: Record<string, { width: number; height: number }> = {};
+
+  for (const page of pages) {
+    const pageNum = String(page.pageNumber);
+    const objects = flattenPageData(page);
+
+    // PDF注釈由来テキストを除外（コメントテキストは_コメント.jsonに保存される）
+    const filtered = objects.filter(obj => !obj.pdfAnnotationSource);
+
+    if (filtered.length > 0) {
+      data[pageNum] = filtered;
+      pageSizes[pageNum] = {
+        width: page.width,
+        height: page.height,
+      };
+    }
+  }
+
+  const exportData: MojiQExportData = {
+    version: VERSION,
+    exportedAt: new Date().toISOString(),
+    pageCount: Object.keys(data).length,
+    pageSizes,
+    data,
+  };
+
+  if (checkedState && (
+    checkedState.checkedComments.length > 0 ||
+    checkedState.checkedCorrectnessItems.length > 0 ||
+    checkedState.checkedProposalItems.length > 0
+  )) {
+    exportData.checkedState = checkedState;
+  }
+
+  return exportData;
+}
+
+/**
+ * コメントテキストをエクスポート形式に変換（PDF注釈由来テキストのみ）
+ * _コメント.json用: PDF注釈由来のテキストオブジェクトのみ抽出
+ * pdfAnnotationSourceプロパティは除去して通常テキストとして保存する
+ */
+export function prepareCommentExportData(pages: PageState[]): MojiQExportData {
+  const data: Record<string, ExportedObject[]> = {};
+  const pageSizes: Record<string, { width: number; height: number }> = {};
+
+  for (const page of pages) {
+    const pageNum = String(page.pageNumber);
+    const objects = flattenPageData(page);
+
+    // PDF注釈由来テキストのみ抽出し、pdfAnnotationSourceを除去
+    const commentObjects = objects
+      .filter(obj => obj.pdfAnnotationSource)
+      .map(obj => {
+        const { pdfAnnotationSource: _, ...rest } = obj;
+        return rest;
+      });
+
+    if (commentObjects.length > 0) {
+      data[pageNum] = commentObjects;
+      pageSizes[pageNum] = {
+        width: page.width,
+        height: page.height,
+      };
+    }
+  }
+
+  return {
+    version: VERSION,
+    exportedAt: new Date().toISOString(),
+    pageCount: Object.keys(data).length,
+    pageSizes,
+    data,
+  };
 }
 
 /**
@@ -580,4 +662,11 @@ export function parseImportJson(jsonString: string): MojiQExportData {
  */
 export function getDrawingJsonPath(pdfPath: string): string {
   return pdfPath.replace(/\.(pdf|jpg|jpeg|png)$/i, '_描画.json');
+}
+
+/**
+ * PDFパスからコメントデータJSONのパスを生成
+ */
+export function getCommentJsonPath(pdfPath: string): string {
+  return pdfPath.replace(/\.(pdf|jpg|jpeg|png)$/i, '_コメント.json');
 }

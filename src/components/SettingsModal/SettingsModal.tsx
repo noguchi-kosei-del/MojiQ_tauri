@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useThemeStore } from '../../stores/themeStore';
-import { ask } from '@tauri-apps/plugin-dialog';
+import { useModalStore } from '../../stores/modalStore';
 import './SettingsModal.css';
 
 // タブの種類
@@ -143,6 +143,7 @@ export const SettingsModal: React.FC = () => {
     setPanelCloseOnSelect,
     checkConflict,
   } = useSettingsStore();
+  const { showConfirm } = useModalStore();
 
   // Escapeキーで閉じる
   useEffect(() => {
@@ -159,14 +160,14 @@ export const SettingsModal: React.FC = () => {
   }, [isModalOpen, keyCaptureTarget, closeModal]);
 
   const handleResetShortcuts = useCallback(async () => {
-    const confirmed = await ask('デフォルトのショートカットに戻します。よろしいですか？', {
+    const confirmed = await showConfirm('デフォルトのショートカットに戻します。よろしいですか？', {
       title: 'ショートカットのリセット',
       kind: 'warning',
     });
     if (confirmed) {
       resetShortcutsToDefault();
     }
-  }, [resetShortcutsToDefault]);
+  }, [showConfirm, resetShortcutsToDefault]);
 
   const handleKeyCapture = useCallback(
     (key: string, modifiers: ('ctrl' | 'shift' | 'alt')[]) => {

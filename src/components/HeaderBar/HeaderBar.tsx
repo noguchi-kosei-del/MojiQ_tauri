@@ -8,16 +8,19 @@ import { useThemeStore } from '../../stores/themeStore';
 import { useZoomStore } from '../../stores/zoomStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useModeStore } from '../../stores/modeStore';
-import { open, save, ask, message } from '@tauri-apps/plugin-dialog';
+import { open, save } from '@tauri-apps/plugin-dialog';
+import { useModalStore } from '../../stores/modalStore';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LoadedDocument } from '../../types';
 import { renderPdfToImages, renderPdfPage } from '../../utils/pdfRenderer';
 import { renderPageDrawingsToCanvas, hasDrawings, preloadDrawingFonts } from '../../utils/drawingRenderer';
 import {
-  prepareExportData,
+  prepareDrawingExportData,
+  prepareCommentExportData,
   exportDataToJson,
   getDrawingJsonPath,
+  getCommentJsonPath,
   parseImportJson,
   scaleImportData,
   applyImportDataToPages,
@@ -244,6 +247,7 @@ export const HeaderBar: React.FC = () => {
     setBindingDirection,
   } = useSpreadViewStore();
   const { isActive: isViewerMode, enter: enterViewerMode, exit: exitViewerMode } = useViewerModeStore();
+  const { showAlert, showConfirm } = useModalStore();
   const { theme, setTheme } = useThemeStore();
   const { zoom, setZoom, minZoom, maxZoom, zoomToFit } = useZoomStore();
   const { getExportDrawingWithPdf, setExportDrawingWithPdf } = useSettingsStore();
@@ -254,7 +258,6 @@ export const HeaderBar: React.FC = () => {
   const [isSpreadMenuOpen, setIsSpreadMenuOpen] = useState(false);
   const [isSaveMenuOpen, setIsSaveMenuOpen] = useState(false);
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
-  const [saveResultModal, setSaveResultModal] = useState<{ message: string; isError: boolean } | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const spreadMenuRef = useRef<HTMLDivElement>(null);
   const spreadButtonRef = useRef<HTMLButtonElement>(null);
@@ -404,7 +407,7 @@ export const HeaderBar: React.FC = () => {
           const existingDocId = findExistingDocumentByPath(filePath);
           let loadIntoExistingDoc = false;
           if (existingDocId) {
-            const confirmed = await ask(
+            const confirmed = await showConfirm(
               '同一のファイル名ですが読み込みますか？（描画はリセットされます）',
               { title: '確認', kind: 'warning' }
             );
@@ -428,7 +431,7 @@ export const HeaderBar: React.FC = () => {
           } catch (e) {
             console.error('[HeaderBar openFile] Failed to load file:', e);
             setLoading(false);
-            await message(String(e), { title: 'エラー', kind: 'error' });
+            await showAlert(String(e), { title: 'エラー', kind: 'error' });
             return;
           }
 
@@ -496,7 +499,7 @@ export const HeaderBar: React.FC = () => {
           const existingDocId = findExistingDocumentByPath(sortedPaths[0]);
           let loadIntoExistingDoc = false;
           if (existingDocId) {
-            const confirmed = await ask(
+            const confirmed = await showConfirm(
               '同一のファイル名ですが読み込みますか？（描画はリセットされます）',
               { title: '確認', kind: 'warning' }
             );
@@ -573,7 +576,7 @@ export const HeaderBar: React.FC = () => {
           const existingDocId = findExistingDocumentByPath(filePath);
           let loadIntoExistingDoc = false;
           if (existingDocId) {
-            const confirmed = await ask(
+            const confirmed = await showConfirm(
               '同一のファイル名ですが読み込みますか？（描画はリセットされます）',
               { title: '確認', kind: 'warning' }
             );
@@ -596,7 +599,7 @@ export const HeaderBar: React.FC = () => {
           } catch (e) {
             console.error('[HeaderBar loadIntoActive] Failed to load file:', e);
             setLoading(false);
-            await message(String(e), { title: 'エラー', kind: 'error' });
+            await showAlert(String(e), { title: 'エラー', kind: 'error' });
             return;
           }
 
@@ -703,15 +706,27 @@ export const HeaderBar: React.FC = () => {
     }
   };
 
-  // PDF保存の共通処理
-  const savePdfToPath = async (savePath: string) => {
+  // 保存結果メッセージを構築（旧MojiQ準拠）
+  const buildSaveMessage = (base: string, result: { drawingExported: boolean; commentExported: boolean }): string => {
+    if (result.drawingExported && result.commentExported) {
+      return 'PDFと描画＋コメントデータの保存が完了しました。';
+    } else if (result.drawingExported) {
+      return 'PDFと描画データの保存が完了しました。';
+    } else if (result.commentExported) {
+      return 'PDFとコメントデータの保存が完了しました。';
+    }
+    return base;
+  };
+
+  // PDF保存の共通処理（戻り値: 描画/コメントエクスポートの成否）
+  const savePdfToPath = async (savePath: string): Promise<{ drawingExported: boolean; commentExported: boolean }> => {
     // ファイルロック: 保存中の競合防止
     const { pages: pagesForLock } = useDrawingStore.getState();
     const totalObjects = pagesForLock.reduce((sum, page) =>
       sum + page.layers.reduce((s, l) => s + l.strokes.length + l.shapes.length + l.texts.length + l.images.length, 0), 0);
     if (!acquireSaveLock(pagesForLock.length, totalObjects)) {
-      setSaveResultModal({ message: '現在保存処理中です。完了までお待ちください。', isError: false });
-      return;
+      showAlert('現在保存処理中です。完了までお待ちください。');
+      return { drawingExported: false, commentExported: false };
     }
 
     try {
@@ -732,11 +747,11 @@ export const HeaderBar: React.FC = () => {
           const freeMB = Math.floor(diskResult.free_space / (1024 * 1024));
           const requiredMB = Math.ceil(estimatedBytes * 1.5 / (1024 * 1024));
           releaseSaveLock();
-          await message(
+          await showAlert(
             `ディスクの空き容量が不足しています。\n空き容量: ${freeMB} MB / 必要容量（目安）: ${requiredMB} MB\n不要なファイルを削除してから再度お試しください。`,
             { title: 'ディスク容量不足', kind: 'error' }
           );
-          return;
+          return { drawingExported: false, commentExported: false };
         }
       } catch (diskError) {
         // ディスク容量チェック失敗時はスキップして保存を続行
@@ -744,12 +759,12 @@ export const HeaderBar: React.FC = () => {
       }
 
       setLoading(true, 'PDFを保存中...');
-      setProgress(10);
+      setProgress(5);
 
       const { pages, getPageImageAsync } = useDrawingStore.getState();
       const totalPages = pages.length;
 
-      // 1. 背景画像を読み込む
+      // 1. 背景画像を読み込む (5-20%)
       const backgroundImages: string[] = [];
       for (let i = 0; i < totalPages; i++) {
         const page = pages[i];
@@ -768,10 +783,10 @@ export const HeaderBar: React.FC = () => {
         backgroundImages.push(imageData);
 
         // 進捗更新
-        setProgress(10 + Math.floor((i / totalPages) * 20));
+        setProgress(5 + Math.floor(((i + 1) / totalPages) * 15));
       }
 
-      // 2. 描画データをPNGオーバーレイとしてレンダリング
+      // 2. 描画データをPNGオーバーレイとしてレンダリング (20-50%)
       setLoading(true, '描画データをレンダリング中...');
 
       // カスタムフォントを事前にプリロード（1回だけ）
@@ -808,38 +823,72 @@ export const HeaderBar: React.FC = () => {
         });
 
         // 進捗更新
-        setProgress(30 + Math.floor((i / totalPages) * 40));
+        setProgress(20 + Math.floor(((i + 1) / totalPages) * 30));
       }
 
-      // 3. PDFを生成
+      // 3. PDFを生成 (50-90%)
       setLoading(true, 'PDFを生成中...');
-      setProgress(70);
+      setProgress(50);
 
-      await invoke('save_pdf_v2', {
-        savePath,
-        request: {
-          pages: pageDrawingsV2,
-          background_images: backgroundImages,
-        },
-      });
+      // PDF生成中にプログレスバーを段階的に進める（Rust側は中間進捗を返せないため）
+      let progressTimer: ReturnType<typeof setInterval> | null = null;
+      let currentProgress = 50;
+      progressTimer = setInterval(() => {
+        // 50→85%まで徐々に進める（実際の完了を待つ）
+        if (currentProgress < 85) {
+          currentProgress += 1;
+          setProgress(currentProgress);
+        }
+      }, 300);
 
-      // 4. 描画データJSONを自動エクスポート（設定が有効な場合）
+      try {
+        await invoke('save_pdf_v2', {
+          savePath,
+          request: {
+            pages: pageDrawingsV2,
+            background_images: backgroundImages,
+          },
+        });
+      } finally {
+        if (progressTimer) clearInterval(progressTimer);
+      }
+
+      setProgress(90);
+
+      // 4. 描画データ・コメントデータJSONを自動エクスポート（設定が有効な場合） (90-95%)
       const exportWithPdf = useSettingsStore.getState().getExportDrawingWithPdf();
+      let drawingExportSuccess = false;
+      let commentExportSuccess = false;
       if (exportWithPdf) {
         try {
-          // チェック済み状態もエクスポートに含める
+          // 1回のループで描画・コメントデータを分離して準備
           const checkedState = useProofreadingCheckStore.getState().getCheckedState();
-          const exportData = prepareExportData(pages, checkedState);
-          if (exportData.pageCount > 0) {
-            const jsonString = exportDataToJson(exportData);
-            const jsonPath = getDrawingJsonPath(savePath);
-            await invoke('save_drawing_json', { path: jsonPath, data: jsonString });
+          const drawingData = prepareDrawingExportData(pages, checkedState);
+          const commentData = prepareCommentExportData(pages);
+
+          // 並列にファイル書き込み
+          const writePromises: Promise<void>[] = [];
+
+          if (drawingData.pageCount > 0) {
+            writePromises.push(
+              invoke('save_drawing_json', { path: getDrawingJsonPath(savePath), data: exportDataToJson(drawingData) })
+                .then(() => { drawingExportSuccess = true; })
+            );
           }
+          if (commentData.pageCount > 0) {
+            writePromises.push(
+              invoke('save_drawing_json', { path: getCommentJsonPath(savePath), data: exportDataToJson(commentData) })
+                .then(() => { commentExportSuccess = true; })
+            );
+          }
+
+          await Promise.all(writePromises);
         } catch (error) {
-          console.error('Failed to auto-export drawing data:', error);
-          // 描画データのエクスポート失敗はPDF保存の失敗とはみなさない
+          console.error('Failed to auto-export drawing/comment data:', error);
         }
       }
+
+      setProgress(95);
 
       // PDF注釈由来テキストを非表示状態にしてUIボタンにも反映
       // （元PDFに既にテキストがあるため、保存後は非表示のままにする）
@@ -855,6 +904,7 @@ export const HeaderBar: React.FC = () => {
       setHasSavedOnce(true);
 
       setProgress(100);
+      return { drawingExported: drawingExportSuccess, commentExported: commentExportSuccess };
     } catch (error) {
       console.error('Failed to save PDF:', error);
       // エラーを再スローして呼び出し元に通知
@@ -877,12 +927,13 @@ export const HeaderBar: React.FC = () => {
     }
 
     try {
-      await savePdfToPath(activeDoc.filePath);
-      setSaveResultModal({ message: '上書き保存しました', isError: false });
+      const result = await savePdfToPath(activeDoc.filePath);
+      const msg = buildSaveMessage('上書き保存しました', result);
+      showAlert(msg, { title: '保存完了' });
     } catch (error) {
       console.error('Failed to overwrite save PDF:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      setSaveResultModal({ message: 'PDF保存に失敗しました: ' + errorMessage, isError: true });
+      showAlert('PDF保存に失敗しました: ' + errorMessage, { title: 'エラー', kind: 'error' });
     }
   };
 
@@ -904,13 +955,14 @@ export const HeaderBar: React.FC = () => {
       });
 
       if (savePath) {
-        await savePdfToPath(savePath);
-        setSaveResultModal({ message: 'PDFを保存しました', isError: false });
+        const result = await savePdfToPath(savePath);
+        const msg = buildSaveMessage('PDFを保存しました', result);
+        showAlert(msg, { title: '保存完了' });
       }
     } catch (error) {
       console.error('Failed to save PDF:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      setSaveResultModal({ message: 'PDF保存に失敗しました: ' + errorMessage, isError: true });
+      showAlert('PDF保存に失敗しました: ' + errorMessage, { title: 'エラー', kind: 'error' });
     }
   };
 
@@ -970,22 +1022,24 @@ export const HeaderBar: React.FC = () => {
             defaultPath: `${defaultFileName}.pdf`,
           });
           if (savePath) {
-            await savePdfToPath(savePath);
-            setSaveResultModal({ message: 'PDFを保存しました', isError: false });
+            const result = await savePdfToPath(savePath);
+            const msg = buildSaveMessage('PDFを保存しました', result);
+            showAlert(msg, { title: '保存完了' });
           }
         } catch (error) {
           console.error('Failed to save PDF:', error);
           const errorMessage = error instanceof Error ? error.message : String(error);
-          setSaveResultModal({ message: 'PDF保存に失敗しました: ' + errorMessage, isError: true });
+          showAlert('PDF保存に失敗しました: ' + errorMessage, { title: 'エラー', kind: 'error' });
         }
       } else {
         try {
-          await savePdfToPath(savedPathRef.current);
-          setSaveResultModal({ message: '上書き保存しました', isError: false });
+          const result = await savePdfToPath(savedPathRef.current);
+          const msg = buildSaveMessage('上書き保存しました', result);
+          showAlert(msg, { title: '保存完了' });
         } catch (error) {
           console.error('Failed to overwrite save PDF:', error);
           const errorMessage = error instanceof Error ? error.message : String(error);
-          setSaveResultModal({ message: 'PDF保存に失敗しました: ' + errorMessage, isError: true });
+          showAlert('PDF保存に失敗しました: ' + errorMessage, { title: 'エラー', kind: 'error' });
         }
       }
     };
@@ -1086,7 +1140,7 @@ export const HeaderBar: React.FC = () => {
         setProgress(100);
       } catch (error) {
         console.error('[HeaderBar] Failed to open recent file:', error);
-        await message(String(error), { title: 'エラー', kind: 'error' });
+        await showAlert(String(error), { title: 'エラー', kind: 'error' });
       } finally {
         setLoading(false);
       }
@@ -1144,7 +1198,7 @@ export const HeaderBar: React.FC = () => {
 
     // 見開きモードでない場合は確認ダイアログを表示
     const directionName = direction === 'right' ? '右綴じ' : '左綴じ';
-    const confirmed = await ask(
+    const confirmed = await showConfirm(
       `${directionName}に変更します。\n※単ページには戻せませんがよろしいですか？`,
       {
         title: '見開き表示',
@@ -1165,13 +1219,14 @@ export const HeaderBar: React.FC = () => {
   const handleDeleteCurrentPage = async () => {
     if (pages.length <= 1) return;
 
-    const confirmed = await ask(
+    const confirmed = await showConfirm(
       `現在のページ（${currentPage + 1}ページ目）を削除しますか？\nこの操作は元に戻せません。`,
       {
         title: 'ページ削除',
         kind: 'warning',
         okLabel: '削除',
         cancelLabel: 'キャンセル',
+        confirmDanger: true,
       }
     );
 
@@ -1256,7 +1311,7 @@ export const HeaderBar: React.FC = () => {
       setProgress(100);
     } catch (error) {
       console.error('Failed to print:', error);
-      await message('印刷に失敗しました: ' + error, { title: 'エラー', kind: 'error' });
+      await showAlert('印刷に失敗しました: ' + error, { title: 'エラー', kind: 'error' });
     } finally {
       setLoading(false);
     }
@@ -1325,7 +1380,7 @@ export const HeaderBar: React.FC = () => {
   // 描画データ読み込み
   const handleImportDrawingData = async () => {
     if (pages.length === 0) {
-      await message('先にPDFまたは画像を読み込んでください', { title: 'エラー', kind: 'error' });
+      await showAlert('先にPDFまたは画像を読み込んでください', { title: 'エラー', kind: 'error' });
       return;
     }
 
@@ -1352,13 +1407,13 @@ export const HeaderBar: React.FC = () => {
       const importData = parseImportJson(jsonData);
       if (!importData) {
         setLoading(false);
-        await message('描画データの形式が不正です', { title: 'エラー', kind: 'error' });
+        await showAlert('描画データの形式が不正です', { title: 'エラー', kind: 'error' });
         return;
       }
 
       // ページ数チェック
       if (importData.pageCount !== pages.length) {
-        const confirmed = await ask(
+        const confirmed = await showConfirm(
           `描画データのページ数（${importData.pageCount}ページ）と現在のドキュメント（${pages.length}ページ）が一致しません。\n\n続行すると、対応するページにのみ描画が適用されます。続行しますか？`,
           {
             title: '確認',
@@ -1389,11 +1444,11 @@ export const HeaderBar: React.FC = () => {
 
       setProgress(100);
       setLoading(false);
-      await message('描画データを読み込みました', { title: '完了', kind: 'info' });
+      await showAlert('描画データを読み込みました', { title: '完了' });
     } catch (error) {
       console.error('Failed to import drawing data:', error);
       setLoading(false);
-      await message('描画データの読み込みに失敗しました: ' + error, { title: 'エラー', kind: 'error' });
+      await showAlert('描画データの読み込みに失敗しました: ' + error, { title: 'エラー', kind: 'error' });
     }
   };
 
@@ -1515,7 +1570,7 @@ export const HeaderBar: React.FC = () => {
                       }}
                       onClick={(e) => e.stopPropagation()}
                     />
-                    <label htmlFor="export-drawing-checkbox">描画データを保存</label>
+                    <label htmlFor="export-drawing-checkbox">描画+コメントを追加保存</label>
                   </div>
                 </div>
               );
@@ -1623,25 +1678,6 @@ export const HeaderBar: React.FC = () => {
         </div>
       </div>
       <HamburgerMenu isOpen={isMenuOpen} onToggle={toggleMenu} />
-
-      {/* 保存結果モーダル */}
-      {saveResultModal && (
-        <div className="clear-confirm-overlay" onClick={() => setSaveResultModal(null)}>
-          <div className="clear-confirm-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="clear-confirm-header">
-              <span className="clear-confirm-title">{saveResultModal.isError ? 'エラー' : '保存完了'}</span>
-            </div>
-            <div className="clear-confirm-body">
-              <p>{saveResultModal.message}</p>
-            </div>
-            <div className="clear-confirm-actions">
-              <button className="clear-confirm-btn cancel" onClick={() => setSaveResultModal(null)}>
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 全消去確認モーダル */}
       {isClearConfirmOpen && (

@@ -5,6 +5,7 @@ import { useDrawingStore } from '../../stores/drawingStore';
 import { useDocumentStore } from '../../stores/documentStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useRecentFilesStore } from '../../stores/recentFilesStore';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import './HamburgerMenu.css';
 
 // SVG Icons
@@ -77,11 +78,7 @@ const SettingsIcon = () => (
 const MENU_LINKS = [
   {
     label: '校正のやり方',
-    url: 'https://hyper-coast-743.notion.site/2aa34ea373ba80cbbbf3d5e5ab94f893',
-  },
-  {
-    label: '校正記号の入れ方/読み方',
-    url: 'https://hyper-coast-743.notion.site/2e734ea373ba8009a6b3efbf43c9e1e0',
+    url: 'https://www.notion.so/32f34ea373ba8039ae1cdd1565f978e6?source=copy_link',
   },
 ];
 
@@ -126,7 +123,7 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({ isOpen, onToggle }
   }, [onToggle]);
 
   const handleLinkClick = useCallback((url: string) => {
-    window.open(url, '_blank');
+    openUrl(url);
   }, []);
 
   const [isGoHomeConfirmOpen, setIsGoHomeConfirmOpen] = useState(false);

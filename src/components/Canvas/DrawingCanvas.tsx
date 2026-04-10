@@ -11,7 +11,8 @@ import { useDisplayScaleStore } from '../../stores/displayScaleStore';
 import { useGridStore } from '../../stores/gridStore';
 import { useCalibrationStore, MM_PER_PT } from '../../stores/calibrationStore';
 import { AnnotationModal } from '../AnnotationModal';
-import { open, message } from '@tauri-apps/plugin-dialog';
+import { open } from '@tauri-apps/plugin-dialog';
+import { useModalStore } from '../../stores/modalStore';
 import { invoke } from '@tauri-apps/api/core';
 import { LoadedDocument } from '../../types';
 import { renderPdfToImages, extractPdfTextContent } from '../../utils/pdfRenderer';
@@ -96,6 +97,7 @@ export const DrawingCanvas: React.FC = () => {
     deleteSelectedStrokes, bringToFront, sendToBack,
   } = useDrawingStore();
   const { loadIntoActiveDocument, createNewDocument } = useDocumentStore();
+  const { showAlert } = useModalStore();
   const { setLoading, setProgress } = useLoadingStore();
   const { zoom, setZoom, minZoom, maxZoom, zoomStep } = useZoomStore();
   const { isActive: isViewerMode } = useViewerModeStore();
@@ -297,7 +299,7 @@ export const DrawingCanvas: React.FC = () => {
     } catch (e) {
       console.error('Failed to open file:', e);
       setLoading(false);
-      message(`ファイルを開けませんでした: ${e}`, { title: 'エラー', kind: 'error' });
+      showAlert(`ファイルを開けませんでした: ${e}`, { title: 'エラー', kind: 'error' });
     }
   }, [setLoading, setProgress, loadIntoActiveDocument, createNewDocument]);
 
@@ -558,7 +560,7 @@ export const DrawingCanvas: React.FC = () => {
     // Check supported file types
     const isImage = fileType.startsWith('image/');
     if (!isImage) {
-      await message('対応形式: JPEG, PNG, GIF, WebP', { title: '非対応形式', kind: 'warning' });
+      await showAlert('対応形式: JPEG, PNG, GIF, WebP', { title: '非対応形式', kind: 'warning' });
       cancelImageInput();
       e.target.value = '';
       return;
@@ -570,7 +572,7 @@ export const DrawingCanvas: React.FC = () => {
       placeImageAtCenter();
     } catch (error) {
       console.error('ファイル読み込みエラー:', error);
-      await message('ファイルの読み込みに失敗しました', { title: 'エラー', kind: 'error' });
+      await showAlert('ファイルの読み込みに失敗しました', { title: 'エラー', kind: 'error' });
       cancelImageInput();
     }
 
@@ -829,7 +831,7 @@ export const DrawingCanvas: React.FC = () => {
         // ホバー時のカーソル変更
         if (hoverAnnotationType === 'text') return 'move';
         if (hoverAnnotationType === 'leaderEnd') return 'crosshair';
-        return 'default';
+        return 'move';
       case 'eraser':
         return 'crosshair';
       case 'rect':

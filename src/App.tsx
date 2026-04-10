@@ -2,7 +2,8 @@ import { useEffect, useCallback, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { setTheme as setTauriTheme } from '@tauri-apps/api/app';
-import { ask, message } from '@tauri-apps/plugin-dialog';
+import { useModalStore } from './stores/modalStore';
+import { CustomModal } from './components/CustomModal/CustomModal';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 import { CloseConfirmDialog, CloseConfirmResult } from './components/CloseConfirmDialog';
@@ -57,6 +58,7 @@ function App() {
     createNewDocument,
   } = useDocumentStore();
   const { setLoading, setProgress } = useLoadingStore();
+  const { showAlert, showConfirm } = useModalStore();
   const { zoom, resetZoom, setZoom } = useZoomStore();
   const { theme, setTheme } = useThemeStore();
   const { isActive: isViewerMode, enter: enterViewerMode, exit: exitViewerMode } = useViewerModeStore();
@@ -183,7 +185,7 @@ function App() {
             } catch (e) {
               console.error('[App drop 1] Failed to load file:', e);
               setLoading(false);
-              await message(String(e), { title: 'エラー', kind: 'error' });
+              await showAlert(String(e), { title: 'エラー', kind: 'error' });
               return;
             }
 
@@ -196,12 +198,12 @@ function App() {
               // ページ数チェック
               const pageValidation = checkPageCount(pdfResult.pages.length);
               if (!pageValidation.valid && pageValidation.error) {
-                await ask(pageValidation.error, { title: 'エラー', kind: 'error' });
+                await showAlert(pageValidation.error, { title: 'エラー', kind: 'error' });
                 setLoading(false);
                 return;
               }
               if (pageValidation.warning) {
-                const confirmed = await ask(pageValidation.warning, {
+                const confirmed = await showConfirm(pageValidation.warning, {
                   title: '確認',
                   kind: 'warning',
                 });
@@ -328,7 +330,7 @@ function App() {
             } catch (e) {
               console.error('[App drop 2] Failed to load file:', e);
               setLoading(false);
-              await message(String(e), { title: 'エラー', kind: 'error' });
+              await showAlert(String(e), { title: 'エラー', kind: 'error' });
               return;
             }
 
@@ -341,12 +343,12 @@ function App() {
               // ページ数チェック
               const pageValidation = checkPageCount(pdfResult.pages.length);
               if (!pageValidation.valid && pageValidation.error) {
-                await ask(pageValidation.error, { title: 'エラー', kind: 'error' });
+                await showAlert(pageValidation.error, { title: 'エラー', kind: 'error' });
                 setLoading(false);
                 return;
               }
               if (pageValidation.warning) {
-                const confirmed = await ask(pageValidation.warning, {
+                const confirmed = await showConfirm(pageValidation.warning, {
                   title: '確認',
                   kind: 'warning',
                 });
@@ -1132,6 +1134,7 @@ function App() {
   return (
     <div className={`app ${isViewerMode ? 'viewer-mode' : ''} ${isFlipped ? 'workspace-flipped' : ''} ${mode === 'proofreading' ? 'proofreading-mode' : ''} ${mode === 'proofreading' && isProofreadingPanelCollapsed ? 'proofreading-panel-collapsed' : ''} ${modeTransition}`}>
       <LoadingOverlay />
+      <CustomModal />
       <ViewerModeOverlay onExit={handleExitViewerMode} />
       <HeaderBar />
       <TabBar

@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 
 const STORAGE_KEY = 'mojiq_recent_files';
-const MAX_RECENT_FILES = 10;
+const MAX_RECENT_FILES = 5;
 
 export interface RecentFile {
   path: string;

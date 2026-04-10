@@ -6,6 +6,7 @@ import { useDisplayScaleStore } from './displayScaleStore';
 import { useGridStore } from './gridStore';
 import { useSettingsStore } from './settingsStore';
 import { OBJECT_LIMITS } from '../constants/loadingLimits';
+import { useModalStore } from './modalStore';
 import { formatFontFamily } from '../utils/fontService';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
@@ -38,9 +39,10 @@ const countPageObjects = (pageState: PageState): number => {
 const isPageObjectLimitReached = (pageState: PageState): boolean => {
   const count = countPageObjects(pageState);
   if (count >= OBJECT_LIMITS.MAX_PER_PAGE) {
-    setTimeout(() => {
-      alert(`このページの描画オブジェクト数が上限(${OBJECT_LIMITS.MAX_PER_PAGE})に達しました。\n新しいオブジェクトを追加するには、不要なオブジェクトを削除してください。`);
-    }, 0);
+    useModalStore.getState().showAlert(
+      `このページの描画オブジェクト数が上限(${OBJECT_LIMITS.MAX_PER_PAGE})に達しました。\n新しいオブジェクトを追加するには、不要なオブジェクトを削除してください。`,
+      { title: '上限到達', kind: 'warning' }
+    );
     return true;
   }
   return false;
