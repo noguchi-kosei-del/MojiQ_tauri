@@ -93,6 +93,17 @@ pub struct PageDrawingsV2 {
 pub struct SaveRequestV2 {
     pub pages: Vec<PageDrawingsV2>,
     pub background_images: Vec<String>,
+    /// PDF `/Subject` フィールドに書き込む MojiQ メタデータ文字列。
+    /// 旧 MojiQ 互換: `MojiQ:commentTextHidden=true;MojiQText:<Base64>;MojiQChecked:<Base64>`
+    #[serde(default)]
+    pub mojiq_subject: Option<String>,
+    /// 圧縮保存モード。true の場合は JPEG (DCTDecode) で画像を埋め込み、
+    /// 指定サイズ以下になるまで品質を段階的に下げる。
+    #[serde(default)]
+    pub compress_mode: Option<bool>,
+    /// 圧縮時の目標ファイルサイズ (バイト)。None なら 25MB。
+    #[serde(default)]
+    pub compress_target_bytes: Option<u64>,
 }
 
 /// ファイルサイズを取得する（読み込み前のサイズチェック用）
@@ -102,20 +113,9 @@ pub async fn get_file_size(path: String) -> Result<u64, String> {
     Ok(metadata.len())
 }
 
-/// ファイルサイズ上限（300MB）
-const MAX_FILE_SIZE: u64 = 300 * 1024 * 1024;
-
 #[tauri::command]
 pub async fn load_file(path: String) -> Result<LoadedDocument, String> {
     let path_buf = PathBuf::from(&path);
-
-    // ファイルサイズチェック（300MB以上はブロック）
-    let metadata = fs::metadata(&path).map_err(|e| e.to_string())?;
-    let file_size = metadata.len();
-    if file_size >= MAX_FILE_SIZE {
-        let size_mb = file_size / (1024 * 1024);
-        return Err(format!("ファイルサイズが大きすぎるので読み込めません（{}MB / 上限300MB）", size_mb));
-    }
 
     let extension = path_buf
         .extension()
@@ -189,21 +189,6 @@ pub async fn load_file(path: String) -> Result<LoadedDocument, String> {
 pub async fn load_files(paths: Vec<String>) -> Result<LoadedDocument, String> {
     if paths.is_empty() {
         return Err("No files provided".to_string());
-    }
-
-    // 各ファイルのサイズチェック（300MB以上はブロック）
-    for path in &paths {
-        let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
-        let file_size = metadata.len();
-        if file_size >= MAX_FILE_SIZE {
-            let size_mb = file_size / (1024 * 1024);
-            let file_name = PathBuf::from(path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("unknown")
-                .to_string();
-            return Err(format!("ファイルサイズが大きすぎるので読み込めません: {} ({}MB / 上限300MB)", file_name, size_mb));
-        }
     }
 
     // 最初のファイル情報を保存

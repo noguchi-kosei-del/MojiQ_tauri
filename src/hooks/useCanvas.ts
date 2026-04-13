@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import { Point, Stroke, Shape, ShapeType, SelectionBounds, Annotation, TextElement, ImageElement, StampType } from '../types';
+import { Point, Stroke, Shape, ShapeType, SelectionBounds, Annotation, TextElement, ImageElement, StampType, ToolType } from '../types';
 import { useDrawingStore } from '../stores/drawingStore';
 import { usePresetStore } from '../stores/presetStore';
 import { useCommentVisibilityStore } from '../stores/commentVisibilityStore';
@@ -8,8 +8,16 @@ import { useCalibrationStore, MM_PER_PT } from '../stores/calibrationStore';
 import { useGridStore } from '../stores/gridStore';
 import { useDisplayScaleStore } from '../stores/displayScaleStore';
 import { getVisibleViewport, isStrokeVisible, isShapeVisible, isTextVisible, isImageVisible, ViewportRect } from '../utils/viewportCulling';
-import { STROKE_LIMITS } from '../constants/loadingLimits';
 import { formatFontFamily } from '../utils/fontService';
+import { createToolContext, type ToolContext } from './canvas/toolContext';
+import { toolRegistry } from './canvas/toolRegistry';
+import { noopTool } from './canvas/tools/noopTool';
+import { calibrationTool } from './canvas/tools/calibrationTool';
+import { gridTool } from './canvas/tools/gridTool';
+import { strokeTool } from './canvas/tools/strokeTool';
+import { shapeTool } from './canvas/tools/shapeTool';
+import { stampTool } from './canvas/tools/stampTool';
+import { IDLE, type InteractionState, type InteractionKind } from './canvas/interactionState';
 
 // アノテーションモード: 0=通常, 1=図形描画中, 2=引出線描画中
 type AnnotationState = 0 | 1 | 2;
@@ -123,16 +131,41 @@ export const useCanvas = () => {
   const gridDrawEndRef = useRef<Point | null>(null);
 
   // グリッド移動用
-  const [isDraggingGrid, setIsDraggingGrid] = useState(false);
+  const [, setIsDraggingGrid] = useState(false);
   const gridDragStartRef = useRef<{ gridStartPos: Point; mousePos: Point } | null>(null);
+
+  // ===== 新アーキテクチャ: InteractionState + ToolContext + Dispatcher =====
+  // 旧 20+ 個の boolean フラグを段階的に InteractionState discriminated union に置き換える。
+  // Phase 1 では新旧共存で、抽出済みツールだけが新アーキを使う。
+  const interactionStateRef = useRef<InteractionState>(IDLE);
+  const [, setInteractionKind] = useState<InteractionKind>('idle');
+
+  // 最新参照の latch: useCallback のクロージャが古くてもハンドラから現在の関数を参照できるようにする。
+  // ToolContext は一度だけ生成し、内部でこの ref を読むことで stale closure を構造的に排除する。
+  const redrawCanvasLatestRef = useRef<() => void>(() => {});
+  const getPointerPositionLatestRef = useRef<(e: PointerEvent) => Point>(() => ({
+    x: 0,
+    y: 0,
+    pressure: 0.5,
+  }));
+  const snapLineEndpointLatestRef = useRef<(start: Point, end: Point) => Point>(
+    (_s, e) => e,
+  );
+  const getLeaderStartPosLatestRef = useRef<
+    (shapeType: string, startPos: Point, endPos: Point, targetPos: Point) => Point
+  >((_t, s) => s);
+
+  // ツール切替 reset 用: 前フレームのツールを覚えておく
+  const previousToolRef = useRef<ToolType | null>(null);
+
+  // ToolContext は 1 度だけ生成。以降変更しない (stale closure 対策)
+  const toolContextRef = useRef<ToolContext | null>(null);
 
   const {
     tool,
     color,
     strokeWidth,
-    addStroke,
     addShape,
-    eraseAt,
     currentPage,
     pages,
     selectedStrokeIds,
@@ -1688,26 +1721,7 @@ export const useCanvas = () => {
     ctx.restore();
   }, []);
 
-  // グリッド内部かどうかを判定
-  const isPointInsideGrid = useCallback((
-    point: Point,
-    grid: { startPos: { x: number; y: number }; lines: number; chars: number; ptSize: number; writingMode: 'horizontal' | 'vertical' },
-    pixelsPerMm: number
-  ): boolean => {
-    const cellSize = grid.ptSize * MM_PER_PT * pixelsPerMm;
-    const isHorizontal = grid.writingMode === 'horizontal';
-    const cols = isHorizontal ? grid.chars : grid.lines;
-    const rows = isHorizontal ? grid.lines : grid.chars;
-    const width = cols * cellSize;
-    const height = rows * cellSize;
-
-    return (
-      point.x >= grid.startPos.x &&
-      point.x <= grid.startPos.x + width &&
-      point.y >= grid.startPos.y &&
-      point.y <= grid.startPos.y + height
-    );
-  }, []);
+  // NOTE: isPointInsideGrid は gridTool (canvas/tools/gridTool.ts) に移動した。
 
   const redrawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -1731,10 +1745,14 @@ export const useCanvas = () => {
       viewport = getVisibleViewport(scrollAreaRef.current, displayScale);
     }
 
+    // ストアから最新状態を直接取得（useCallbackのクロージャが古い`pages`を参照する
+    // ことによるアノテーション移動のスナップバック不具合対策。旧MojiQ v2.1.9相当）
     const state = useDrawingStore.getState();
+    const freshPageState = state.pages[state.currentPage];
+    const visibleLayers = freshPageState ? freshPageState.layers.filter((l) => l.visible) : [];
 
     // Draw strokes
-    const strokes = getAllStrokes();
+    const strokes = visibleLayers.flatMap((l) => l.strokes);
     strokes.forEach((stroke) => {
       const isSelected = selectedStrokeIds.includes(stroke.id);
       if (!isSelected && viewport && !isStrokeVisible(stroke, viewport)) return;
@@ -1742,7 +1760,7 @@ export const useCanvas = () => {
     });
 
     // Draw shapes
-    const shapes = getAllShapes();
+    const shapes = visibleLayers.flatMap((l) => l.shapes);
     shapes.forEach((shape) => {
       const isSelected = state.selectedShapeIds.includes(shape.id);
       if (!isSelected && viewport && !isShapeVisible(shape, viewport)) return;
@@ -1750,7 +1768,8 @@ export const useCanvas = () => {
     });
 
     // Draw texts
-    const texts = getAllTexts();
+    const allTexts = visibleLayers.flatMap((l) => l.texts);
+    const texts = isCommentHidden ? allTexts.filter((t) => !t.pdfAnnotationSource) : allTexts;
     texts.forEach((textElement) => {
       const isSelected = state.selectedTextIds.includes(textElement.id);
       if (!isSelected && viewport && !isTextVisible(textElement, viewport)) return;
@@ -1758,7 +1777,7 @@ export const useCanvas = () => {
     });
 
     // Draw images
-    const images = getLocalAllImages();
+    const images = visibleLayers.flatMap((l) => l.images);
     images.forEach((imageElement) => {
       const isSelected = state.selectedImageIds.includes(imageElement.id);
       if (!isSelected && viewport && !isImageVisible(imageElement, viewport)) return;
@@ -2218,6 +2237,156 @@ export const useCanvas = () => {
     return false;
   }, [currentPage]);
 
+  // ===== 最新参照の latch (毎レンダーで更新) =====
+  // これらの ref を ToolContext 内の getter が参照することで、
+  // 1 度だけ生成した ToolContext でも常に最新の関数を呼べる。
+  redrawCanvasLatestRef.current = redrawCanvas;
+  getPointerPositionLatestRef.current = getPointerPosition;
+  snapLineEndpointLatestRef.current = snapLineEndpoint;
+  getLeaderStartPosLatestRef.current = getLeaderStartPos as unknown as (
+    shapeType: string,
+    startPos: Point,
+    endPos: Point,
+    targetPos: Point,
+  ) => Point;
+
+  // ===== ToolContext を 1 度だけ生成 =====
+  if (!toolContextRef.current) {
+    toolContextRef.current = createToolContext({
+      interactionStateRef,
+      setInteractionKind,
+      redraw: () => redrawCanvasLatestRef.current(),
+      getPointerPosition: (e) => getPointerPositionLatestRef.current(e),
+      snapLineEndpoint: (s, e) => snapLineEndpointLatestRef.current(s, e),
+      getLeaderStartPos: (type, start, end, target) =>
+        getLeaderStartPosLatestRef.current(type, start, end, target),
+      getDisplayScale: () => useDisplayScaleStore.getState().displayScale,
+      getBaseScale: () => useDisplayScaleStore.getState().baseScale,
+      legacyRefs: {
+        shapeStartRef,
+        currentShapeEndRef,
+        currentStrokeRef,
+        stampStartRef,
+        currentStampEndRef,
+        gridDrawStartRef,
+        gridDrawEndRef,
+        gridDragStartRef,
+        calibrationPreviewEndRef,
+      },
+      legacySetters: {
+        setIsDrawing,
+        setIsDrawingShape,
+        setIsDrawingStampLeader,
+        setIsCalibrating,
+        setIsDrawingGrid,
+        setIsDraggingGrid,
+        setAnnotationState,
+        setIsDrawingLeader,
+        setShowAnnotationModal,
+      },
+      phase2Refs: {
+        pendingAnnotatedShapeRef,
+        leaderStartRef,
+        leaderEndRef,
+      },
+    });
+  }
+
+  // ===== ツール別ハンドラの登録 (一度だけ) =====
+  // Phase 1 で抽出済みのツール。以降のステップで追加する。
+  useEffect(() => {
+    toolRegistry.register('pan', noopTool);
+    toolRegistry.register('pen', strokeTool);
+    toolRegistry.register('marker', strokeTool);
+    toolRegistry.register('eraser', strokeTool);
+    // Shape tool (plain + annotated, 14 variants)
+    toolRegistry.register('rect', shapeTool);
+    toolRegistry.register('ellipse', shapeTool);
+    toolRegistry.register('line', shapeTool);
+    toolRegistry.register('arrow', shapeTool);
+    toolRegistry.register('doubleArrow', shapeTool);
+    toolRegistry.register('semicircle', shapeTool);
+    toolRegistry.register('chevron', shapeTool);
+    toolRegistry.register('lshape', shapeTool);
+    toolRegistry.register('zshape', shapeTool);
+    toolRegistry.register('bracket', shapeTool);
+    toolRegistry.register('rectAnnotated', shapeTool);
+    toolRegistry.register('ellipseAnnotated', shapeTool);
+    toolRegistry.register('lineAnnotated', shapeTool);
+    toolRegistry.register('doubleArrowAnnotated', shapeTool);
+    toolRegistry.register('stamp', stampTool);
+    toolRegistry.registerPseudo('mode:calibration', calibrationTool);
+    toolRegistry.registerPseudo('mode:grid', gridTool);
+    // clear はしない: モジュールレベルの registry が他のマウントで共有されるため。
+    // アプリ全体で一度だけ登録しておけば良い。
+  }, []);
+
+  // ===== ツール切替時の reset =====
+  // 以前のツールの onToolDeactivate を呼び、InteractionState を idle に戻す。
+  // 現在は暗黙挙動 (次の pointerdown で上書き) を明示化する目的。
+  useEffect(() => {
+    const prev = previousToolRef.current;
+    if (prev !== null && prev !== tool) {
+      const prevHandler = toolRegistry.get(prev);
+      if (prevHandler?.onToolDeactivate && toolContextRef.current) {
+        prevHandler.onToolDeactivate(toolContextRef.current);
+      }
+      interactionStateRef.current = IDLE;
+      setInteractionKind('idle');
+    }
+    previousToolRef.current = tool;
+  }, [tool]);
+
+  // ===== Pointer dispatcher =====
+  // 新アーキ対応ツールが registry にあれば委譲して return。なければ旧ハンドラへフォールスルー。
+  //
+  // 重要: annotated shape の引出線フェーズ 2 (pendingAnnotatedShapeRef が non-null の間) は
+  // 旧ハンドラ側に処理を残しているため、この期間中は新アーキに dispatch せず
+  // 必ず旧ハンドラへフォールスルーする必要がある。
+  const dispatchToolPointer = useCallback(
+    (
+      method: 'onPointerDown' | 'onPointerMove' | 'onPointerUp',
+      point: Point,
+      e: PointerEvent,
+    ): boolean => {
+      const ctx = toolContextRef.current;
+      if (!ctx) return false;
+
+      // annotated shape の phase 2 中は旧ハンドラに処理を委ねる
+      if (pendingAnnotatedShapeRef.current !== null) {
+        return false;
+      }
+
+      // calibration / grid は store フラグで判定する pseudo-tool
+      const calibState = useCalibrationStore.getState();
+      if (calibState.isCalibrationMode) {
+        const handler = toolRegistry.getPseudo('mode:calibration');
+        if (handler) {
+          handler[method](ctx, point, e);
+          return true;
+        }
+      }
+      const gState = useGridStore.getState();
+      if (gState.isGridMode) {
+        const handler = toolRegistry.getPseudo('mode:grid');
+        if (handler) {
+          handler[method](ctx, point, e);
+          return true;
+        }
+      }
+
+      // 通常のツール dispatch
+      const currentTool = useDrawingStore.getState().tool;
+      const handler = toolRegistry.get(currentTool);
+      if (handler) {
+        handler[method](ctx, point, e);
+        return true;
+      }
+      return false;
+    },
+    [],
+  );
+
   const handlePointerDown = useCallback(
     (e: PointerEvent) => {
       e.preventDefault();
@@ -2227,89 +2396,10 @@ export const useCanvas = () => {
       canvas.setPointerCapture(e.pointerId);
       const point = getPointerPosition(e);
 
-      // Pan tool is handled by DrawingCanvas component
-      if (tool === 'pan') {
+      // 新アーキ (ToolHandler) への dispatch。対応ツールなら委譲して return。
+      // pan / calibration mode は registry 経由でここに捕捉される。
+      if (dispatchToolPointer('onPointerDown', point, e)) {
         return;
-      }
-
-      // キャリブレーションモードの処理
-      const calibState = useCalibrationStore.getState();
-      if (calibState.isCalibrationMode) {
-        if (!isCalibrating) {
-          // 最初のクリック: 開始点を設定してドラッグ開始
-          calibState.setCalibrationStart(point);
-          calibrationPreviewEndRef.current = point;
-          setIsCalibrating(true);
-        } else {
-          // 2回目のクリック（またはドラッグ終了）: 終点を確定
-          if (calibrationPreviewEndRef.current) {
-            calibState.setCalibrationEnd(calibrationPreviewEndRef.current);
-          }
-          setIsCalibrating(false);
-        }
-        redrawCanvas();
-        return;
-      }
-
-      // グリッドモードの処理
-      const gState = useGridStore.getState();
-      if (gState.isGridMode) {
-        const { pixelsPerMm } = useCalibrationStore.getState();
-
-        // ページに配置済みのグリッド内部をクリックした場合、そのグリッドを選択して移動開始
-        const pageGrids = gState.getPageGrids(currentPage);
-        for (let i = pageGrids.length - 1; i >= 0; i--) {
-          const grid = pageGrids[i];
-          if (isPointInsideGrid(point, grid, pixelsPerMm)) {
-            // このグリッドをpendingGridに移動して移動開始
-            gState.removeGrid(currentPage, i);
-            gState.setPendingGrid(grid);
-            gState.setGridAdjusting(true);
-            gridDragStartRef.current = {
-              gridStartPos: { ...grid.startPos },
-              mousePos: point,
-            };
-            // フォーカスを解除（セリフサンプル入力欄など）
-            (document.activeElement as HTMLElement)?.blur?.();
-            setIsDraggingGrid(true);
-            redrawCanvas();
-            return;
-          }
-        }
-
-        // グリッドモード中（調整中 or 新規作成）
-        if (gState.pendingGrid) {
-          // pendingGridが存在する場合
-          const isInside = isPointInsideGrid(point, gState.pendingGrid, pixelsPerMm);
-          if (isInside) {
-            // グリッド内クリック：グリッドを移動開始
-            gridDragStartRef.current = {
-              gridStartPos: { ...gState.pendingGrid.startPos },
-              mousePos: point,
-            };
-            (document.activeElement as HTMLElement)?.blur?.();
-            setIsDraggingGrid(true);
-            return;
-          } else {
-            // グリッド外クリック：グリッドを確定して新規グリッド作成開始
-            gState.saveStateForUndo(currentPage);
-            gState.addGrid(currentPage, gState.pendingGrid);
-            gState.setPendingGrid(null);
-            gridDrawStartRef.current = point;
-            gridDrawEndRef.current = point;
-            (document.activeElement as HTMLElement)?.blur?.();
-            setIsDrawingGrid(true);
-            redrawCanvas();
-            return;
-          }
-        } else {
-          // 新しいグリッドをドラッグで作成開始
-          gridDrawStartRef.current = point;
-          gridDrawEndRef.current = point;
-          (document.activeElement as HTMLElement)?.blur?.();
-          setIsDrawingGrid(true);
-          return;
-        }
       }
 
       // フェーズ2（引出線がマウスに追従中）の場合、クリックで引出線を確定してモーダル表示
@@ -2572,15 +2662,6 @@ export const useCanvas = () => {
         pendingTextPosRef.current = point;
         setEditingTextId(null);
         setShowTextModal(true);
-      } else if (tool === 'rect' || tool === 'ellipse' || tool === 'line' || tool === 'arrow' || tool === 'doubleArrow' || tool === 'semicircle' || tool === 'chevron' || tool === 'lshape' || tool === 'zshape' || tool === 'bracket' || tool === 'rectAnnotated' || tool === 'ellipseAnnotated' || tool === 'lineAnnotated' || tool === 'doubleArrowAnnotated') {
-        // Start drawing shape (annotated shapes also start as shape drawing)
-        setIsDrawingShape(true);
-        shapeStartRef.current = point;
-        currentShapeEndRef.current = point;
-        // アノテーション付き図形の場合はフェーズ1に設定
-        if (tool === 'rectAnnotated' || tool === 'ellipseAnnotated' || tool === 'lineAnnotated' || tool === 'doubleArrowAnnotated') {
-          setAnnotationState(1);
-        }
       } else if (tool === 'labeledRect') {
         // labeledRect（小文字指定）: 引出線フェーズを開始
         setLabeledRectPhase(1);
@@ -2639,82 +2720,21 @@ export const useCanvas = () => {
           setShowImageInput(true);
         }
         return;
-      } else if (tool === 'stamp') {
-        // スタンプツール - ドラッグで引出線を作成可能
-        if (currentStampType) {
-          // 引出線対応スタンプかチェック
-          const leaderLineStamps: StampType[] = [
-            'toruStamp', 'torutsumeStamp', 'torumamaStamp',
-            'zenkakuakiStamp', 'hankakuakiStamp', 'yonbunakiStamp', 'kaigyouStamp',
-            'tojiruStamp', 'hirakuStamp'
-          ];
-          if (leaderLineStamps.includes(currentStampType)) {
-            // 引出線描画モードを開始
-            setIsDrawingStampLeader(true);
-            stampStartRef.current = point;
-            currentStampEndRef.current = point;
-          } else {
-            // 引出線非対応スタンプはクリックで配置
-            addStamp(point);
-            redrawCanvas();
-          }
-        }
-        return;
-      } else {
-        setIsDrawing(true);
-        currentStrokeRef.current = [point];
-
-        if (tool === 'eraser') {
-          eraseAt(point, strokeWidth * 2);
-        }
       }
+      // 以下は新アーキ (dispatcher) で捕捉済み:
+      //   - pen / marker / eraser → strokeTool
+      //   - shape 系 14 種 → shapeTool
+      //   - stamp → stampTool
     },
-    [getPointerPosition, tool, eraseAt, strokeWidth, selectionBounds, isPointInSelectionBounds, clearSelection, annotationState, isDrawingLeader, getLeaderStartPos, selectShapeAtPoint, selectedShapeIds, selectedTextIds, selectAnnotationAtPoint, selectTextAtPoint, selectImageAtPoint, getAllShapes, redrawCanvas, addShape, isDrawingPolyline, color, currentStampType, addStamp, selectFontLabelTextAtPoint, selectedFontLabelShapeId, isCalibrating, currentPage, isPointInsideGrid]
+    [getPointerPosition, tool, selectionBounds, isPointInSelectionBounds, clearSelection, annotationState, isDrawingLeader, getLeaderStartPos, selectShapeAtPoint, selectedShapeIds, selectedTextIds, selectAnnotationAtPoint, selectTextAtPoint, selectImageAtPoint, getAllShapes, redrawCanvas, addShape, isDrawingPolyline, color, currentStampType, addStamp, selectFontLabelTextAtPoint, selectedFontLabelShapeId]
   );
 
   const handlePointerMove = useCallback(
     (e: PointerEvent) => {
       const point = getPointerPosition(e);
 
-      // キャリブレーションモードの処理
-      const calibState = useCalibrationStore.getState();
-      if (calibState.isCalibrationMode && isCalibrating && calibState.calibrationStart) {
-        // ドラッグ中はプレビュー終点を更新（ストアには保存しない）
-        // Shiftキーが押されている場合は45度スナップ
-        if (e.shiftKey) {
-          calibrationPreviewEndRef.current = snapLineEndpoint(calibState.calibrationStart, point);
-        } else {
-          calibrationPreviewEndRef.current = point;
-        }
-        redrawCanvas();
-        return;
-      }
-
-      // グリッド作成中（ドラッグで枠を描画）
-      const gState = useGridStore.getState();
-      if (isDrawingGrid && gridDrawStartRef.current) {
-        gridDrawEndRef.current = point;
-        redrawCanvas();
-        return;
-      }
-
-      // グリッド移動中
-      if (isDraggingGrid && gridDragStartRef.current && gState.pendingGrid) {
-        const dx = point.x - gridDragStartRef.current.mousePos.x;
-        const dy = point.y - gridDragStartRef.current.mousePos.y;
-        const newStartX = gridDragStartRef.current.gridStartPos.x + dx;
-        const newStartY = gridDragStartRef.current.gridStartPos.y + dy;
-        const { pixelsPerMm } = useCalibrationStore.getState();
-        const grid = gState.pendingGrid;
-        const cellSize = grid.ptSize * MM_PER_PT * pixelsPerMm;
-        const isHorizontal = grid.writingMode === 'horizontal';
-        const w = (isHorizontal ? grid.chars : grid.lines) * cellSize;
-        const h = (isHorizontal ? grid.lines : grid.chars) * cellSize;
-        gState.updatePendingGrid({
-          startPos: { x: newStartX, y: newStartY },
-          centerPos: { x: newStartX + w / 2, y: newStartY + h / 2 },
-        });
-        redrawCanvas();
+      // 新アーキ dispatch
+      if (dispatchToolPointer('onPointerMove', point, e)) {
         return;
       }
 
@@ -2868,10 +2888,6 @@ export const useCanvas = () => {
           lastDragPointRef.current = point;
           redrawCanvas();
         }
-      } else if (isDrawingStampLeader && stampStartRef.current) {
-        // スタンプの引出線プレビュー更新
-        currentStampEndRef.current = point;
-        redrawCanvas();
       } else if (isDrawingProofreadingLeader && proofreadingLeaderStartRef.current) {
         // 校正チェックテキストの引出線プレビュー更新
         proofreadingLeaderEndRef.current = point;
@@ -2905,16 +2921,6 @@ export const useCanvas = () => {
         // labeledRect: 枠線フェーズ
         currentShapeEndRef.current = point;
         redrawCanvas();
-      } else if (isDrawingShape && shapeStartRef.current) {
-        // Update shape preview
-        ctrlKeyRef.current = e.ctrlKey;
-        // For line/arrow tools, snap to 45-degree angles when Shift is pressed
-        if ((tool === 'line' || tool === 'lineAnnotated' || tool === 'arrow' || tool === 'doubleArrow' || tool === 'doubleArrowAnnotated') && e.shiftKey) {
-          currentShapeEndRef.current = snapLineEndpoint(shapeStartRef.current, point);
-        } else {
-          currentShapeEndRef.current = point;
-        }
-        redrawCanvas();
       } else if ((annotationState === 2 || isDrawingLeader) && pendingAnnotatedShapeRef.current) {
         // 引出線のプレビュー更新（フェーズ2またはドラッグ中）
         const pending = pendingAnnotatedShapeRef.current;
@@ -2930,34 +2936,10 @@ export const useCanvas = () => {
         // 画像配置のプレビュー更新
         currentImageEndRef.current = point;
         redrawCanvas();
-      } else if (isDrawing) {
-        if (tool === 'eraser') {
-          eraseAt(point, strokeWidth * 2);
-          redrawCanvas();
-        } else {
-          // ストロークポイント数制限チェック — 上限に達したらストロークを自動終了
-          if (currentStrokeRef.current.length >= STROKE_LIMITS.MAX_POINTS) {
-            console.warn('[MojiQ] ストロークポイント数が上限に達しました。自動終了します。');
-            setIsDrawing(false);
-            if (currentStrokeRef.current.length > 1) {
-              addStroke({
-                points: [...currentStrokeRef.current],
-                color,
-                width: strokeWidth,
-                isMarker: tool === 'marker',
-                opacity: tool === 'marker' ? 0.3 : undefined,
-              });
-            }
-            currentStrokeRef.current = [];
-            redrawCanvas();
-            return;
-          }
-          currentStrokeRef.current.push(point);
-          redrawCanvas();
-        }
       }
+      // pen / marker / eraser の pointermove は新アーキの strokeTool が捕捉済み。
     },
-    [isDrawing, isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, isDrawingStampLeader, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, selectedFontLabelShapeId, isSelecting, isRotating, annotationState, labeledRectPhase, getPointerPosition, tool, eraseAt, strokeWidth, redrawCanvas, drawSelectionRect, moveSelectedStrokes, moveSelectedShapes, moveSelectedImages, moveSelectedTexts, moveAnnotationOnly, moveLeaderEnd, snapLineEndpoint, getLeaderStartPos, selectAnnotationAtPoint, getAllShapes, updateShape, isCalibrating, isDraggingGrid, isDrawingGrid]
+    [isDrawingShape, isDrawingLeader, isDrawingPolyline, isDrawingImage, isDrawingStampLeader, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, selectedFontLabelShapeId, isSelecting, isRotating, annotationState, labeledRectPhase, getPointerPosition, tool, redrawCanvas, drawSelectionRect, moveSelectedStrokes, moveSelectedShapes, moveSelectedImages, moveSelectedTexts, moveAnnotationOnly, moveLeaderEnd, snapLineEndpoint, getLeaderStartPos, selectAnnotationAtPoint, getAllShapes, updateShape]
   );
 
   const handlePointerUp = useCallback(
@@ -2967,133 +2949,9 @@ export const useCanvas = () => {
         canvas.releasePointerCapture(e.pointerId);
       }
 
-      // キャリブレーションモードの処理（ドラッグ終了で確定）
-      const calibState = useCalibrationStore.getState();
-      if (calibState.isCalibrationMode && isCalibrating && calibrationPreviewEndRef.current) {
-        // 開始点からの距離をチェック（短すぎる場合はキャンセル）
-        const start = calibState.calibrationStart;
-        const end = calibrationPreviewEndRef.current;
-        if (start) {
-          const distance = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
-          if (distance > 10) {
-            // 十分な距離がある場合のみ確定
-            calibState.setCalibrationEnd(end);
-          } else {
-            // 短すぎる場合はリセット
-            calibState.setCalibrationStart(null);
-            calibState.setCalibrationEnd(null);
-          }
-        }
-        setIsCalibrating(false);
-        calibrationPreviewEndRef.current = null;
-        redrawCanvas();
-        return;
-      }
-
-      // グリッドドラッグ作成終了
-      if (isDrawingGrid && gridDrawStartRef.current) {
-        const gState = useGridStore.getState();
-        const endPoint = getPointerPosition(e);
-        const startPoint = gridDrawStartRef.current;
-
-        // ドラッグ範囲を計算
-        const x = Math.min(startPoint.x, endPoint.x);
-        const y = Math.min(startPoint.y, endPoint.y);
-        const width = Math.abs(endPoint.x - startPoint.x);
-        const height = Math.abs(endPoint.y - startPoint.y);
-
-        // 最小サイズ以上の場合のみグリッドを作成（5px以上でグリッド作成）
-        if (width > 5 && height > 5) {
-          const { pixelsPerMm } = useCalibrationStore.getState();
-
-          // gridMode に応じて行数・文字数を決定
-          let numLines: number;
-          let numChars: number;
-          let textData: string;
-          if (gState.gridMode === 'grid') {
-            // 一文字グリッド: 常に1x1
-            numLines = 1;
-            numChars = 1;
-            textData = '';
-          } else {
-            // セリフ見本: テキストから計算
-            const { lines, chars } = gState.calculateGridFromText(gState.sampleText);
-            numLines = Math.max(1, lines);
-            numChars = Math.max(1, chars);
-            textData = gState.sampleText;
-          }
-          const isHorizontal = gState.writingMode === 'horizontal';
-
-          // ドラッグ範囲に収まるセルサイズを計算
-          const cols = isHorizontal ? numChars : numLines;
-          const rows = isHorizontal ? numLines : numChars;
-          const cellSize = Math.min(width / cols, height / rows);
-          const ptSize = Math.round((cellSize / pixelsPerMm / MM_PER_PT) * 10) / 10;
-
-          // 実際のグリッドサイズ
-          const actualWidth = cols * cellSize;
-          const actualHeight = rows * cellSize;
-
-          // undo保存
-          gState.saveStateForUndo(currentPage);
-
-          const grid = {
-            id: `grid-${Date.now()}`,
-            startPos: { x, y },
-            centerPos: { x: x + actualWidth / 2, y: y + actualHeight / 2 },
-            lines: numLines,
-            chars: numChars,
-            ptSize: Math.max(1, ptSize),
-            textData,
-            writingMode: gState.writingMode,
-            isLocked: false,
-            constraint: {
-              w: width * 0.75,
-              h: height * 0.75,
-              rawW: width,
-              rawH: height,
-            },
-          };
-          gState.setPendingGrid(grid);
-          gState.setGridAdjusting(true);
-        }
-
-        setIsDrawingGrid(false);
-        gridDrawStartRef.current = null;
-        gridDrawEndRef.current = null;
-        redrawCanvas();
-        return;
-      }
-
-      // グリッド移動終了
-      if (isDraggingGrid) {
-        setIsDraggingGrid(false);
-        gridDragStartRef.current = null;
-        redrawCanvas();
-        return;
-      }
-
-      // スタンプ引出線の完了
-      if (isDrawingStampLeader && stampStartRef.current && currentStampEndRef.current) {
-        const start = stampStartRef.current;
-        const end = currentStampEndRef.current;
-        const distance = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
-
-        // 引出線の最小距離（これより短い場合は引出線なしで配置）
-        const MIN_LEADER_DISTANCE = 10;
-
-        if (distance > MIN_LEADER_DISTANCE) {
-          // 引出線付きでスタンプを配置（終点がスタンプ位置、始点が引出線先端）
-          addStamp(end, { start, end });
-        } else {
-          // 引出線なしでスタンプを配置（クリックと同じ）
-          addStamp(start);
-        }
-
-        setIsDrawingStampLeader(false);
-        stampStartRef.current = null;
-        currentStampEndRef.current = null;
-        redrawCanvas();
+      // 新アーキ dispatch
+      const upPoint = getPointerPosition(e);
+      if (dispatchToolPointer('onPointerUp', upPoint, e)) {
         return;
       }
 
@@ -3339,152 +3197,15 @@ export const useCanvas = () => {
         imageStartRef.current = null;
         currentImageEndRef.current = null;
         pendingImageRef.current = null;
-      } else if (isDrawingShape && shapeStartRef.current && currentShapeEndRef.current) {
-        // Finalize shape
-        const startPoint = shapeStartRef.current;
-        const isLineType = tool === 'line' || tool === 'lineAnnotated' || tool === 'arrow' || tool === 'doubleArrow' || tool === 'doubleArrowAnnotated';
-        const isAnnotated = tool === 'rectAnnotated' || tool === 'ellipseAnnotated' || tool === 'lineAnnotated' || tool === 'doubleArrowAnnotated';
-
-        // For line/arrow tools, apply snap if Shift is pressed
-        const endPoint = (isLineType && e.shiftKey)
-          ? snapLineEndpoint(startPoint, currentShapeEndRef.current)
-          : currentShapeEndRef.current;
-        const w = Math.abs(endPoint.x - startPoint.x);
-        const h = Math.abs(endPoint.y - startPoint.y);
-
-        // Minimum size check (5px for rect/ellipse, any size for line)
-        const isValidSize = isLineType
-          ? (w > 2 || h > 2)
-          : (w > 5 && h > 5);
-
-        if (isValidSize) {
-          // フォント指定の場合はfontLabelを追加
-          const presetState = usePresetStore.getState();
-          const selectedFont = presetState.selectedFont;
-          let fontLabel: Shape['fontLabel'] = undefined;
-
-          if (tool === 'rect' && selectedFont) {
-            // フォント名ラベルの位置を計算
-            const padding = 5;
-            let textAlign: 'left' | 'right' = 'left';
-            let textX = 0;
-            let textY = 0;
-
-            if (endPoint.x > startPoint.x) {
-              textAlign = 'left';
-              textX = endPoint.x + padding;
-            } else {
-              textAlign = 'right';
-              textX = endPoint.x - padding;
-            }
-
-            if (endPoint.y > startPoint.y) {
-              textY = endPoint.y + padding;
-            } else {
-              textY = endPoint.y - padding;
-            }
-
-            fontLabel = {
-              fontName: selectedFont.name,
-              textX,
-              textY,
-              textAlign,
-            };
-          }
-
-          // 校正記号ツールの追加プロパティを計算
-          let shapeOrientation: 'vertical' | 'horizontal' | undefined;
-          let shapeDirection: 0 | 1 | 2 | 3 | undefined;
-          let shapeFlipped: boolean | undefined;
-          let shapeRotated: boolean | undefined;
-
-          if (tool === 'semicircle') {
-            shapeOrientation = h > w ? 'vertical' : 'horizontal';
-          } else if (tool === 'chevron') {
-            shapeOrientation = e.ctrlKey ? 'horizontal' : 'vertical';
-          } else if (tool === 'lshape') {
-            const dx = endPoint.x - startPoint.x;
-            const dy = endPoint.y - startPoint.y;
-            if (dx >= 0 && dy >= 0) shapeDirection = 0;
-            else if (dx < 0 && dy >= 0) shapeDirection = 1;
-            else if (dx >= 0 && dy < 0) shapeDirection = 2;
-            else shapeDirection = 3;
-          } else if (tool === 'zshape') {
-            shapeRotated = e.ctrlKey;
-          } else if (tool === 'bracket') {
-            const dx = endPoint.x - startPoint.x;
-            const dy = endPoint.y - startPoint.y;
-            shapeOrientation = h > w ? 'vertical' : 'horizontal';
-            shapeFlipped = shapeOrientation === 'vertical' ? dx < 0 : dy >= 0;
-          }
-
-          // 図形を追加
-          const shapeId = `shape-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-          addShape({
-            type: tool as ShapeType,
-            startPos: { x: startPoint.x, y: startPoint.y },
-            endPos: { x: endPoint.x, y: endPoint.y },
-            color,
-            width: strokeWidth,
-            fontLabel,
-            label: tool === 'labeledRect' ? '小' : undefined,
-            orientation: shapeOrientation,
-            direction: shapeDirection,
-            flipped: shapeFlipped,
-            rotated: shapeRotated,
-          });
-
-          if (isAnnotated) {
-            // アノテーション付きの場合はフェーズ2へ移行（引出線が自動で追従）
-            const baseType = tool.replace('Annotated', '') as 'rect' | 'ellipse' | 'line' | 'doubleArrow';
-
-            // 最後に追加された図形のIDを取得
-            const state = useDrawingStore.getState();
-            const currentPageState = state.pages[state.currentPage];
-            const allShapes = currentPageState?.layers.flatMap(l => l.shapes) || [];
-            const lastShape = allShapes[allShapes.length - 1];
-
-            pendingAnnotatedShapeRef.current = {
-              shapeId: lastShape?.id || shapeId,
-              shapeType: baseType,
-              startPos: { x: startPoint.x, y: startPoint.y },
-              endPos: { x: endPoint.x, y: endPoint.y },
-            };
-            setAnnotationState(2);
-            setIsDrawingLeader(true); // すぐに引出線モードを開始
-
-            // 引出線の初期位置を設定（マウス位置から）
-            const mousePos = getPointerPosition(e);
-            const leaderStart = getLeaderStartPos(baseType, startPoint, endPoint, mousePos);
-            leaderStartRef.current = leaderStart;
-            leaderEndRef.current = mousePos;
-          }
-        }
-
-        setIsDrawingShape(false);
-        shapeStartRef.current = null;
-        currentShapeEndRef.current = null;
-      } else {
-        if (!isDrawing) return;
-
-        setIsDrawing(false);
-
-        if ((tool === 'pen' || tool === 'marker') && currentStrokeRef.current.length > 1) {
-          addStroke({
-            points: [...currentStrokeRef.current],
-            color,
-            width: strokeWidth,
-            isMarker: tool === 'marker',
-            opacity: tool === 'marker' ? 0.3 : undefined,
-          });
-        }
-
-        currentStrokeRef.current = [];
       }
+      // 以下は新アーキで処理済み:
+      //   - pen / marker / eraser → strokeTool
+      //   - shape 系 14 種 (plain + annotated) → shapeTool
+      //   - annotated 変種の phase 1 終了後は shapeTool が phase 2 遷移をトリガー (pendingAnnotatedShapeRef 等)
 
       redrawCanvas();
     },
-    [tool, isDrawing, isDrawingShape, isDrawingImage, isDrawingStampLeader, annotationState, labeledRectPhase, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, isSelecting, isRotating, addStroke, addShape, addImage, addStamp, color, strokeWidth, redrawCanvas, getPointerPosition, selectStrokesInRect, selectStrokeAtPoint, selectShapeAtPoint, selectShapesInRect, clearSelectionCanvas, snapLineEndpoint, getLeaderStartPos, isCalibrating, isDrawingGrid, isDraggingGrid]
+    [tool, isDrawingShape, isDrawingImage, isDrawingStampLeader, annotationState, labeledRectPhase, isDragging, isDraggingShape, isDraggingImage, isDraggingAnnotation, isDraggingLeaderEnd, isDraggingText, isDraggingFontLabel, isSelecting, isRotating, addShape, addImage, addStamp, color, strokeWidth, redrawCanvas, getPointerPosition, selectStrokesInRect, selectStrokeAtPoint, selectShapeAtPoint, selectShapesInRect, clearSelectionCanvas, snapLineEndpoint, getLeaderStartPos]
   );
 
   useEffect(() => {

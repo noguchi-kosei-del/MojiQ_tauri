@@ -1422,6 +1422,155 @@ MojiQ_Pro_1.0/
   - `ProofreadingCheckModal.css` - 旧モーダル構造・フォルダブラウザ・データビューア・カテゴリ・テーブルの全CSSを削除、`load-complete-*`のみ残存
 
 ### 2026-04-10
+#### redrawCanvas の stale closure によるアノテーション移動スナップバック修正
+- **問題**: 1ページに多数の描画がある状態で、枠線・楕円・直線の「+テキスト指示」アノテーションテキストを選択ツールで移動すると、ドラッグ中は追従するが、選択を解除した瞬間に元位置に戻って見える (旧 MojiQ v2.1.9 と同じ症状)。
+- **原因**: `redrawCanvas` は `useCallback` でメモ化され、内部で呼んでいる `getAllStrokes()` / `getAllShapes()` / `getAllTexts()` / `getLocalAllImages()` も同じく `[pages, currentPage]` 依存の `useCallback`。ドラッグ中の pointermove が同期的に Zustand ストアを更新した直後に `redrawCanvas()` を呼んでも、`getAllShapes` 等は前レンダーのクロージャに捕捉された `pages` を見ていたため、1 フレーム古いデータで描画していた。ビューポートカリングと組み合わさってアノテーションがスナップバックしたように見えた。
+- **修正**: [src/hooks/useCanvas.ts:1734-1766](src/hooks/useCanvas.ts#L1734-L1766) の `redrawCanvas` で既に呼んでいる `useDrawingStore.getState()` の結果から直接 `visibleLayers` を組み立てる方式に変更。strokes / shapes / texts / images をクロージャではなく毎フレーム最新のストアから取得することで stale closure を根本排除。
+
+#### アノテーション引出線 phase 2 dispatcher フォールスルー修正
+- **問題**: Phase 1 リファクタ後、枠線・楕円・直線・両矢印の「+テキスト指示」で図形を描いても、引出線がマウスに追従せず描画されない。
+- **原因**: `shapeTool.onPointerUp` で annotated 変種を処理した後 `triggerAnnotationPhase2` で phase 2 の state を設定し `setInteractionState(IDLE)` を呼んでいた。その後、ツールは `rectAnnotated` のままなので、ユーザーがマウスを動かすと dispatcher が shapeTool.onPointerMove を呼び出し、shapeTool は `state.kind !== 'drawing-shape'` で早期 return するが、dispatcher は「handler が呼ばれた」= true を返していた。結果、旧ハンドラの phase 2 引出線プレビュー処理が実行されなかった。
+- **修正**: [src/hooks/useCanvas.ts:2348-2354](src/hooks/useCanvas.ts#L2348-L2354) の `dispatchToolPointer` の先頭に「phase 2 中は旧ハンドラへフォールスルー」ガードを追加。`pendingAnnotatedShapeRef.current !== null` を phase 2 中のシグナルとして使う (この ref はモーダル確定・キャンセル・Escape 全ての終了パスでクリアされる)。
+
+#### アノテーションテキスト上での wheel フォントサイズ変更
+- **背景**: 旧 MojiQ の `handleAnnotationWheelResize` 機能。MojiQ Pro では移植漏れしていたため追加実装。
+- **Store アクション追加** ([src/stores/drawingStore.ts](src/stores/drawingStore.ts)): `updateAnnotationFontSize(shapeId, newFontSize)` — アノテーションの `fontSize` のみを変更し、**履歴には保存しない** (高頻度発火する wheel を前提にした API)。
+- **Wheel handler 拡張** ([src/components/Canvas/DrawingCanvas.tsx:840-892](src/components/Canvas/DrawingCanvas.tsx#L840-L892)): 既存の 4 分岐 (Ctrl/Alt ズーム / グリッド / ページ移動) に「アノテーションテキスト上の wheel」を追加。
+  - `selectAnnotationAtPoint(point, 10/displayScale)` で hit test
+  - `hitType === 'text'` で preventDefault + stopPropagation
+  - deltaY > 0 で -1pt、< 0 で +1pt (範囲 8-72pt)
+  - `annotationResizeCommitTimerRef` で 500ms debounce し、wheel 1 刻みごとに履歴が埋まらないよう `saveToHistory()` を集約
+- ツール問わず動作 (select / pen / shape などどれでも OK)
+
+#### PDF 注釈メタデータの保存/復元機構 (MojiQText / MojiQChecked)
+- **背景**: 旧 MojiQ 移植漏れ調査で発覚した優先度 #1 のギャップ。旧 MojiQ は PDF の `/Subject` フィールドに `MojiQ:commentTextHidden=true;MojiQText:<Base64>;MojiQChecked:<Base64>` を埋め込むことで、PDF 注釈由来テキストと確認済み状態を round-trip 保持していた。MojiQ Pro はこれを完全に未実装だったため、保存→再オープンで確認済み状態や注釈テキストが失われていた。
+- **アーキテクチャ**: フロントエンドで subject 文字列を組み立てて save_pdf_v2 に渡し、Rust 側は `printpdf::with_subject()` で PDF Info dict に書き込む。読み込み時は pdf.js の `getMetadata()` で `info.Subject` を取得しパース。
+
+##### 新規ファイル: [src/utils/mojiqMetadata.ts](src/utils/mojiqMetadata.ts)
+- **UTF-8 対応 Base64**: `encodeUtf8Base64` / `decodeUtf8Base64` — 旧 MojiQ の `btoa(unescape(encodeURIComponent(...)))` と完全互換
+- `MojiQTextEntry` / `MojiQCheckedEntry` / `ParsedMojiqMetadata` 型
+- `parseMojiqSubject(subject)` — subject 文字列から `{ isMojiqSaved, commentTextHidden, texts, checked }` を抽出
+- `buildMojiqSubject({ commentTextHidden, texts, checked })` — 旧 MojiQ 互換のコンパクト形式 `{p, t, x, y, w, h}` / `{p, c, x, y}` でシリアライズ
+- `isMojiQProcessedAnnotation(...)` — テキスト内容一致 or 座標近接一致 (30px、表示サイズスケーリング補正)
+
+##### drawingStore 拡張
+- 新フィールド: `loadedMojiQTexts` / `loadedCheckedComments` / `isMojiqSavedPdf`
+- 新アクション: `setLoadedMojiqMetadata` / `clearLoadedMojiqMetadata`
+- `loadDocumentWithAnnotations` に第 3 引数 `mojiqMetadata?` を追加 (既存呼び出しと後方互換)
+- `clearDocument` でメタデータをリセット
+- `updateAnnotationFontSize` 追加 (上述の wheel 変更用)
+
+##### pdfRenderer 拡張
+- `readMojiqMetadata(pdf)` — `pdf.getMetadata()` の `info.Subject` をパースして `ParsedMojiqMetadata` を返す
+- `extractPdfAnnotations` に `mojiqTexts` フィルタ引数を追加 (Acrobat 往復で重複する注釈は metadata 優先でスキップ)
+- `metadataTextsForPage()` — metadata エントリを `PdfAnnotationText` に変換し、drawing layer に復元
+- `PdfRenderResult` / `PdfLoadResult` に `mojiqMetadata` フィールド追加
+- `renderPdfToImages` / `loadPdfDocument` 両方に復元ロジックを追加 (MojiQ Pro は保存時に PDF 注釈を rasterize するため、再読み込み時は metadata が唯一のテキスト復元源になる)
+
+##### ロードフロー結線 (6 箇所)
+- [App.tsx](src/App.tsx) (2 箇所)、[DrawingCanvas.tsx](src/components/Canvas/DrawingCanvas.tsx)、[HeaderBar.tsx](src/components/HeaderBar/HeaderBar.tsx) (3 箇所) の `loadDocumentWithAnnotations(...)` 呼び出しに `pdfResult.mojiqMetadata` を渡すよう更新
+
+##### Rust 保存側
+- [src-tauri/src/commands.rs](src-tauri/src/commands.rs) の `SaveRequestV2` に `mojiq_subject: Option<String>` フィールドを追加 (`#[serde(default)]` で後方互換)
+- [src-tauri/src/pdf.rs](src-tauri/src/pdf.rs) の `create_pdf_with_overlays` で `printpdf::with_subject()` を呼び、`/Subject` フィールドに書き込み
+
+##### 保存フロー結線 (HeaderBar)
+- `collectMojiqSubject(pages)` モジュール関数を追加:
+  - 全ページの `layer.texts` から `pdfAnnotationSource` 付きテキストを収集
+  - 各図形の `annotation.text` (+ テキスト指示) も収集
+  - `loadedMojiQTexts` と merge (前回 round-trip の保持)
+  - 近傍 50px 以内に `doneStamp` がある注釈テキストを「確認済み」として MojiQChecked に収集
+  - `loadedCheckedComments` と merge
+  - `buildMojiqSubject` で旧 MojiQ 互換形式にシリアライズ
+- `invoke('save_pdf_v2', { ..., mojiq_subject })` で Rust 側に渡す
+
+#### 圧縮保存モード (25MB 以下に JPEG 段階圧縮)
+- **背景**: 旧 MojiQ v2.19 の `pdf-lib-saver.js` には `compressMode` オプションで PDF を JPEG 品質を段階的に下げて 25MB 以下に収める機能があった。MojiQ Pro では読み込み側の圧縮 ([src/utils/pdfCompressor.ts](src/utils/pdfCompressor.ts)) のみで、保存側が未実装だった。メール添付・ファイルサーバ投入で大容量 PDF が問題になる実運用課題への対応。
+- **アーキテクチャ**: Rust 側で JPEG エンコード + 品質探索を実行。`printpdf` の `ImageFilter::DCT` (DCTDecode) で JPEG バイト列を直接 PDF に埋め込むため、再エンコードのオーバーヘッドなくサイズ削減が実現する。
+
+##### Rust 側 ([src-tauri/src/pdf.rs](src-tauri/src/pdf.rs))
+- `SaveRequestV2` に `compress_mode: Option<bool>` / `compress_target_bytes: Option<u64>` を追加
+- 定数: `DEFAULT_COMPRESS_TARGET_BYTES = 25MB`, `COMPRESS_QUALITY_STEPS = [85, 75, 65, 55, 45, 35, 25]`, `COMPRESS_OVERHEAD_MARGIN_BYTES = 512KB`
+- `create_pdf_with_overlays` を **ディスパッチャ** 化し、`compress_mode` フラグで以下の 2 実装に分岐:
+  - **通常モード** (`create_pdf_with_overlays_normal`): 1 ページずつ逐次に合成 → PDF 追加 → drop の **単一パス**。メモリ使用量は常に 1 ページ分 (~35 MB/A4 3x) のみ。リファクタ前と同じ挙動
+  - **圧縮モード** (`create_pdf_with_overlays_compressed`): `encode_all_pages_at_quality` が各ページを逐次合成 → JPEG エンコード → 合成画像は即 drop し、JPEG バイト列だけ `Vec<EncodedPage>` に蓄積。`search_jpeg_quality` が品質段階ごとに `encode_all_pages_at_quality` を呼び直す **recompose 戦略** で、メモリ効率を優先 (raw 画像を全ページ保持しない)。CPU は最大 7 倍だが opt-in なので許容
+- **JPEG 直接埋め込み**: `printpdf::ImageFilter::DCT` (DCTDecode) で JPEG バイト列をそのまま ImageXObject に埋め込み、再エンコードのオーバーヘッドなし
+- 目標サイズに収まらない場合は最低品質 (25) で出力しつつ warning log を出す
+- JPEG エンコードは `::image::codecs::jpeg::JpegEncoder::new_with_quality` を使用、合成結果の `DynamicImage` を `to_rgb8()` して渡す
+
+##### フロントエンド側 ([src/components/HeaderBar/HeaderBar.tsx](src/components/HeaderBar/HeaderBar.tsx))
+- 保存メニューに「圧縮保存 (25MB以下)」チェックボックスを追加 ("描画+コメントを追加保存" の下)
+- ローカル `useState` + `useRef` の latch pattern で、`savePdfToPath` (useCallback) の stale closure 問題を回避
+- `save_pdf_v2` invoke 呼び出しに `compress_mode` / `compress_target_bytes` を追加
+- デフォルトは OFF (毎セッションリセット)。ユーザが明示的に opt-in する設計
+
+##### メモリハング修正の経緯
+- 初期実装では **Pass 1 で全ページを `Vec<ComposedPage>` に事前合成** する 3 パス構造にしていたが、通常保存で大容量 PDF を保存するとハング症状が発生 (プログレス 85% で停止)
+- 原因: A4 3x スケール合成画像が 1 ページ ~35 MB、50 ページで 1.7 GB 超 → Windows のスワッピング
+- 対応: 通常モードを単一パスに戻し、圧縮モードは recompose 戦略 (品質段階ごとに合成し直す) に変更。メモリ使用量は両モードとも常に 1 ページ分のみ
+
+##### 旧 MojiQ との相違点
+- 旧 MojiQ (JS) は `pdf-lib` + `canvas.toBlob('image/jpeg', quality)` でブラウザ側圧縮 → Electron IPC でファイル書き込み
+- MojiQ Pro (Rust) は `::image` クレート + `printpdf` の DCT filter でネイティブ圧縮 → `atomic_save_pdf` で原子的書き込み
+- Rust 側の方が高速 (JS Canvas の toBlob よりも ::image の JpegEncoder が速い) かつメモリ効率が良い
+- 見開きモードの圧縮はまだ未対応 (旧 MojiQ の `_renderPageToCompressCanvas` 相当)。単ページ用途なら動作する
+
+##### 修正ファイル
+- [src-tauri/src/commands.rs](src-tauri/src/commands.rs) - `SaveRequestV2` 拡張 (`compress_mode`, `compress_target_bytes`, `mojiq_subject`)
+- [src-tauri/src/pdf.rs](src-tauri/src/pdf.rs) - `compose_page` / `encode_to_jpeg` / `encode_all_pages_at_quality` / `search_jpeg_quality` / `create_pdf_with_overlays_normal` / `create_pdf_with_overlays_compressed` / `add_image_to_layer_raw` 追加
+- [src/components/HeaderBar/HeaderBar.tsx](src/components/HeaderBar/HeaderBar.tsx) - UI + invoke 呼び出し
+
+#### useCanvas.ts pointer handler 分割 Phase 1（State Machine + ツール別モジュール化）
+- **背景**: `src/hooks/useCanvas.ts` は 3827 行に肥大化し、`handlePointerDown` (451行) / `handlePointerMove` (285行) / `handlePointerUp` (524行) の計 1260 行が単一の useCallback に詰め込まれていた。20+ 個の boolean フラグと 20+ 個の useRef で暗黙の state machine を構成しており、新機能追加のたびに条件が増殖、stale closure 由来のバグ (v2.1.9 のアノテーション移動スナップバック) の温床になっていた。
+- **目的**: (1) ツール追加時の変更局所化、(2) stale closure の構造的排除、(3) 暗黙フラグの爆発を止める、(4) 手動 QA のチェックリスト化を容易にする。
+
+##### 新アーキテクチャ
+- **InteractionState**: `src/hooks/canvas/interactionState.ts` に discriminated union で状態を定義。
+  - `idle` / `drawing-stroke` / `drawing-shape` / `drawing-stamp-leader` / `calibrating` / `drawing-grid` / `dragging-grid` の 7 種類を定義
+  - `useRef` で保持 (pointermove の高頻度発火時のリレンダーを回避)。UI 同期用に `kind` のみ `useState` でミラー。
+  - `reduceInteraction` 純粋関数を documenting 用途で用意 (現状は各 ToolHandler が直接 setState する方式)
+- **ToolContext**: `src/hooks/canvas/toolContext.ts` に定義。各 ToolHandler の実行環境。
+  - `store` 系アクション (`addStroke` / `addShape` / `addStamp` / `eraseAt` / `saveToHistory`) は呼び出しのたびに `useDrawingStore.getState()` を叩く getter 形式 → stale closure の根本対策
+  - 最新参照の latch pattern: `redrawCanvasLatestRef` / `getPointerPositionLatestRef` / `snapLineEndpointLatestRef` / `getLeaderStartPosLatestRef` を毎レンダーで更新し、ToolContext 内の getter がこれを参照
+  - `legacyRefs` / `legacySetters` / `phase2Refs` で旧 useCanvas の `useState`/`useRef` を共有 (Phase 1 の新旧共存用ブリッジ、将来削除予定)
+  - ToolContext は `useRef<ToolContext>` で 1 度だけ生成、以降変更しない
+- **ToolRegistry**: `src/hooks/canvas/toolRegistry.ts` に `Map<ToolType, ToolHandler>` と `Map<PseudoToolKey, ToolHandler>` を定義。`mode:calibration` / `mode:grid` は store フラグで判定する疑似ツールキーで登録
+- **Dispatcher**: `useCanvas.ts` に `dispatchToolPointer(method, point, e)` を追加。pointer handler の先頭で呼び、registry に該当ツールがあれば委譲して return、なければ旧ハンドラへフォールスルー
+- **ツール切替 reset**: `useEffect([tool])` で前ツールの `onToolDeactivate` を呼び、InteractionState を `idle` に戻す。暗黙挙動を明示化
+
+##### 移行済みツール (本 PR)
+- **pan**: `tools/noopTool.ts` (DrawingCanvas 側で処理されるため no-op)
+- **calibration モード**: `tools/calibrationTool.ts` (pseudo-tool `mode:calibration`)
+- **grid / sampleGrid モード**: `tools/gridTool.ts` (pseudo-tool `mode:grid`)
+- **pen / marker / eraser**: `tools/strokeTool.ts`
+- **shape 14 種**: `tools/shapeTool.ts` — plain (rect / ellipse / line / arrow / doubleArrow / semicircle / chevron / lshape / zshape / bracket) + annotated (rectAnnotated / ellipseAnnotated / lineAnnotated / doubleArrowAnnotated)
+  - annotated 変種は pointerup で旧ハンドラの引出線フェーズ 2 (annotationState=2, isDrawingLeader, pendingAnnotatedShapeRef, leaderStartRef/End) に引き継ぐ
+- **stamp 12 種**: `tools/stampTool.ts` — 引出線対応 9 種 (ドラッグで引出線付き / クリックで引出線なし) と非対応 3 種 (doneStamp / rubyStamp / komojiStamp、クリックで即配置)
+
+##### スコープ外 (後続 PR)
+- `text` / `image` / `polyline` / `labeledRect` ツール
+- `select` ツールの 9 分岐 (fontLabel / resize handle / rotation handle / annotation drag / leader end drag / text drag / image drag / selection drag / selection rect) → `src/hooks/canvas/tools/selectTool/` 配下に 10 ファイルで分割予定
+- 引出線フェーズ 2 (`annotationState === 2`) の pointerdown / Move / Up
+- `isDrawing` / `isDrawingShape` / `isDrawingStampLeader` / `isCalibrating` / `isDrawingGrid` などのレガシーフラグ完全廃止と InteractionState への一本化
+
+##### 数値
+- `useCanvas.ts`: 3827 → 3534 行 (-293 行)
+- 3 つの pointer handler 合計: 1260 → 815 行 (-445 行)
+- 新規モジュール: `src/hooks/canvas/` 配下に 10 ファイル合計約 1057 行 (責務が明確に分割された状態)
+- `isPointInsideGrid` ユーティリティは `gridTool.ts` に移動済み
+
+##### 修正・新規ファイル
+- 新規: [src/hooks/canvas/interactionState.ts](src/hooks/canvas/interactionState.ts)
+- 新規: [src/hooks/canvas/toolContext.ts](src/hooks/canvas/toolContext.ts)
+- 新規: [src/hooks/canvas/toolRegistry.ts](src/hooks/canvas/toolRegistry.ts)
+- 新規: [src/hooks/canvas/tools/noopTool.ts](src/hooks/canvas/tools/noopTool.ts)
+- 新規: [src/hooks/canvas/tools/calibrationTool.ts](src/hooks/canvas/tools/calibrationTool.ts)
+- 新規: [src/hooks/canvas/tools/gridTool.ts](src/hooks/canvas/tools/gridTool.ts)
+- 新規: [src/hooks/canvas/tools/strokeTool.ts](src/hooks/canvas/tools/strokeTool.ts)
+- 新規: [src/hooks/canvas/tools/shapeTool.ts](src/hooks/canvas/tools/shapeTool.ts)
+- 新規: [src/hooks/canvas/tools/stampTool.ts](src/hooks/canvas/tools/stampTool.ts)
+- 修正: [src/hooks/useCanvas.ts](src/hooks/useCanvas.ts) — 旧分岐削除 + dispatcher 追加
+
 #### 描画データ・コメントデータの分離保存（旧MojiQ準拠）
 - **描画データとコメントテキストを別ファイルに保存**
   - `src/utils/drawingExportImport.ts` - 3関数追加

@@ -31,8 +31,140 @@ import { acquireSaveLock, releaseSaveLock } from '../../utils/saveLock';
 import { useProofreadingCheckStore } from '../../stores/proofreadingCheckStore';
 import { useCommentVisibilityStore } from '../../stores/commentVisibilityStore';
 import { isLandscapeDocument } from '../../utils/pageNumberUtils';
+import { compressPdfViaCanvas, PDF_COMPRESSION_THRESHOLD } from '../../utils/pdfCompressor';
+import {
+  buildMojiqSubject,
+  type MojiQTextEntry,
+  type MojiQCheckedEntry,
+} from '../../utils/mojiqMetadata';
 import MojiQLogo from '../../../logo/MojiQ_icon.png';
+import type { PageState } from '../../types';
 import './HeaderBar.css';
+
+/**
+ * 現在の drawing 状態から PDF /Subject に書き込む MojiQ メタデータ文字列を生成する。
+ *
+ * 保存内容:
+ * - MojiQText: 各ページの pdfAnnotationSource 付きテキスト + 図形+テキスト指示のアノテーション
+ *   (+ 前回読み込んだ loadedMojiQTexts を merge して round-trip 保持)
+ * - MojiQChecked: 校正チェックパネルで確認済みになったコメントのシグネチャ
+ *   (+ 前回読み込んだ loadedCheckedComments を merge)
+ * - commentTextHidden: 常に true (保存時はコメントテキストを非表示化する方針)
+ */
+function collectMojiqSubject(pages: PageState[]): string {
+  const { loadedMojiQTexts, loadedCheckedComments } = useDrawingStore.getState();
+  const checkedCommentsSet = useProofreadingCheckStore.getState().checkedComments;
+
+  const texts: MojiQTextEntry[] = [];
+  const seenTextKeys = new Set<string>();
+
+  // 現在の drawing 状態から pdfAnnotationSource 付きテキストを収集
+  pages.forEach((page, pageIndex) => {
+    const pdfPage = pageIndex + 1;
+    const displayWidth = page.width || 595;
+    const displayHeight = page.height || 842;
+
+    for (const layer of page.layers) {
+      // pdfAnnotationSource 付きテキスト (PDF 注釈由来)
+      for (const text of layer.texts) {
+        if (!text.pdfAnnotationSource) continue;
+        if (!text.text || !text.text.trim()) continue;
+        const key = `${pdfPage}:${text.text}`;
+        if (seenTextKeys.has(key)) continue;
+        seenTextKeys.add(key);
+        texts.push({
+          pdfPage,
+          contents: text.text,
+          canvasRect: { x: text.x, y: text.y },
+          displayWidth,
+          displayHeight,
+        });
+      }
+      // 図形+テキスト指示 (annotation 付き rect/ellipse/line/doubleArrow)
+      for (const shape of layer.shapes) {
+        if (!shape.annotation || !shape.annotation.text || !shape.annotation.text.trim()) continue;
+        const key = `${pdfPage}:${shape.annotation.text}`;
+        if (seenTextKeys.has(key)) continue;
+        seenTextKeys.add(key);
+        texts.push({
+          pdfPage,
+          contents: shape.annotation.text,
+          canvasRect: { x: shape.annotation.x, y: shape.annotation.y },
+          displayWidth,
+          displayHeight,
+        });
+      }
+    }
+  });
+
+  // 前回読み込んだ MojiQText も merge (現在の drawing に無いものを保持)
+  if (loadedMojiQTexts) {
+    for (const entry of loadedMojiQTexts) {
+      const key = `${entry.pdfPage}:${entry.contents}`;
+      if (seenTextKeys.has(key)) continue;
+      seenTextKeys.add(key);
+      texts.push(entry);
+    }
+  }
+
+  // 確認済みコメント情報を収集
+  const checked: MojiQCheckedEntry[] = [];
+  const seenCheckedKeys = new Set<string>();
+
+  // 現在のセッションでチェック済みになったコメント (インデックスから content を引く)
+  // proofreadingCheckStore の checkedComments は index の Set。
+  // index → content の対応は proofreadingPanel の filteredComments に依存するが、
+  // ここでは PDF 注釈のうち「済スタンプが近くにある」ものを確認済みとする概算ロジックを使う。
+  // より正確な同期は将来のリファインで改善する。
+  // 現状は drawing 状態の pdfAnnotationSource テキストの近傍に doneStamp 図形があれば確認済みとみなす。
+  pages.forEach((page, pageIndex) => {
+    const pdfPage = pageIndex + 1;
+    const doneStamps = page.layers.flatMap((l) =>
+      l.shapes.filter((s) => s.type === 'stamp' && s.stampType === 'doneStamp'),
+    );
+    for (const layer of page.layers) {
+      for (const text of layer.texts) {
+        if (!text.pdfAnnotationSource || !text.text || !text.text.trim()) continue;
+        // 近傍 (50px 以内) に doneStamp があれば確認済み
+        const isCheckedNearby = doneStamps.some((s) => {
+          const cx = (s.startPos.x + s.endPos.x) / 2;
+          const cy = (s.startPos.y + s.endPos.y) / 2;
+          const dx = cx - text.x;
+          const dy = cy - text.y;
+          return Math.hypot(dx, dy) < 50;
+        });
+        if (!isCheckedNearby) continue;
+        const key = `${pdfPage}:${text.text}`;
+        if (seenCheckedKeys.has(key)) continue;
+        seenCheckedKeys.add(key);
+        checked.push({
+          pdfPage,
+          contents: text.text,
+          canvasRect: { x: text.x, y: text.y },
+        });
+      }
+    }
+  });
+
+  // 前回読み込んだ MojiQChecked も merge
+  if (loadedCheckedComments) {
+    for (const entry of loadedCheckedComments) {
+      const key = `${entry.pdfPage}:${entry.contents}`;
+      if (seenCheckedKeys.has(key)) continue;
+      seenCheckedKeys.add(key);
+      checked.push(entry);
+    }
+  }
+
+  // proofreadingCheckStore の index 参照は現状活用できないが、変数の未使用警告を避けるために void する
+  void checkedCommentsSet;
+
+  return buildMojiqSubject({
+    commentTextHidden: true,
+    texts,
+    checked,
+  });
+}
 
 // SVG Icons
 const FileOpenIcon = () => (
@@ -259,6 +391,11 @@ export const HeaderBar: React.FC = () => {
   const [isSaveMenuOpen, setIsSaveMenuOpen] = useState(false);
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
+  // 圧縮保存モード (25MB 以下に JPEG 段階圧縮)
+  const [compressSave, setCompressSave] = useState(false);
+  // 圧縮保存時の進行中で参照する ref (savePdfToPath は useCallback 内で closure を使う)
+  const compressSaveRef = useRef(false);
+  compressSaveRef.current = compressSave;
   const spreadMenuRef = useRef<HTMLDivElement>(null);
   const spreadButtonRef = useRef<HTMLButtonElement>(null);
   const saveMenuRef = useRef<HTMLDivElement>(null);
@@ -421,6 +558,27 @@ export const HeaderBar: React.FC = () => {
           }
 
           setLoading(true, 'ファイルを読み込んでいます...');
+          setProgress(5);
+
+          // ファイルサイズチェック（300MB以上は圧縮確認）
+          let fileSize = 0;
+          try {
+            fileSize = await invoke<number>('get_file_size', { path: filePath });
+          } catch {
+            // サイズ取得失敗時は0として扱い、圧縮スキップ
+          }
+          const needsCompression = fileSize >= PDF_COMPRESSION_THRESHOLD && filePath.toLowerCase().endsWith('.pdf');
+          if (needsCompression) {
+            const confirmed = await showConfirm(
+              'PDFのサイズが非常に大きいため圧縮処理をします。\n処理に時間がかかる場合があります。続行しますか？',
+              { title: '確認', kind: 'warning' }
+            );
+            if (!confirmed) {
+              setLoading(false);
+              return;
+            }
+          }
+
           setProgress(10);
 
           let result: LoadedDocument;
@@ -436,10 +594,30 @@ export const HeaderBar: React.FC = () => {
           }
 
           if (result.file_type === 'pdf' && result.pdf_data) {
+            let pdfBase64 = result.pdf_data;
+
+            // 大容量PDFの圧縮処理
+            if (needsCompression) {
+              setLoading(true, 'PDFを圧縮しています...');
+              try {
+                pdfBase64 = await compressPdfViaCanvas(pdfBase64, (current, total) => {
+                  setProgress(10 + Math.floor((current / total) * 30));
+                });
+              } catch (e) {
+                if ((e as Error).message === 'CANCELLED') {
+                  setLoading(false);
+                  return;
+                }
+                console.error('PDF compression failed:', e);
+                await showAlert('圧縮処理に失敗しました。元のPDFで読み込みます。', { title: '警告', kind: 'warning' });
+                pdfBase64 = result.pdf_data;
+              }
+            }
+
             setLoading(true, 'PDFをレンダリング中...');
-            const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
-              // 30%〜70%の範囲でプログレスを表示
-              setProgress(30 + Math.floor(progress * 0.4));
+            const progressStart = needsCompression ? 40 : 30;
+            const pdfResult = await renderPdfToImages(pdfBase64, (progress) => {
+              setProgress(progressStart + Math.floor(progress * 0.4));
             });
             setProgress(70);
 
@@ -455,7 +633,7 @@ export const HeaderBar: React.FC = () => {
             setProgress(95);
 
             // プリロード完了後にストアを更新
-            loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations);
+            loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations, pdfResult.mojiqMetadata);
 
             // 読み込み後のページ状態を取得
             const loadedPages = useDrawingStore.getState().pages;
@@ -589,6 +767,27 @@ export const HeaderBar: React.FC = () => {
           }
 
           setLoading(true, 'ファイルを読み込んでいます...');
+          setProgress(5);
+
+          // ファイルサイズチェック（300MB以上は圧縮確認）
+          let fileSize2 = 0;
+          try {
+            fileSize2 = await invoke<number>('get_file_size', { path: filePath });
+          } catch {
+            // サイズ取得失敗時は0として扱い、圧縮スキップ
+          }
+          const needsCompression2 = fileSize2 >= PDF_COMPRESSION_THRESHOLD && filePath.toLowerCase().endsWith('.pdf');
+          if (needsCompression2) {
+            const confirmed = await showConfirm(
+              'PDFのサイズが非常に大きいため圧縮処理をします。\n処理に時間がかかる場合があります。続行しますか？',
+              { title: '確認', kind: 'warning' }
+            );
+            if (!confirmed) {
+              setLoading(false);
+              return;
+            }
+          }
+
           setProgress(10);
 
           let result: LoadedDocument;
@@ -604,10 +803,30 @@ export const HeaderBar: React.FC = () => {
           }
 
           if (result.file_type === 'pdf' && result.pdf_data) {
+            let pdfBase64 = result.pdf_data;
+
+            // 大容量PDFの圧縮処理
+            if (needsCompression2) {
+              setLoading(true, 'PDFを圧縮しています...');
+              try {
+                pdfBase64 = await compressPdfViaCanvas(pdfBase64, (current, total) => {
+                  setProgress(10 + Math.floor((current / total) * 30));
+                });
+              } catch (e) {
+                if ((e as Error).message === 'CANCELLED') {
+                  setLoading(false);
+                  return;
+                }
+                console.error('PDF compression failed:', e);
+                await showAlert('圧縮処理に失敗しました。元のPDFで読み込みます。', { title: '警告', kind: 'warning' });
+                pdfBase64 = result.pdf_data;
+              }
+            }
+
             setLoading(true, 'PDFをレンダリング中...');
-            const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
-              // 30%〜70%の範囲でプログレスを表示
-              setProgress(30 + Math.floor(progress * 0.4));
+            const progressStart2 = needsCompression2 ? 40 : 30;
+            const pdfResult = await renderPdfToImages(pdfBase64, (progress) => {
+              setProgress(progressStart2 + Math.floor(progress * 0.4));
             });
             setProgress(70);
 
@@ -623,7 +842,7 @@ export const HeaderBar: React.FC = () => {
             setProgress(95);
 
             // プリロード完了後にストアを更新
-            loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations);
+            loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations, pdfResult.mojiqMetadata);
 
             // 読み込み後のページ状態を取得
             const loadedPages = useDrawingStore.getState().pages;
@@ -841,12 +1060,24 @@ export const HeaderBar: React.FC = () => {
         }
       }, 300);
 
+      // MojiQ メタデータを収集 (PDF /Subject に書き込む用)
+      // - 現在の drawing 状態から pdfAnnotationSource 付きテキスト + 図形アノテーションを収集
+      // - 前回読み込んだ loadedMojiQTexts も merge (旧 MojiQ 保存済み PDF の round-trip 用)
+      // - 校正チェックの確認済み状態を MojiQChecked として保存
+      const mojiqSubject = collectMojiqSubject(pages);
+
+      // 圧縮保存モード: JPEG (DCTDecode) で段階圧縮して 25MB 以下を目指す
+      const compressMode = compressSaveRef.current;
+
       try {
         await invoke('save_pdf_v2', {
           savePath,
           request: {
             pages: pageDrawingsV2,
             background_images: backgroundImages,
+            mojiq_subject: mojiqSubject,
+            compress_mode: compressMode,
+            compress_target_bytes: compressMode ? 25 * 1024 * 1024 : null,
           },
         });
       } finally {
@@ -1092,13 +1323,53 @@ export const HeaderBar: React.FC = () => {
         const isPdf = path.toLowerCase().endsWith('.pdf');
         const fileName = path.split(/[/\\]/).pop() || 'File';
 
+        // ファイルサイズチェック（300MB以上は圧縮確認）
+        let fileSize3 = 0;
+        try {
+          fileSize3 = await invoke<number>('get_file_size', { path });
+        } catch {
+          // サイズ取得失敗時は0として扱い、圧縮スキップ
+        }
+        const needsCompression3 = fileSize3 >= PDF_COMPRESSION_THRESHOLD && isPdf;
+        if (needsCompression3) {
+          const confirmed = await showConfirm(
+            'PDFのサイズが非常に大きいため圧縮処理をします。\n処理に時間がかかる場合があります。続行しますか？',
+            { title: '確認', kind: 'warning' }
+          );
+          if (!confirmed) {
+            setLoading(false);
+            return;
+          }
+        }
+
         setProgress(10);
         const result = await invoke<LoadedDocument>('load_file', { path });
 
         if (isPdf && result.pdf_data) {
+          let pdfBase64 = result.pdf_data;
+
+          // 大容量PDFの圧縮処理
+          if (needsCompression3) {
+            setLoading(true, 'PDFを圧縮しています...');
+            try {
+              pdfBase64 = await compressPdfViaCanvas(pdfBase64, (current, total) => {
+                setProgress(10 + Math.floor((current / total) * 30));
+              });
+            } catch (e) {
+              if ((e as Error).message === 'CANCELLED') {
+                setLoading(false);
+                return;
+              }
+              console.error('PDF compression failed:', e);
+              await showAlert('圧縮処理に失敗しました。元のPDFで読み込みます。', { title: '警告', kind: 'warning' });
+              pdfBase64 = result.pdf_data;
+            }
+          }
+
           setLoading(true, 'PDFをレンダリング中...');
-          const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
-            setProgress(30 + Math.floor(progress * 0.4));
+          const progressStart3 = needsCompression3 ? 40 : 30;
+          const pdfResult = await renderPdfToImages(pdfBase64, (progress) => {
+            setProgress(progressStart3 + Math.floor(progress * 0.4));
           });
           setProgress(70);
 
@@ -1110,7 +1381,7 @@ export const HeaderBar: React.FC = () => {
           );
           setProgress(95);
 
-          loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations);
+          loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations, pdfResult.mojiqMetadata);
           const loadedPages = useDrawingStore.getState().pages;
 
           if (shouldLoadIntoExisting) {
@@ -1571,6 +1842,22 @@ export const HeaderBar: React.FC = () => {
                       onClick={(e) => e.stopPropagation()}
                     />
                     <label htmlFor="export-drawing-checkbox">描画+コメントを追加保存</label>
+                  </div>
+                  <div
+                    className="save-menu-checkbox"
+                    onClick={() => setCompressSave(!compressSave)}
+                  >
+                    <input
+                      type="checkbox"
+                      id="compress-save-checkbox"
+                      checked={compressSave}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        setCompressSave(e.target.checked);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <label htmlFor="compress-save-checkbox">圧縮保存 (25MB以下)</label>
                   </div>
                 </div>
               );

@@ -38,6 +38,7 @@ import { LoadedDocument, FileMetadata, ToolType } from './types';
 import { renderPdfToImages } from './utils/pdfRenderer';
 import { preloadAllBackgroundImages, backgroundImageCache } from './utils/backgroundImageCache';
 import { checkPageCount } from './utils/fileValidation';
+import { compressPdfViaCanvas, PDF_COMPRESSION_THRESHOLD } from './utils/pdfCompressor';
 import './App.css';
 
 // 定数
@@ -175,6 +176,27 @@ function App() {
             const fileName = filePath.split(/[/\\]/).pop() || 'PDF';
 
             setLoading(true, 'ファイルを読み込んでいます...');
+            setProgress(5);
+
+            // ファイルサイズチェック（300MB以上は圧縮確認）
+            let fileSize = 0;
+            try {
+              fileSize = await invoke<number>('get_file_size', { path: filePath });
+            } catch {
+              // サイズ取得失敗時は0として扱い、圧縮スキップ
+            }
+            const needsCompression = fileSize >= PDF_COMPRESSION_THRESHOLD && filePath.toLowerCase().endsWith('.pdf');
+            if (needsCompression) {
+              const confirmed = await showConfirm(
+                'PDFのサイズが非常に大きいため圧縮処理をします。\n処理に時間がかかる場合があります。続行しますか？',
+                { title: '確認', kind: 'warning' }
+              );
+              if (!confirmed) {
+                setLoading(false);
+                return;
+              }
+            }
+
             setProgress(10);
 
             let result: LoadedDocument;
@@ -190,9 +212,31 @@ function App() {
             }
 
             if (result.file_type === 'pdf' && result.pdf_data) {
+              let pdfBase64 = result.pdf_data;
+
+              // 大容量PDFの圧縮処理
+              if (needsCompression) {
+                setLoading(true, 'PDFを圧縮しています...');
+                try {
+                  pdfBase64 = await compressPdfViaCanvas(pdfBase64, (current, total) => {
+                    setProgress(10 + Math.floor((current / total) * 30));
+                  });
+                } catch (e) {
+                  if ((e as Error).message === 'CANCELLED') {
+                    setLoading(false);
+                    return;
+                  }
+                  console.error('PDF compression failed:', e);
+                  await showAlert('圧縮処理に失敗しました。元のPDFで読み込みます。', { title: '警告', kind: 'warning' });
+                  pdfBase64 = result.pdf_data;
+                }
+              }
+
               setLoading(true, 'PDFをレンダリング中...');
-              const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
-                setProgress(30 + Math.floor(progress * 0.5)); // 30-80%をPDFレンダリングに使用
+              const progressStart = needsCompression ? 40 : 30;
+              const progressRange = needsCompression ? 0.4 : 0.5;
+              const pdfResult = await renderPdfToImages(pdfBase64, (progress) => {
+                setProgress(progressStart + Math.floor(progress * progressRange));
               });
 
               // ページ数チェック
@@ -224,7 +268,7 @@ function App() {
               );
 
               // プリロード完了後にストアを更新
-              loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations);
+              loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations, pdfResult.mojiqMetadata);
               resetZoom();
 
               // アクティブなドキュメントのタイトルとファイル情報を更新
@@ -320,6 +364,27 @@ function App() {
             const fileName = filePath.split(/[/\\]/).pop() || 'ファイル';
 
             setLoading(true, 'ファイルを読み込んでいます...');
+            setProgress(5);
+
+            // ファイルサイズチェック（300MB以上は圧縮確認）
+            let fileSize = 0;
+            try {
+              fileSize = await invoke<number>('get_file_size', { path: filePath });
+            } catch {
+              // サイズ取得失敗時は0として扱い、圧縮スキップ
+            }
+            const needsCompression = fileSize >= PDF_COMPRESSION_THRESHOLD && filePath.toLowerCase().endsWith('.pdf');
+            if (needsCompression) {
+              const confirmed = await showConfirm(
+                'PDFのサイズが非常に大きいため圧縮処理をします。\n処理に時間がかかる場合があります。続行しますか？',
+                { title: '確認', kind: 'warning' }
+              );
+              if (!confirmed) {
+                setLoading(false);
+                return;
+              }
+            }
+
             setProgress(10);
 
             let result: LoadedDocument;
@@ -335,9 +400,31 @@ function App() {
             }
 
             if (result.file_type === 'pdf' && result.pdf_data) {
+              let pdfBase64 = result.pdf_data;
+
+              // 大容量PDFの圧縮処理
+              if (needsCompression) {
+                setLoading(true, 'PDFを圧縮しています...');
+                try {
+                  pdfBase64 = await compressPdfViaCanvas(pdfBase64, (current, total) => {
+                    setProgress(10 + Math.floor((current / total) * 30));
+                  });
+                } catch (e) {
+                  if ((e as Error).message === 'CANCELLED') {
+                    setLoading(false);
+                    return;
+                  }
+                  console.error('PDF compression failed:', e);
+                  await showAlert('圧縮処理に失敗しました。元のPDFで読み込みます。', { title: '警告', kind: 'warning' });
+                  pdfBase64 = result.pdf_data;
+                }
+              }
+
               setLoading(true, 'PDFをレンダリング中...');
-              const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
-                setProgress(30 + Math.floor(progress * 0.5));
+              const progressStart = needsCompression ? 40 : 30;
+              const progressRange = needsCompression ? 0.4 : 0.5;
+              const pdfResult = await renderPdfToImages(pdfBase64, (progress) => {
+                setProgress(progressStart + Math.floor(progress * progressRange));
               });
 
               // ページ数チェック
@@ -369,7 +456,7 @@ function App() {
               );
 
               // プリロード完了後にストアを更新
-              loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations);
+              loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations, pdfResult.mojiqMetadata);
               resetZoom();
 
               // アクティブなドキュメントのタイトルとファイル情報を更新

@@ -1,6 +1,12 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import type { PageData, PdfAnnotationText, PdfPageInfo, PdfAnnotationSourceType } from '../types';
 import { base64ToUint8ArrayAsync } from './pdfWorkerManager';
+import {
+  parseMojiqSubject,
+  isMojiQProcessedAnnotation,
+  type MojiQTextEntry,
+  type ParsedMojiqMetadata,
+} from './mojiqMetadata';
 
 // PDF.js worker setup
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -217,10 +223,13 @@ function convertPdfAnnotationToTextObject(
 }
 
 // PDFページから注釈を抽出
+// mojiqTexts が渡されると、既に MojiQ で処理済みの注釈はスキップする (重複生成を防ぐ)
 async function extractPdfAnnotations(
   page: pdfjsLib.PDFPageProxy,
   displayWidth: number,
-  displayHeight: number
+  displayHeight: number,
+  mojiqTexts?: MojiQTextEntry[] | null,
+  pageNumber?: number
 ): Promise<PdfAnnotationText[]> {
   const annotations = await page.getAnnotations();
   const viewport = page.getViewport({ scale: 1 });
@@ -239,9 +248,26 @@ async function extractPdfAnnotations(
       displayWidth,
       displayHeight
     );
-    if (obj) {
-      objects.push(obj);
+    if (!obj) continue;
+
+    // 既に MojiQ で処理済みの注釈 (MojiQText メタデータに記録済み) はスキップ。
+    // これにより再オープン時に重複した注釈オブジェクトが生成されない。
+    if (mojiqTexts && mojiqTexts.length > 0 && pageNumber !== undefined) {
+      if (
+        isMojiQProcessedAnnotation(
+          obj.text,
+          obj.x,
+          obj.y,
+          pageNumber,
+          mojiqTexts,
+          displayWidth,
+          displayHeight
+        )
+      ) {
+        continue;
+      }
     }
+    objects.push(obj);
   }
 
   return objects;
@@ -250,6 +276,7 @@ async function extractPdfAnnotations(
 export interface PdfRenderResult {
   pages: PageData[];
   annotations: PdfAnnotationText[][]; // ページごとの注釈配列
+  mojiqMetadata: ParsedMojiqMetadata;  // PDF /Subject から復元された MojiQ メタデータ
 }
 
 // PDFドキュメントを開く（オンデマンドレンダリング用）
@@ -257,6 +284,7 @@ export interface PdfLoadResult {
   pdfDocument: pdfjsLib.PDFDocumentProxy;
   pageInfos: PdfPageInfo[];
   annotations: PdfAnnotationText[][];
+  mojiqMetadata: ParsedMojiqMetadata;
 }
 
 export async function loadPdfDocument(
@@ -272,6 +300,9 @@ export async function loadPdfDocument(
   const pageInfos: PdfPageInfo[] = [];
   const annotations: PdfAnnotationText[][] = [];
 
+  // MojiQ メタデータを読み込む
+  const mojiqMetadata = await readMojiqMetadata(pdf);
+
   onProgress?.(30);
 
   // 各ページの情報を取得（レンダリングはしない）
@@ -286,12 +317,24 @@ export async function loadPdfDocument(
       rendered: false,
     });
 
-    // 注釈を抽出
+    // 注釈を抽出 (MojiQ 処理済みのものはスキップ)
     const pageAnnotations = await extractPdfAnnotations(
       page,
       viewport.width,
+      viewport.height,
+      mojiqMetadata.texts,
+      pageNum
+    );
+
+    // メタデータから前回保存したテキストオブジェクトを復元
+    const restoredFromMetadata = metadataTextsForPage(
+      mojiqMetadata.texts,
+      pageNum,
+      viewport.width,
       viewport.height
     );
+    pageAnnotations.push(...restoredFromMetadata);
+
     annotations.push(pageAnnotations);
 
     const progress = 30 + (pageNum / numPages) * 60;
@@ -300,7 +343,7 @@ export async function loadPdfDocument(
 
   onProgress?.(100);
 
-  return { pdfDocument: pdf, pageInfos, annotations };
+  return { pdfDocument: pdf, pageInfos, annotations, mojiqMetadata };
 }
 
 // 単一ページをレンダリング
@@ -410,6 +453,9 @@ export async function renderPdfToImages(
   const pages: PageData[] = [];
   const annotations: PdfAnnotationText[][] = [];
 
+  // PDF /Subject フィールドから MojiQ メタデータを読み込む
+  const mojiqMetadata = await readMojiqMetadata(pdf);
+
   onProgress?.(20); // PDF loaded
 
   const scale = 3.0; // High resolution rendering for quality
@@ -444,12 +490,27 @@ export async function renderPdfToImages(
       height: Math.round(viewport.height),
     });
 
-    // PDFアノテーションを抽出
+    // PDFアノテーションを抽出 (MojiQ 処理済みのものはスキップ)
     const pageAnnotations = await extractPdfAnnotations(
       page,
       viewport.width,
+      viewport.height,
+      mojiqMetadata.texts,
+      pageNum
+    );
+
+    // MojiQ 保存済み PDF の場合、メタデータに保存されているテキストを復元する。
+    // Pro の save_pdf_v2 は背景+描画をラスタライズして出力するため、再読み込み時に
+    // pdf.js は注釈を返さない。metadata からテキストオブジェクトを再生成することで、
+    // 前回の注釈テキスト (校正コメント等) を drawing layer に復元する。
+    const restoredFromMetadata = metadataTextsForPage(
+      mojiqMetadata.texts,
+      pageNum,
+      viewport.width,
       viewport.height
     );
+    pageAnnotations.push(...restoredFromMetadata);
+
     annotations.push(pageAnnotations);
 
     // Calculate progress: 20% for loading, 80% for rendering pages
@@ -457,5 +518,65 @@ export async function renderPdfToImages(
     onProgress?.(renderProgress);
   }
 
-  return { pages, annotations };
+  return { pages, annotations, mojiqMetadata };
+}
+
+/**
+ * MojiQ メタデータの MojiQText エントリから、指定ページの PdfAnnotationText 配列を生成する。
+ * 保存時点の表示サイズと現在の表示サイズが異なる場合、座標をスケーリング補正する。
+ */
+function metadataTextsForPage(
+  metadataTexts: MojiQTextEntry[],
+  pageNumber: number,
+  currentDisplayWidth: number,
+  currentDisplayHeight: number,
+): PdfAnnotationText[] {
+  if (!metadataTexts || metadataTexts.length === 0) return [];
+
+  const results: PdfAnnotationText[] = [];
+  for (const entry of metadataTexts) {
+    if (entry.pdfPage !== pageNumber) continue;
+
+    // 保存時と現在の表示サイズが違う場合、座標をスケーリング
+    const savedW = entry.displayWidth || currentDisplayWidth;
+    const savedH = entry.displayHeight || currentDisplayHeight;
+    const scaleX = currentDisplayWidth / savedW;
+    const scaleY = currentDisplayHeight / savedH;
+
+    results.push({
+      text: entry.contents,
+      x: entry.canvasRect.x * scaleX,
+      y: entry.canvasRect.y * scaleY,
+      color: '#000000',
+      fontSize: 14,
+      isVertical: false,
+      // PDF 注釈由来として扱う (コメントテキスト非表示フィルタの対象)
+      pdfAnnotationSource: 'Text',
+    });
+  }
+  return results;
+}
+
+/**
+ * PDF の Info 辞書 (`/Subject` フィールド) を読み取り、MojiQ メタデータをパースする。
+ * pdf.js の `getMetadata()` は info オブジェクトと raw メタデータを返す。
+ */
+async function readMojiqMetadata(
+  pdf: pdfjsLib.PDFDocumentProxy
+): Promise<ParsedMojiqMetadata> {
+  try {
+    const meta = await pdf.getMetadata();
+    // info は { Title, Author, Subject, Creator, Producer, ... } の辞書
+    const info = meta.info as Record<string, unknown> | undefined;
+    const subject = info && typeof info.Subject === 'string' ? (info.Subject as string) : null;
+    return parseMojiqSubject(subject);
+  } catch (e) {
+    console.warn('[MojiQ] PDF メタデータの読み込みに失敗:', e);
+    return {
+      isMojiqSaved: false,
+      commentTextHidden: false,
+      texts: [],
+      checked: [],
+    };
+  }
 }

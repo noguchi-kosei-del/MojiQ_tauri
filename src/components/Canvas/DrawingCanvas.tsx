@@ -18,6 +18,7 @@ import { LoadedDocument } from '../../types';
 import { renderPdfToImages, extractPdfTextContent } from '../../utils/pdfRenderer';
 import { backgroundImageCache, preloadAllBackgroundImages } from '../../utils/backgroundImageCache';
 import { useTextLayerStore, PdfTextItem } from '../../stores/textLayerStore';
+import { compressPdfViaCanvas, PDF_COMPRESSION_THRESHOLD } from '../../utils/pdfCompressor';
 import './DrawingCanvas.css';
 
 // モードアイコン（指示入れモード）- HeaderBarと同じ
@@ -97,7 +98,7 @@ export const DrawingCanvas: React.FC = () => {
     deleteSelectedStrokes, bringToFront, sendToBack,
   } = useDrawingStore();
   const { loadIntoActiveDocument, createNewDocument } = useDocumentStore();
-  const { showAlert } = useModalStore();
+  const { showAlert, showConfirm } = useModalStore();
   const { setLoading, setProgress } = useLoadingStore();
   const { zoom, setZoom, minZoom, maxZoom, zoomStep } = useZoomStore();
   const { isActive: isViewerMode } = useViewerModeStore();
@@ -130,6 +131,9 @@ export const DrawingCanvas: React.FC = () => {
 
   // Page navigation debounce ref
   const lastPageChangeRef = useRef<number>(0);
+
+  // アノテーション wheel リサイズの履歴 commit debounce 用
+  const annotationResizeCommitTimerRef = useRef<number | null>(null);
 
   // 一文字入力モーダル用
   const [labelInput, setLabelInput] = useState('');
@@ -224,15 +228,57 @@ export const DrawingCanvas: React.FC = () => {
 
       // PDFが含まれている場合は最初のPDFを読み込む
       if (pdfPaths.length > 0) {
-        setProgress(10);
         const filePath = pdfPaths[0];
         const fileName = filePath.split(/[/\\]/).pop() || 'PDF';
+
+        // ファイルサイズチェック（300MB以上は圧縮確認）
+        let fileSize = 0;
+        try {
+          fileSize = await invoke<number>('get_file_size', { path: filePath });
+        } catch {
+          // サイズ取得失敗時は0として扱い、圧縮スキップ
+        }
+        const needsCompression = fileSize >= PDF_COMPRESSION_THRESHOLD;
+        if (needsCompression) {
+          const confirmed = await showConfirm(
+            'PDFのサイズが非常に大きいため圧縮処理をします。\n処理に時間がかかる場合があります。続行しますか？',
+            { title: '確認', kind: 'warning' }
+          );
+          if (!confirmed) {
+            setLoading(false);
+            return;
+          }
+        }
+
+        setProgress(10);
         const result = await invoke<LoadedDocument>('load_file', { path: filePath });
 
         if (result.file_type === 'pdf' && result.pdf_data) {
+          let pdfBase64 = result.pdf_data;
+
+          // 大容量PDFの圧縮処理
+          if (needsCompression) {
+            setLoading(true, 'PDFを圧縮しています...');
+            try {
+              pdfBase64 = await compressPdfViaCanvas(pdfBase64, (current, total) => {
+                setProgress(10 + Math.floor((current / total) * 30));
+              });
+            } catch (e) {
+              if ((e as Error).message === 'CANCELLED') {
+                setLoading(false);
+                return;
+              }
+              console.error('PDF compression failed:', e);
+              await showAlert('圧縮処理に失敗しました。元のPDFで読み込みます。', { title: '警告', kind: 'warning' });
+              pdfBase64 = result.pdf_data;
+            }
+          }
+
           setLoading(true, 'PDFをレンダリング中...');
-          const pdfResult = await renderPdfToImages(result.pdf_data, (progress) => {
-            setProgress(20 + Math.floor(progress * 0.5));
+          const progressStart = needsCompression ? 40 : 20;
+          const progressRange = needsCompression ? 0.3 : 0.5;
+          const pdfResult = await renderPdfToImages(pdfBase64, (progress) => {
+            setProgress(progressStart + Math.floor(progress * progressRange));
           });
           setProgress(70);
 
@@ -249,7 +295,7 @@ export const DrawingCanvas: React.FC = () => {
 
           // プリロード完了後にストアを更新
           const { loadDocumentWithAnnotations } = useDrawingStore.getState();
-          loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations);
+          loadDocumentWithAnnotations(pdfResult.pages, pdfResult.annotations, pdfResult.mojiqMetadata);
 
           // ホーム画面からの読み込みは常にアクティブなタブに読み込む
           const loadedPages = useDrawingStore.getState().pages;
@@ -794,7 +840,60 @@ export const DrawingCanvas: React.FC = () => {
         }
       }
 
-      // 3. 通常ホイール = ページ移動
+      // 3. アノテーションテキスト上の wheel でフォントサイズ変更 (ツール問わず)
+      {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const canvasRect = canvas.getBoundingClientRect();
+          const scaleX = canvas.width / canvasRect.width;
+          const scaleY = canvas.height / canvasRect.height;
+          const canvasX = (e.clientX - canvasRect.left) * scaleX;
+          const canvasY = (e.clientY - canvasRect.top) * scaleY;
+          const ds = useDisplayScaleStore.getState().displayScale || 1;
+          const tolerance = 10 / ds;
+
+          const hit = useDrawingStore
+            .getState()
+            .selectAnnotationAtPoint({ x: canvasX, y: canvasY }, tolerance);
+
+          if (hit && hit.hitType === 'text') {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // 対象アノテーションを取得
+            const storeState = useDrawingStore.getState();
+            const pageState = storeState.pages[storeState.currentPage];
+            const shape = pageState?.layers
+              .filter((l) => l.visible)
+              .flatMap((l) => l.shapes)
+              .find((s) => s.id === hit.shapeId);
+
+            if (shape?.annotation) {
+              const delta = e.deltaY > 0 ? -1 : 1;
+              const newFontSize = Math.max(
+                8,
+                Math.min(72, shape.annotation.fontSize + delta),
+              );
+              if (newFontSize !== shape.annotation.fontSize) {
+                storeState.updateAnnotationFontSize(hit.shapeId, newFontSize);
+                redrawCanvas();
+
+                // 履歴 commit を debounce (500ms 後に saveToHistory)
+                if (annotationResizeCommitTimerRef.current !== null) {
+                  clearTimeout(annotationResizeCommitTimerRef.current);
+                }
+                annotationResizeCommitTimerRef.current = window.setTimeout(() => {
+                  useDrawingStore.getState().saveToHistory();
+                  annotationResizeCommitTimerRef.current = null;
+                }, 500);
+              }
+            }
+            return;
+          }
+        }
+      }
+
+      // 4. 通常ホイール = ページ移動
       if (pagesLengthRef.current <= 1) return;
       const now = Date.now();
       if (now - lastPageChangeRef.current < 200) return;

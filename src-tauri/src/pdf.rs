@@ -2,7 +2,19 @@ use std::io::Cursor;
 use std::path::Path;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ::image::{DynamicImage, GenericImageView, ImageFormat, Rgba, RgbaImage};
+use ::image::codecs::jpeg::JpegEncoder;
 use printpdf::*;
+
+/// 圧縮保存のデフォルト目標サイズ (25MB)。
+/// 旧 MojiQ の pdf-lib-saver.js の compressMode と同等。
+const DEFAULT_COMPRESS_TARGET_BYTES: u64 = 25 * 1024 * 1024;
+
+/// 圧縮品質探索の候補 (画質優先で上から順に試す)。
+const COMPRESS_QUALITY_STEPS: &[u8] = &[85, 75, 65, 55, 45, 35, 25];
+
+/// PDF 構造の固定オーバーヘッドの安全マージン。JPEG byte sum が
+/// (target - margin) 以下になる品質を選ぶ。
+const COMPRESS_OVERHEAD_MARGIN_BYTES: u64 = 512 * 1024; // 512KB
 
 /// アトミックな書き込みを行う（一時ファイル→リネーム方式）
 /// ディスク容量不足等で書き込み失敗時も元ファイルを保護
@@ -303,131 +315,211 @@ fn parse_color(color: &str) -> (u8, u8, u8) {
     }
 }
 
-/// 背景画像と描画オーバーレイを合成してPDFを作成
-pub fn create_pdf_with_overlays(
+/// 合成済みページの情報 (画像本体は呼び出し側で drop を制御するため Option で包む)。
+struct ComposedPage {
+    width_mm: f32,
+    height_mm: f32,
+    image: Option<DynamicImage>,
+}
+
+/// 背景画像 + 描画オーバーレイを合成して ComposedPage を生成する。
+/// 通常保存・圧縮保存の両パスで共有する。
+fn compose_page(
+    page_data: &crate::commands::PageDrawingsV2,
+    bg_raw: Option<&str>,
+) -> ComposedPage {
+    let bg_loaded = bg_raw.and_then(|bg| {
+        if bg.is_empty() {
+            return None;
+        }
+        decode_data_url(bg).and_then(|bytes| ::image::load_from_memory(&bytes).ok())
+    });
+
+    let overlay_loaded = if !page_data.drawing_overlay.is_empty() {
+        decode_data_url(&page_data.drawing_overlay)
+            .and_then(|bytes| ::image::load_from_memory(&bytes).ok())
+    } else {
+        None
+    };
+
+    let (width_mm, height_mm) = if let Some(ref img) = bg_loaded {
+        let (w, h) = img.dimensions();
+        (w as f32 * 25.4 / 72.0, h as f32 * 25.4 / 72.0)
+    } else {
+        (
+            page_data.width as f32 * 25.4 / 72.0,
+            page_data.height as f32 * 25.4 / 72.0,
+        )
+    };
+
+    let image = match (bg_loaded, overlay_loaded) {
+        (Some(bg), Some(overlay)) => Some(composite_images(&bg, &overlay)),
+        (Some(bg), None) => Some(bg),
+        (None, Some(overlay)) => {
+            let (w, h) = overlay.dimensions();
+            let mut white_bg = RgbaImage::new(w, h);
+            for pixel in white_bg.pixels_mut() {
+                *pixel = Rgba([255, 255, 255, 255]);
+            }
+            let white_bg_dyn = DynamicImage::ImageRgba8(white_bg);
+            Some(composite_images(&white_bg_dyn, &overlay))
+        }
+        (None, None) => None,
+    };
+
+    ComposedPage {
+        width_mm,
+        height_mm,
+        image,
+    }
+}
+
+/// `DynamicImage` を指定品質の JPEG バイト列にエンコードする。
+fn encode_to_jpeg(img: &DynamicImage, quality: u8) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let rgb = img.to_rgb8();
+    let (w, h) = rgb.dimensions();
+    let mut buf = Vec::with_capacity((w as usize) * (h as usize));
+    let mut encoder = JpegEncoder::new_with_quality(&mut buf, quality);
+    encoder.encode(rgb.as_raw(), w, h, ::image::ExtendedColorType::Rgb8)?;
+    Ok(buf)
+}
+
+/// 圧縮モード用の 1 ページ分のエンコード済みデータ。
+struct EncodedPage {
+    width_mm: f32,
+    height_mm: f32,
+    width_px: u32,
+    height_px: u32,
+    /// 空の場合は画像なし (白ページ)
+    jpeg_bytes: Vec<u8>,
+}
+
+/// 圧縮モード用: 指定品質で全ページを逐次合成→JPEG エンコードし、合成画像は即座に drop する。
+/// これにより、ページ数が多くてもメモリ使用量は「1 ページ分の raw 画像 + 全ページ分の JPEG」に収まる。
+fn encode_all_pages_at_quality(
+    request: &SaveRequestV2,
+    quality: u8,
+) -> Vec<EncodedPage> {
+    let page_count = request.pages.len();
+    let mut result: Vec<EncodedPage> = Vec::with_capacity(page_count);
+
+    for idx in 0..page_count {
+        let page_data = &request.pages[idx];
+        let bg_raw = request.background_images.get(idx).map(|s| s.as_str());
+        let composed = compose_page(page_data, bg_raw);
+
+        let (width_px, height_px, jpeg_bytes) = if let Some(ref img) = composed.image {
+            let (w, h) = img.dimensions();
+            let bytes = encode_to_jpeg(img, quality).unwrap_or_else(|e| {
+                eprintln!("[MojiQ] JPEG encode failed (quality {}): {}", quality, e);
+                Vec::new()
+            });
+            (w, h, bytes)
+        } else {
+            (0u32, 0u32, Vec::new())
+        };
+
+        result.push(EncodedPage {
+            width_mm: composed.width_mm,
+            height_mm: composed.height_mm,
+            width_px,
+            height_px,
+            jpeg_bytes,
+        });
+        // composed.image はここでスコープ外となり drop される → メモリ圧迫を回避
+    }
+
+    result
+}
+
+/// 圧縮モード用: 目標サイズに収まる最大品質を探索する。
+/// 各品質段階で `encode_all_pages_at_quality` を呼び直すため、
+/// ピクセル画像を全ページ保持する必要がなくメモリ効率が良い
+/// (代わりに CPU コストは最大 `COMPRESS_QUALITY_STEPS.len()` 倍)。
+fn search_jpeg_quality(request: &SaveRequestV2, target_bytes: u64) -> (u8, Vec<EncodedPage>) {
+    let effective_target = target_bytes.saturating_sub(COMPRESS_OVERHEAD_MARGIN_BYTES);
+
+    let mut last_quality = *COMPRESS_QUALITY_STEPS.last().unwrap();
+    let mut last_encoded: Vec<EncodedPage> = Vec::new();
+
+    for &quality in COMPRESS_QUALITY_STEPS {
+        let encoded = encode_all_pages_at_quality(request, quality);
+        let total: u64 = encoded.iter().map(|p| p.jpeg_bytes.len() as u64).sum();
+
+        if total <= effective_target {
+            return (quality, encoded);
+        }
+
+        last_encoded = encoded;
+        last_quality = quality;
+    }
+
+    eprintln!(
+        "[MojiQ] 圧縮保存: 目標サイズに収められず、最低品質 {} を使用",
+        last_quality
+    );
+    (last_quality, last_encoded)
+}
+
+/// 圧縮モード版: 各ページを JPEG 化して DCTDecode filter で直接埋め込む
+fn create_pdf_with_overlays_compressed(
     save_path: &str,
     request: &SaveRequestV2,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let page_count = request.pages.len();
+    let target = request
+        .compress_target_bytes
+        .unwrap_or(DEFAULT_COMPRESS_TARGET_BYTES);
+
+    let (chosen_quality, encoded_pages) = search_jpeg_quality(request, target);
+    let page_count = encoded_pages.len();
     if page_count == 0 {
         return Err("No pages to save".into());
     }
 
-    // 最初のページのサイズを決定
-    let first_page = &request.pages[0];
-    let first_bg = request.background_images.first();
-    let (first_width_mm, first_height_mm) = if let Some(bg) = first_bg {
-        if !bg.is_empty() {
-            if let Some(bytes) = decode_data_url(bg) {
-                if let Ok(img) = ::image::load_from_memory(&bytes) {
-                    let (w, h) = img.dimensions();
-                    (Mm(w as f32 * 25.4 / 72.0), Mm(h as f32 * 25.4 / 72.0))
-                } else {
-                    (Mm(first_page.width as f32 * 25.4 / 72.0), Mm(first_page.height as f32 * 25.4 / 72.0))
-                }
-            } else {
-                (Mm(first_page.width as f32 * 25.4 / 72.0), Mm(first_page.height as f32 * 25.4 / 72.0))
-            }
-        } else {
-            (Mm(first_page.width as f32 * 25.4 / 72.0), Mm(first_page.height as f32 * 25.4 / 72.0))
-        }
-    } else {
-        (Mm(first_page.width as f32 * 25.4 / 72.0), Mm(first_page.height as f32 * 25.4 / 72.0))
-    };
+    let total_bytes: u64 = encoded_pages.iter().map(|p| p.jpeg_bytes.len() as u64).sum();
+    eprintln!(
+        "[MojiQ] 圧縮保存: quality={} pages={} total_jpeg={}MB target={}MB",
+        chosen_quality,
+        page_count,
+        total_bytes / (1024 * 1024),
+        target / (1024 * 1024)
+    );
 
-    let (doc, page1, layer1) = PdfDocument::new(
+    let first = &encoded_pages[0];
+    let (doc_init, page1, layer1) = PdfDocument::new(
         "MojiQ Pro Document",
-        first_width_mm,
-        first_height_mm,
+        Mm(first.width_mm),
+        Mm(first.height_mm),
         "Layer 1",
     );
 
+    let doc = if let Some(subject) = request.mojiq_subject.as_ref() {
+        doc_init.with_subject(subject.clone())
+    } else {
+        doc_init
+    };
+
     let mut current_layer = doc.get_page(page1).get_layer(layer1);
 
-    for idx in 0..page_count {
-        let page_data = &request.pages[idx];
-        let bg_image = request.background_images.get(idx);
-
-        // 背景画像を読み込み
-        let bg_loaded = if let Some(bg) = bg_image {
-            if !bg.is_empty() {
-                if let Some(bytes) = decode_data_url(bg) {
-                    ::image::load_from_memory(&bytes).ok()
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        // 描画オーバーレイを読み込み
-        let overlay_loaded = if !page_data.drawing_overlay.is_empty() {
-            if let Some(bytes) = decode_data_url(&page_data.drawing_overlay) {
-                ::image::load_from_memory(&bytes).ok()
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        // ページサイズを決定
-        let (width_mm, height_mm) = if let Some(ref img) = bg_loaded {
-            let (w, h) = img.dimensions();
-            (w as f32 * 25.4 / 72.0, h as f32 * 25.4 / 72.0)
-        } else {
-            (page_data.width as f32 * 25.4 / 72.0, page_data.height as f32 * 25.4 / 72.0)
-        };
-
-        // 2ページ目以降は新しいページを追加
+    for (idx, page) in encoded_pages.into_iter().enumerate() {
         if idx > 0 {
             let (new_page, new_layer) = doc.add_page(
-                Mm(width_mm),
-                Mm(height_mm),
+                Mm(page.width_mm),
+                Mm(page.height_mm),
                 format!("Page {}", idx + 1),
             );
             current_layer = doc.get_page(new_page).get_layer(new_layer);
         }
 
-        // 背景画像と描画オーバーレイを合成
-        let final_image = match (bg_loaded, overlay_loaded) {
-            (Some(bg), Some(overlay)) => {
-                // 両方ある場合は合成
-                Some(composite_images(&bg, &overlay))
-            }
-            (Some(bg), None) => {
-                // 背景のみ
-                Some(bg)
-            }
-            (None, Some(overlay)) => {
-                // オーバーレイのみ（白背景で合成）
-                let (w, h) = overlay.dimensions();
-                let mut white_bg = RgbaImage::new(w, h);
-                for pixel in white_bg.pixels_mut() {
-                    *pixel = Rgba([255, 255, 255, 255]);
-                }
-                let white_bg_dyn = DynamicImage::ImageRgba8(white_bg);
-                Some(composite_images(&white_bg_dyn, &overlay))
-            }
-            (None, None) => None,
-        };
-
-        // 合成画像をPDFに追加
-        if let Some(img) = final_image {
-            let (img_width, img_height) = img.dimensions();
-            let rgb_img = img.to_rgb8();
-
+        if !page.jpeg_bytes.is_empty() && page.width_px > 0 && page.height_px > 0 {
             let image = Image::from(ImageXObject {
-                width: Px(img_width as usize),
-                height: Px(img_height as usize),
+                width: Px(page.width_px as usize),
+                height: Px(page.height_px as usize),
                 color_space: ColorSpace::Rgb,
                 bits_per_component: ColorBits::Bit8,
                 interpolate: true,
-                image_data: rgb_img.into_raw(),
-                image_filter: None,
+                image_data: page.jpeg_bytes,
+                image_filter: Some(ImageFilter::DCT),
                 clipping_bbox: None,
                 smask: None,
             });
@@ -448,6 +540,108 @@ pub fn create_pdf_with_overlays(
 
     atomic_save_pdf(doc, save_path)?;
     Ok(())
+}
+
+/// 通常モード版: 1 ページずつ合成 → PDF 追加 → drop の単一パス。
+/// 大量ページでもメモリは常に 1 ページ分だけ保持する。
+fn create_pdf_with_overlays_normal(
+    save_path: &str,
+    request: &SaveRequestV2,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let page_count = request.pages.len();
+    if page_count == 0 {
+        return Err("No pages to save".into());
+    }
+
+    // 最初のページを先に合成して寸法を取得 (PdfDocument::new に必要)
+    let first_page_data = &request.pages[0];
+    let first_bg = request.background_images.first().map(|s| s.as_str());
+    let first_composed = compose_page(first_page_data, first_bg);
+
+    let (doc_init, page1, layer1) = PdfDocument::new(
+        "MojiQ Pro Document",
+        Mm(first_composed.width_mm),
+        Mm(first_composed.height_mm),
+        "Layer 1",
+    );
+
+    let doc = if let Some(subject) = request.mojiq_subject.as_ref() {
+        doc_init.with_subject(subject.clone())
+    } else {
+        doc_init
+    };
+
+    let mut current_layer = doc.get_page(page1).get_layer(layer1);
+
+    // 最初のページを PDF に追加
+    if let Some(img) = first_composed.image {
+        add_image_to_layer_raw(&current_layer, &img);
+    }
+    // first_composed はここで drop される
+
+    // 2 ページ目以降を順次処理 (合成 → 追加 → drop)
+    for idx in 1..page_count {
+        let page_data = &request.pages[idx];
+        let bg_raw = request.background_images.get(idx).map(|s| s.as_str());
+        let composed = compose_page(page_data, bg_raw);
+
+        let (new_page, new_layer) = doc.add_page(
+            Mm(composed.width_mm),
+            Mm(composed.height_mm),
+            format!("Page {}", idx + 1),
+        );
+        current_layer = doc.get_page(new_page).get_layer(new_layer);
+
+        if let Some(img) = composed.image {
+            add_image_to_layer_raw(&current_layer, &img);
+        }
+        // ここで composed も drop
+    }
+
+    atomic_save_pdf(doc, save_path)?;
+    Ok(())
+}
+
+/// 通常モード: raw RGB (FlateDecode) で画像をレイヤーに追加するヘルパー。
+fn add_image_to_layer_raw(layer: &PdfLayerReference, img: &DynamicImage) {
+    let (img_width, img_height) = img.dimensions();
+    let rgb_img = img.to_rgb8();
+
+    let image = Image::from(ImageXObject {
+        width: Px(img_width as usize),
+        height: Px(img_height as usize),
+        color_space: ColorSpace::Rgb,
+        bits_per_component: ColorBits::Bit8,
+        interpolate: true,
+        image_data: rgb_img.into_raw(),
+        image_filter: None,
+        clipping_bbox: None,
+        smask: None,
+    });
+
+    image.add_to_layer(
+        layer.clone(),
+        ImageTransform {
+            translate_x: Some(Mm(0.0)),
+            translate_y: Some(Mm(0.0)),
+            scale_x: None,
+            scale_y: None,
+            dpi: Some(72.0),
+            ..Default::default()
+        },
+    );
+}
+
+/// 背景画像と描画オーバーレイを合成してPDFを作成 (ディスパッチャ)
+pub fn create_pdf_with_overlays(
+    save_path: &str,
+    request: &SaveRequestV2,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if request.compress_mode.unwrap_or(false) {
+        create_pdf_with_overlays_compressed(save_path, request)
+    } else {
+        create_pdf_with_overlays_normal(save_path, request)
+    }
 }
 
 /// 2つの画像を合成（オーバーレイのアルファチャンネルを使用）

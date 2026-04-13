@@ -8,6 +8,7 @@ import { useSettingsStore } from './settingsStore';
 import { OBJECT_LIMITS } from '../constants/loadingLimits';
 import { useModalStore } from './modalStore';
 import { formatFontFamily } from '../utils/fontService';
+import type { MojiQTextEntry, MojiQCheckedEntry } from '../utils/mojiqMetadata';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
 /**
@@ -73,7 +74,12 @@ interface DrawingStore extends DrawingState {
   loadDocument: (pages: { page_number: number; image_data: string; width: number; height: number }[]) => void;
   loadDocumentWithAnnotations: (
     pages: { page_number: number; image_data: string; width: number; height: number }[],
-    annotations: PdfAnnotationText[][]
+    annotations: PdfAnnotationText[][],
+    mojiqMetadata?: {
+      isMojiqSaved: boolean;
+      texts: MojiQTextEntry[];
+      checked: MojiQCheckedEntry[];
+    } | null,
   ) => void;
   // Link-based loading (InDesign-like)
   loadDocumentWithLinks: (metadata: FileMetadata[]) => void;
@@ -154,6 +160,8 @@ interface DrawingStore extends DrawingState {
   // Shape operations
   getAllShapes: () => Shape[];
   updateShapeAnnotation: (shapeId: string, annotation: Annotation) => void;
+  // ホイールでアノテーションのフォントサイズを連続的に変更する (履歴保存しない; commit は呼び出し側で debounce する)
+  updateAnnotationFontSize: (shapeId: string, newFontSize: number) => void;
   updateShape: (shapeId: string, updates: Partial<Omit<Shape, 'id' | 'layerId'>>) => void;
   calculateShapeBounds: (shape: Shape) => SelectionBounds | null;
 
@@ -242,6 +250,18 @@ interface DrawingStore extends DrawingState {
   proofreadingTextColor: string | null;
   setActiveProofreadingText: (text: string | null, color: string | null) => void;
   clearActiveProofreadingText: () => void;
+
+  // MojiQ メタデータ (PDF /Subject から復元された旧 MojiQ 保存情報)
+  // 次回保存時にマージして再書き込みするため保持する。
+  loadedMojiQTexts: MojiQTextEntry[] | null;
+  loadedCheckedComments: MojiQCheckedEntry[] | null;
+  isMojiqSavedPdf: boolean;
+  setLoadedMojiqMetadata: (
+    texts: MojiQTextEntry[] | null,
+    checked: MojiQCheckedEntry[] | null,
+    isMojiqSaved: boolean,
+  ) => void;
+  clearLoadedMojiqMetadata: () => void;
 }
 
 // クリップボード（モジュールレベル、コピー/カット/ペースト用）
@@ -290,6 +310,27 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
   // 校正チェック直接描画用
   activeProofreadingText: null,
   proofreadingTextColor: null,
+
+  // MojiQ メタデータ
+  loadedMojiQTexts: null,
+  loadedCheckedComments: null,
+  isMojiqSavedPdf: false,
+
+  setLoadedMojiqMetadata: (texts, checked, isMojiqSaved) => {
+    set({
+      loadedMojiQTexts: texts,
+      loadedCheckedComments: checked,
+      isMojiqSavedPdf: isMojiqSaved,
+    });
+  },
+
+  clearLoadedMojiqMetadata: () => {
+    set({
+      loadedMojiQTexts: null,
+      loadedCheckedComments: null,
+      isMojiqSavedPdf: false,
+    });
+  },
 
   loadDocument: (pages) => {
     const pageStates = pages.map((p) =>
@@ -414,7 +455,7 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
     return state.pages.map(p => p.imageLink);
   },
 
-  loadDocumentWithAnnotations: (pages, annotations) => {
+  loadDocumentWithAnnotations: (pages, annotations, mojiqMetadata) => {
     const pageStates = pages.map((p, pageIndex) => {
       const pageState = createDefaultPage(p.page_number, p.image_data, p.width, p.height);
 
@@ -449,6 +490,10 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       pdfDocument: null,
       pdfPageInfos: [],
       pdfAnnotations: annotations,
+      // MojiQ メタデータがあれば保持 (次回保存時にマージ)
+      loadedMojiQTexts: mojiqMetadata?.texts ?? null,
+      loadedCheckedComments: mojiqMetadata?.checked ?? null,
+      isMojiqSavedPdf: mojiqMetadata?.isMojiqSaved ?? false,
     });
 
     // 読み込んだ状態を履歴に保存
@@ -562,6 +607,10 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
       pdfDocument: null,
       pdfPageInfos: [],
       pdfAnnotations: [],
+      // MojiQ メタデータをクリア (ドキュメント間の持ち越しを防ぐ)
+      loadedMojiQTexts: null,
+      loadedCheckedComments: null,
+      isMojiqSavedPdf: false,
     });
   },
 
@@ -1656,6 +1705,32 @@ export const useDrawingStore = create<DrawingStore>((set, get) => ({
 
     set({ pages: updatedPages });
     get().saveToHistory();
+  },
+
+  updateAnnotationFontSize: (shapeId, newFontSize) => {
+    const state = get();
+    const currentPageState = state.pages[state.currentPage];
+    if (!currentPageState) return;
+
+    const updatedLayers = currentPageState.layers.map((layer) => ({
+      ...layer,
+      shapes: layer.shapes.map((shape) => {
+        if (shape.id !== shapeId || !shape.annotation) return shape;
+        return {
+          ...shape,
+          annotation: { ...shape.annotation, fontSize: newFontSize },
+        };
+      }),
+    }));
+
+    const updatedPages = [...state.pages];
+    updatedPages[state.currentPage] = {
+      ...currentPageState,
+      layers: updatedLayers,
+    };
+
+    // 履歴は保存しない (呼び出し側で debounce commit する)
+    set({ pages: updatedPages });
   },
 
   updateShape: (shapeId, updates) => {
