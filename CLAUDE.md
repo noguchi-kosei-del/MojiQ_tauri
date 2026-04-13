@@ -1421,6 +1421,19 @@ MojiQ_Pro_1.0/
 - **未使用CSS削除（約600行）**:
   - `ProofreadingCheckModal.css` - 旧モーダル構造・フォルダブラウザ・データビューア・カテゴリ・テーブルの全CSSを削除、`load-complete-*`のみ残存
 
+### 2026-04-13
+#### 校正チェックモードに画像挿入ツールを追加 (旧 MojiQ v2.2.0 より移植)
+- **背景**: 旧 MojiQ v2.2.0 (2026-04-13) で `index.html` + `css/proofreading-mode.css` から `#imgInsertBtn` の非表示ルールを削除して校正チェックモードでも画像ツールを露出させた。MojiQ Pro では校正チェックモードのツールバー [ProofreadingToolbar](src/components/ProofreadingToolbar/ProofreadingToolbar.tsx) に画像ツールが無く、校正中に画像を挿入したい場合は指示入れモードへ切り替える必要があった。
+- **修正**: [src/components/ProofreadingToolbar/ProofreadingToolbar.tsx](src/components/ProofreadingToolbar/ProofreadingToolbar.tsx) に `ImageIcon` コンポーネントと「画像 (I)」ボタンを追加。直線グループの直後に配置し、`setTool('image')` で既存の画像挿入フロー (DrawingCanvas のファイル選択モーダル → 配置) を再利用する。
+- **影響**: 校正チェックモード中に指示入れモードへ切り替えずに画像挿入が可能になり、ワークフローの分断が解消される。
+
+#### 絵文字を SVG アイコンに置換
+- **背景**: コードベース全体を Unicode 絵文字範囲 (`U+1F300–U+1F9FF` / `U+2600–U+27BF` 等) で検索したところ、[CloseConfirmDialog.tsx:25](src/components/CloseConfirmDialog/CloseConfirmDialog.tsx#L25) の警告アイコンに `⚠️` 絵文字が 1 箇所のみ残っていた。他のアイコンは全て自前 SVG で実装されていたため、一貫性を取るために置換。
+- **修正**:
+  - [src/components/CloseConfirmDialog/CloseConfirmDialog.tsx](src/components/CloseConfirmDialog/CloseConfirmDialog.tsx) — `WarningIcon` SVG コンポーネント (lucide スタイルの三角警告: 三角形パス + 縦線 + ドット) を追加し、絵文字 `⚠️` を `<WarningIcon />` に置換。`aria-hidden="true"` でスクリーンリーダーから隠す (隣接する title が意味を伝えるため)
+  - [src/components/CloseConfirmDialog/CloseConfirmDialog.css](src/components/CloseConfirmDialog/CloseConfirmDialog.css) — `.close-confirm-icon` の `font-size: 20px` を削除し、`display: inline-flex; align-items: center; justify-content: center; color: #f5a623` (アンバー警告色) に変更。SVG は `currentColor` 経由でこの色を継承
+- **影響**: コードベース全体から絵文字が完全に削除され、全てのアイコンが SVG で統一された。プラットフォーム間での絵文字レンダリング差異も解消。
+
 ### 2026-04-10
 #### redrawCanvas の stale closure によるアノテーション移動スナップバック修正
 - **問題**: 1ページに多数の描画がある状態で、枠線・楕円・直線の「+テキスト指示」アノテーションテキストを選択ツールで移動すると、ドラッグ中は追従するが、選択を解除した瞬間に元位置に戻って見える (旧 MojiQ v2.1.9 と同じ症状)。

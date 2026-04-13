@@ -115,6 +115,14 @@ const LineAnnotatedIcon = () => (
   </svg>
 );
 
+const ImageIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="3" width="14" height="12" rx="1"/>
+    <circle cx="6" cy="7" r="1.5"/>
+    <path d="M16 12l-4-4-6 6"/>
+  </svg>
+);
+
 export const ProofreadingToolbar: React.FC = () => {
   const { tool, setTool } = useDrawingStore();
   const { isProofreadingToolbarCollapsed, toggleProofreadingToolbar } = useSidebarStore();
@@ -248,6 +256,15 @@ export const ProofreadingToolbar: React.FC = () => {
               <LineAnnotatedIcon />
             </button>
           </div>
+
+          {/* 画像 */}
+          <button
+            onClick={() => setTool('image')}
+            className={tool === 'image' ? 'active' : ''}
+            title="画像 (I)"
+          >
+            <ImageIcon />
+          </button>
         </div>
       </div>
     </div>
