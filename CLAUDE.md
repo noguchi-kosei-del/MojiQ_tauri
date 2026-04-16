@@ -1632,3 +1632,10 @@ MojiQ_Pro_1.0/
 - **「校正のやり方」リンク更新**: Notion URLを新しいページに変更
 - **リンクジャンプ修正**: `window.open()`→`openUrl()`（`@tauri-apps/plugin-opener`）に置換
   - TauriのWebViewでは`window.open`で外部URLを開けないため
+
+### 2026-04-16
+#### 描画系ツールが使用不能になるバグの修正
+- **問題**: selectツールでアノテーション（+テキスト指示の引出線・テキスト部分）をクリック/ドラッグした後、ペン・枠線・楕円・直線などの描画系ツールが一切反応しなくなる
+- **原因**: selectツールのアノテーションドラッグ時に`pendingAnnotatedShapeRef.current`がセットされるが、pointerUp完了後にクリアされていなかった。dispatcherのガード（`pendingAnnotatedShapeRef.current !== null`→旧ハンドラへフォールスルー）が常にtrueとなり、新アーキに移行済みのツール（pen/marker/eraser/shape系14種/stamp）がdispatchされなくなっていた
+- **修正**: `src/hooks/useCanvas.ts`
+  - `isDraggingAnnotation`と`isDraggingLeaderEnd`のpointerUp完了時に`pendingAnnotatedShapeRef.current = null`を追加（2箇所）

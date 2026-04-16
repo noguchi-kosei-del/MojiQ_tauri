@@ -2352,7 +2352,9 @@ export const useCanvas = () => {
       const ctx = toolContextRef.current;
       if (!ctx) return false;
 
-      // annotated shape の phase 2 中は旧ハンドラに処理を委ねる
+      // annotated shape の phase 2 (引出線描画中) および select ツールの annotation ドラッグ中は
+      // 旧ハンドラに処理を委ねる。pointerUp 完了後に pendingAnnotatedShapeRef.current = null
+      // にクリアされるため、その後のツール操作では dispatch が正常に通る。
       if (pendingAnnotatedShapeRef.current !== null) {
         return false;
       }
@@ -3075,6 +3077,7 @@ export const useCanvas = () => {
           setIsDraggingAnnotation(false);
           dragStartRef.current = null;
           lastDragPointRef.current = null;
+          pendingAnnotatedShapeRef.current = null;
         }
 
         if (isDraggingLeaderEnd) {
@@ -3084,6 +3087,7 @@ export const useCanvas = () => {
           setIsDraggingLeaderEnd(false);
           dragStartRef.current = null;
           lastDragPointRef.current = null;
+          pendingAnnotatedShapeRef.current = null;
         }
 
         if (isDraggingText) {
